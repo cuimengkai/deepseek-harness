@@ -196,6 +196,21 @@ export class SessionProjectionCache extends Service {
     return restored.snapshot
   }
 
+  /**
+   * Remove one session's durable cache record and any live dirty state, after
+   * its durable log was deleted. A stale record for a deleted session is never
+   * read again correctly (cold reads reject an absent log), but a recreated id
+   * would resurrect it for a wasteful full refold; this drops it at the
+   * deletion boundary. An untracked id is an idempotent no-op.
+   * @param id - the deleted session to evict.
+   */
+  async evict(id: SessionId): Promise<void> {
+    for (const [session] of this.dirty) {
+      if (session.id === id) this.dirty.delete(session)
+    }
+    await this.requireTable().delete(id)
+  }
+
   // --- write-behind (throttle + mandatory points) ---
 
   private installWritePath(): void {

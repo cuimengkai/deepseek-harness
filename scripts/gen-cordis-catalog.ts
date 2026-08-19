@@ -81,6 +81,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   sandbox: 'sandbox.md',
   sandboxPolicy: 'sandbox.md',
   sessionPersistence: 'persistence.md',
+  sessionDeletion: 'persistence.md',
   sessionQuery: 'session-query.md',
   sessionReferenceResolver: 'session-reference.md',
   sessionProjectionCache: 'session-projection.md',
@@ -578,6 +579,9 @@ export const TYPE_LINK_EXEMPTIONS: Readonly<Record<string, string>> = {
   WorkflowAgentEndInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
   WorkflowAgentInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
   WorkflowResultInfo: 'event-local snapshot is owned by packages/workflow/workflow/src/index.ts',
+  DeleteSessionOptions: 'delete session options are owned by packages/session/session-deletion/src/index.ts',
+  DeleteSessionResult: 'delete session result is owned by packages/session/session-deletion/src/index.ts',
+  DeletionRecord: 'deletion ledger record is owned by packages/session/session-deletion/src/spec.ts',
 }
 
 /** Repository data policy consumed by the Cordis catalog projector. */

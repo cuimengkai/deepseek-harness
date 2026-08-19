@@ -125,6 +125,12 @@ class TestPersistence extends SessionPersistence {
   create(_meta: SessionHeader): Promise<void> { return Promise.resolve() }
   append(_id: SessionId, _events: readonly SessionEvent[]): Promise<void> { return Promise.resolve() }
 
+  delete(id: SessionId): Promise<boolean> {
+    this.durable.delete(id)
+    this.logical.delete(id)
+    return Promise.resolve(true)
+  }
+
   load(id: SessionId): Promise<SessionInspection> {
     return this.readFrom(id, 0)
   }

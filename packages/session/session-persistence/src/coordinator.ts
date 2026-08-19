@@ -65,6 +65,23 @@ export class SessionFormatUnsupportedError extends Error {
 }
 
 /**
+ * A session delete was refused because the target id is live (published in the
+ * session store). A live Session re-materializes its durable log on the next
+ * flush, so a physical delete would be immediately undone; the caller must
+ * dispose the session before deleting. Distinct from absence — an unknown id
+ * is a successful `false`, never this error.
+ */
+export class LiveSessionError extends Error {
+  /**
+   * @param sessionId - the live session whose delete was refused.
+   */
+  constructor(readonly sessionId: SessionId) {
+    super(`cannot delete session "${sessionId}" while it is live`)
+    this.name = 'LiveSessionError'
+  }
+}
+
+/**
  * Direction-aware refusal text for a stored session whose format version this
  * build does not read. Shared by the coordinator's load-time check and by
  * backends that must refuse BEFORE decoding version-dependent structure (a
@@ -191,6 +208,19 @@ export interface PersistenceBackend<TornMarker = unknown> {
    * only, `closers = []`).
    */
   commitRepair(meta: SessionHeader, tornMarker: TornMarker | undefined, closers: readonly SessionEvent[]): Promise<void>
+
+  /**
+   * Physically remove one persisted session's durable artifact. Returns whether
+   * a materialized artifact existed; an absent session is a `false`, never an
+   * error. The backend MUST NOT leave a partial session a later read could
+   * surface (e.g. a JSONL backend removes the whole session directory, not just
+   * the log file). Called only after the coordinator has drained the id's
+   * write chain, refused a live owner, and invalidated its prepared view, so
+   * no in-flight append or repair can resurrect the artifact.
+   * @param id - persisted session to remove.
+   * @param signal - optional cancellation for backend removal work.
+   */
+  deleteStored(id: SessionId, signal?: AbortSignal): Promise<boolean>
 
   /**
    * List all stored (materialized) sessions' metadata.
@@ -707,6 +737,42 @@ export class PersistenceCoordinator<TornMarker = unknown> {
     state.materialized = true
     state.cursor += events.length
     this.preparations.invalidate(id)
+  }
+
+  /**
+   * Physically delete one persisted session's durable log. Refuses while the
+   * id is live ({@link LiveSessionError}) or held by an in-flight resume
+   * preparation. Returns whether a materialized artifact was removed; an
+   * unknown id is `false`, never an error.
+   * @param id - persisted session to remove.
+   * @param signal - optional cancellation for the retirement wait and backend removal.
+   * @returns whether a persisted artifact existed.
+   */
+  async delete(id: SessionId, signal?: AbortSignal): Promise<boolean> {
+    // Wait out any disposed lifecycle still draining its tail before the
+    // serialized delete, so no retirement can append after the removal.
+    await this.waitForRetirement(id, signal)
+    return this.serialize(id, () => this.deleteCore(id), signal)
+  }
+
+  private async deleteCore(id: SessionId): Promise<boolean> {
+    // A live owner would re-materialize the log on its next flush; refuse
+    // (mirrors prepare/load's live guard).
+    if (this.ctx.sessions.get(id) !== undefined) {
+      throw new LiveSessionError(id)
+    }
+    // A committing/reserved preparation is an in-flight resume holding the only
+    // live handle; invalidating under it would fail its publication mid-flight.
+    if (this.preparations.isExclusivelyHeld(id)) {
+      throw new Error(`cannot delete session "${id}" while its persisted preparation is reserved`)
+    }
+    this.preparations.invalidate(id)
+    const removed = await this.backend.deleteStored(id)
+    // The durable removal is the transaction: release coordinator bookkeeping
+    // only after the backend confirms the artifact is gone, so a failed removal
+    // leaves the state loadable for a retry.
+    this.states.delete(id)
+    return removed
   }
 
   /**

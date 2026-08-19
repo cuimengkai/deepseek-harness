@@ -255,6 +255,31 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Forget one session after its durable log was deleted: drop it from the
+   * in-memory header/path indexes and from every durable workspace record's
+   * `sessionIds`, so no stale membership or "session header is missing" noise
+   * survives a delete. A session the registry never tracked is an idempotent
+   * no-op.
+   * @param id - the deleted session to forget.
+   */
+  forgetSession(id: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      this.headers.delete(id)
+      this.sessionPaths.delete(id)
+      this.invalidSessionPaths.delete(id)
+      const table = this.requireTable()
+      for (const workspaceId of this.requireState().workspaceIds) {
+        const record = table.get(workspaceId)
+        if (record === undefined || !record.sessionIds.includes(id)) continue
+        await table.update(workspaceId, current => ({
+          ...current,
+          sessionIds: current.sessionIds.filter(sessionId => sessionId !== id),
+        }))
+      }
+    })
+  }
+
+  /**
    * Whether a session is live, header-indexed, or present in a fresh
    * persistence listing. Only a definite miss returns false — a failing
    * `sessionPersistence.list()` propagates so storage faults never

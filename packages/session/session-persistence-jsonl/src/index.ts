@@ -181,6 +181,10 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
     return this.coordinator.append(id, events)
   }
 
+  delete(id: SessionId, signal?: AbortSignal): Promise<boolean> {
+    return this.coordinator.delete(id, signal)
+  }
+
   override prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
     return this.coordinator.prepare(id, signal)
   }
@@ -234,6 +238,38 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
       if (isENOENT(error)) return undefined
       throw error
     }
+  }
+
+  /**
+   * Physically remove one session's WHOLE directory — the transcript file plus
+   * any future session-local artifacts — not just the log. A leftover session
+   * dir holding an opposite-encoding artifact would trip the root encoding
+   * check on the next list, and a dir without its log is a benign but
+   * permanent tombstone that listing still walks. Discovery reuses `findLog`,
+   * so an ambiguous id across project directories and a legacy flat layout
+   * refuse here exactly as they do on reads. The removal is serialized by the
+   * coordinator's per-id chain and runs only after the live guard, so no
+   * append or repair is mid-flight to write into a removed inode.
+   */
+  async deleteStored(id: SessionId, signal?: AbortSignal): Promise<boolean> {
+    signal?.throwIfAborted()
+    await this.ensureRootEncoding()
+    signal?.throwIfAborted()
+    const path = await this.findLog(id, signal)
+    if (path === undefined) return false
+    const dir = dirname(path)
+    await rm(dir, { recursive: true, force: true })
+    signal?.throwIfAborted()
+    // The project-dir entry is the durability record of the removal: fsync it
+    // on POSIX so the disappearance survives a power loss, mirroring the
+    // directory fsyncs that make materialization durable. Windows namespace
+    // removal is write-through, so no extra step is needed there.
+    /* v8 ignore next -- native Windows coverage exercises this platform dispatch; Linux covers the POSIX peer */
+    if (process.platform !== 'win32') {
+      /* v8 ignore next -- directory fsync on the delete path matches materializePosix durability */
+      await this.syncDirPosix(dirname(dir))
+    }
+    return true
   }
 
   /**

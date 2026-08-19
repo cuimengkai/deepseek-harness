@@ -216,6 +216,18 @@ export class SessionPreparations<Source extends PreparedSource, CommitState> {
   }
 
   /**
+   * Whether an unpublished Session currently exclusively reserves the id. A
+   * delete must refuse rather than invalidate under a committing/reserved
+   * preparation: the resume holds the only live handle to the log, and a
+   * delete racing it would either fail its publication or delete under it.
+   * @param id - session identity to check.
+   */
+  isExclusivelyHeld(id: SessionId): boolean {
+    const phase = this.entries.get(id)?.phase
+    return phase === 'committing' || phase === 'reserved'
+  }
+
+  /**
    * Remove a completed entry for an already-serialized append adoption.
    * @param id - adopted session identity.
    * @returns the prepared source, or undefined when no ready entry exists.

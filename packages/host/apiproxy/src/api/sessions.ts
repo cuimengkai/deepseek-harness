@@ -370,4 +370,13 @@ export interface SessionsApi {
    */
   cancel(request: RpcRequest<{ sessionId: SessionId }>): Promise<RpcResponse<{ accepted: true }>>
 
+  /**
+   * Physically deletes a session and its entire subagent descendant tree. Any
+   * live member refuses the whole operation with `session-live`; an unknown
+   * session fails with `session-not-found`. Success returns the removed and
+   * absent scope members so the caller can refresh its session list.
+   */
+  delete(request: RpcRequest<{ sessionId: SessionId }>):
+  Promise<RpcResponse<{ deleted: SessionId[]; notFound: SessionId[] }>>
+
 }

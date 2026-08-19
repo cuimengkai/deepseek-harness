@@ -82,6 +82,9 @@ import type { SettingsDescriptor, SettingsNamespace, SettingsPathOp } from '@dee
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 // Value edge: the rename impl narrows the title service's validation failure; the import also resolves `ctx.get('sessionTitle')`.
 import { SessionTitleInvalidError } from '@deepseek-ai/dsh-session-title'
+// Value edge: the delete RPC narrows the deletion seam's live refusal; the
+// import also resolves `ctx.sessionDeletion` for the host session block.
+import { SessionDeletionError } from '@deepseek-ai/dsh-session-deletion'
 import type { CallId } from '@deepseek-ai/dsh-llm/brand'
 import type { ScopeKey } from '@deepseek-ai/dsh-scope'
 import type { ApprovalOutcome, ApprovalRequestId } from '@deepseek-ai/dsh-user-approval'
@@ -2570,6 +2573,44 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
         agent.cancel({ kind: 'user' }, { keepInbox: true })
         return Promise.resolve(ok(request, { accepted: true as const }))
+      },
+
+      async delete(request) {
+        const { sessionId } = request.payload
+        // The session must be one `list` would show — an unknown or already-
+        // deleted id is a wire-level not-found, mirroring cancel.
+        const visible = await listVisibleSessionSummaries()
+        if (!visible.some(item => item.sessionId === sessionId)) {
+          return err(request, {
+            code: 'session-not-found',
+            message: `session "${sessionId}" not found`,
+            details: { sessionId },
+          })
+        }
+        // The deletion seam is an optional composition: a deployment without
+        // @deepseek-ai/dsh-session-deletion surfaces a clear wire error rather
+        // than a carrier 500.
+        const deletion = ctx.get('sessionDeletion')
+        if (deletion === undefined) {
+          return err(request, {
+            code: 'internal',
+            message: 'session deletion is not composed in this deployment',
+            details: {},
+          })
+        }
+        try {
+          const result = await deletion.deleteSession(sessionId)
+          return ok(request, { deleted: result.deleted, notFound: result.notFound })
+        } catch (error: unknown) {
+          if (error instanceof SessionDeletionError) {
+            return err(request, {
+              code: 'session-live',
+              message: error.message,
+              details: { sessionId, liveSessions: [...error.liveSessions] },
+            })
+          }
+          throw error
+        }
       },
     },
 

@@ -45,6 +45,7 @@ export {
   DEFAULT_PREPARED_SESSION_CACHE_SIZE,
   DEFAULT_WRITE_BATCH_MAX_DELAY_MS,
   MAX_WRITE_BATCH_DELAY_MS,
+  LiveSessionError,
   PersistenceCoordinator,
   SessionFormatUnsupportedError,
   SessionPersistenceCorruptionError,
@@ -141,6 +142,21 @@ export abstract class SessionPersistence extends Service {
    * @param events - the contiguous batch to persist, in seq order.
    */
   abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
+
+  /**
+   * Physically delete one persisted session's durable log. Refuses while the
+   * session is live ({@link LiveSessionError}). A created-but-never-appended
+   * session has no artifact and counts as absent. After a successful delete
+   * the id behaves as never-created: `load`/`inspect`/`readFrom` report not
+   * found, `list`/`listSnapshots` omit it, and a later `create` may reuse the
+   * id with a fresh lifecycle. Backends coordinate the removal with the
+   * coordinator's write chain and prepared views; consumers observe the
+   * disappearance through their usual `listSnapshots` reconciliation.
+   * @param id - persisted session to remove.
+   * @param signal - optional cancellation for backend removal work.
+   * @returns whether a persisted artifact was removed (`false` when absent).
+   */
+  abstract delete(id: SessionId, signal?: AbortSignal): Promise<boolean>
 
   /**
    * Prepare the exact unpublished Session used by resume. Implementations may

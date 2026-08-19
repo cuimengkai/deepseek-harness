@@ -144,6 +144,16 @@ async write(session: Session): Promise<void>
  * @returns the snapshot cut at the stored log end.
  */
 async coldSnapshot(id: SessionId, signal?: AbortSignal): Promise<ProjectionSnapshot>
+
+/**
+ * Remove one session's durable cache record and any live dirty state, after
+ * its durable log was deleted. A stale record for a deleted session is never
+ * read again correctly (cold reads reject an absent log), but a recreated id
+ * would resurrect it for a wasteful full refold; this drops it at the
+ * deletion boundary. An untracked id is an idempotent no-op.
+ * @param id - the deleted session to evict.
+ */
+async evict(id: SessionId): Promise<void>
 ```
 
 Types: [Session](session.md) · [SessionHeader](persistence.md) · [SessionId](core.md)

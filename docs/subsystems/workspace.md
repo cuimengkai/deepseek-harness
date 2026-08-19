@@ -213,6 +213,16 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
 archiveSession(sessionId: SessionId): Promise<void>
 
 /**
+ * Forget one session after its durable log was deleted: drop it from the
+ * in-memory header/path indexes and from every durable workspace record's
+ * `sessionIds`, so no stale membership or "session header is missing" noise
+ * survives a delete. A session the registry never tracked is an idempotent
+ * no-op.
+ * @param id - the deleted session to forget.
+ */
+forgetSession(id: SessionId): Promise<void>
+
+/**
  * Resolve by canonical directory path without creating or mutating a
  * workspace. A missing path rejects during `realpath`; an existing unowned
  * directory returns `undefined`.

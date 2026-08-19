@@ -16,6 +16,7 @@ import { scopeTarget } from '@deepseek-ai/dsh-scope'
 import SessionStore, { SESSION_FORMAT_VERSION, Session, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { meta, oneTurnLog, appendLog } from './contract.ts'
+import { LiveSessionError } from '../src/index.ts'
 
 /**
  * The backend-specific capabilities the orchestration suite needs beyond the
@@ -1296,6 +1297,46 @@ export function runCoordinatorContract(name: string, makeFixture: () => Promise<
         await expect(ctx.sessionPersistence.load(SessionId('nope'))).rejects.toThrow(/not found/)
         await expect(ctx.sessionPersistence.inspect(SessionId('nope'))).rejects.toThrow(/not found/)
       } finally {
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
+    it('delete refuses a live session with LiveSessionError', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      try {
+        const session = ctx.sessions.create(SessionId('live-delete'), { meta: { cwd: WORK } })
+        send(session, oneTurnLog())
+        await ctx.sessions.flush(session)
+        await expect(ctx.sessionPersistence.delete(session.id)).rejects.toBeInstanceOf(LiveSessionError)
+        // The refusal changed nothing: the session is still live and still loaded.
+        const loaded = await ctx.sessionPersistence.load(session.id)
+        expect(loaded.events).toHaveLength(6)
+      } finally {
+        await fiber.dispose()
+        await fix.cleanup()
+      }
+    })
+
+    it('delete after disposal drains the retired tail and removes the durable log', async () => {
+      const fix = await makeFixture()
+      const { ctx, fiber } = await freshCtx(fix)
+      let session!: Session
+      const sessionFiber = await ctx.plugin(Object.assign((inner: Context) => {
+        session = inner.sessions.create(SessionId('disposed-delete'), { meta: { cwd: WORK } })
+      }, { inject: ['sessions'] }))
+      try {
+        send(session, oneTurnLog())
+        await ctx.sessions.flush(session)
+        await sessionFiber.dispose()
+        // delete waits out the disposed lifecycle's retirement drain, so the
+        // removal lands after the final flush, never before it.
+        expect(await ctx.sessionPersistence.delete(session.id)).toBe(true)
+        await expect(ctx.sessionPersistence.load(session.id)).rejects.toThrow(/not found/i)
+        expect(await ctx.sessionPersistence.list()).toEqual([])
+      } finally {
+        await sessionFiber.dispose()
         await fiber.dispose()
         await fix.cleanup()
       }

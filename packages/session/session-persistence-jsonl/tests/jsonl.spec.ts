@@ -133,6 +133,55 @@ runCoordinatorContract('jsonl-none', async (): Promise<CoordinatorFixture> => {
   }
 })
 
+describe('JsonlSessionPersistence: physical delete', () => {
+  it('removes the whole session directory, not just the transcript', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-delete-'))
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const fiber = await ctx.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
+    try {
+      const m = meta('delete-dir', '/work')
+      await ctx.sessionPersistence.create(m)
+      await ctx.sessionPersistence.append(m.id, oneTurnLog())
+      const sessionDirPath = sessionDir(dir, '/work', m.id)
+      expect(await readdir(dirname(sessionDirPath))).toContain(encodeSegment(m.id))
+
+      expect(await ctx.sessionPersistence.delete(m.id)).toBe(true)
+      // The whole per-session directory (transcript + any future session-local
+      // artifacts) is gone, so a leftover opposite-encoding file can never trip
+      // the root encoding check on the next list.
+      await expect(stat(sessionDirPath)).rejects.toMatchObject({ code: 'ENOENT' })
+      expect(await ctx.sessionPersistence.list()).toEqual([])
+    } finally {
+      await fiber.dispose()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('refuses a delete that resolves to the same id in multiple project directories', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'dsh-jsonl-delete-'))
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const fiber = await ctx.plugin(JsonlSessionPersistence, { root: dir, compression: 'none' })
+    try {
+      const m = meta('ambiguous', '/work')
+      await ctx.sessionPersistence.create(m)
+      await ctx.sessionPersistence.append(m.id, oneTurnLog())
+      // Forge a second artifact under another project directory. findLog is
+      // existence-based, so the delete must refuse rather than pick one.
+      const forged = sessionDir(dir, '/other', m.id)
+      await mkdir(forged, { recursive: true })
+      await writeFile(join(forged, 'session.jsonl'), '')
+      await expect(ctx.sessionPersistence.delete(m.id)).rejects.toThrow(/duplicate JSONL session id/)
+      // The refusal removed nothing: the canonical transcript is still on disk.
+      await expect(stat(logPath(dir, '/work', m.id, 'none'))).resolves.toBeTruthy()
+    } finally {
+      await fiber.dispose()
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})
+
 describe('JsonlSessionPersistence: format helpers', () => {
   it('encodeSegment neutralizes traversal, separators, and absolute paths', () => {
     expect(encodeSegment('..')).toBe('~002E~002E')

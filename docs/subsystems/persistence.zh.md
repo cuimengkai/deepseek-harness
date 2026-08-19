@@ -4,7 +4,7 @@
 
 事件日志的**持久性 seam**。[session.md](session.md) 描述了内存中的 `Session`：仅追加的 `SessionEvent` 日志即为真源。本页描述如何使该日志持久化：抽象的 `SessionPersistence` 服务、它的后端、flush 检查点、崩溃恢复，以及随日志一同存储的元数据头。日志承载的事件词汇在生成的[持久化日志事件目录](../persistence-catalog.md)中逐项列举。
 
-该 seam 是一个[能力 seam](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)：一个抽象服务（[dsh-session-persistence](../../packages/session/session-persistence)，`ctx.sessionPersistence`）在现有 `SessionEvent` 上定义 locate/create/append、可复用的 Session 准备流程、逻辑 load/inspect、物理后缀读取，以及轻量的 list/snapshot 观察——**没有平行的持久化事件类型**——以及两个实现同一约定的可互换后端。见 [session-persistence Agent Note](../../.agents/notes/implemented/architecture/2026-06-14-session-persistence.md)。
+该 seam 是一个[能力 seam](../../.agents/notes/implemented/architecture/2026-06-13-capability-seams.md)：一个抽象服务（[dsh-session-persistence](../../packages/session/session-persistence)，`ctx.sessionPersistence`）在现有 `SessionEvent` 上定义 locate/create/append、可复用的 Session 准备流程、逻辑 load/inspect、物理后缀读取、物理删除，以及轻量的 list/snapshot 观察——**没有平行的持久化事件类型**——以及两个实现同一约定的可互换后端。见 [session-persistence Agent Note](../../.agents/notes/implemented/architecture/2026-06-14-session-persistence.md)。
 
 ## flush 检查点
 
@@ -230,7 +230,7 @@ interface SessionPersistenceSnapshot {
 
 ## 后端
 
-两者都实现同一个抽象 `SessionPersistence`（在 `SessionEvent` 上执行 locate/create/append/prepare/load/inspect/readFrom/list/listSnapshots，观察方法可选支持取消），并通过共享的 `runPersistenceContract` 套件：
+两者都实现同一个抽象 `SessionPersistence`（在 `SessionEvent` 上执行 locate/create/append/prepare/load/inspect/readFrom/delete/list/listSnapshots，观察方法可选支持取消），并通过共享的 `runPersistenceContract` 套件：
 
 - **[dsh-session-persistence-jsonl](../../packages/session/session-persistence-jsonl)**——每个会话一份仅追加的逻辑 JSONL 日志，默认存储为带 checksum 的连续 Zstandard frame，也可配置为原始行；支持崩溃安全的原子写入、被中断轮次的恢复以及读取/回放路径。
 - **[dsh-session-persistence-sqlite](../../packages/session/session-persistence-sqlite)**：基于 `node:sqlite`，每个 `SessionEvent` 一行。行字段 `(session_id, seq, type, time, data, source_event_seqs, surface_op)` 与事件 1:1 映射（包含可选的 surface 元数据），因此没有需要保持同步的并行持久化 schema。
@@ -242,6 +242,41 @@ interface SessionPersistenceSnapshot {
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — this section is byte-identical in both language sides of the page. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxsessiondeletion--sessiondeletion"></a>
+
+### `ctx.sessionDeletion` — `SessionDeletion`
+
+The cascade-deletion service. Opens the `session_deletion` ledger domain at init; a deployment without storage-domain routing for it cannot mount this plugin (loud misconfiguration, per repo convention).
+
+```ts cordis-catalog
+/**
+ * Physically delete one session and its entire subagent descendant tree.
+ * The scope is computed once from the merged live + persisted header corpus;
+ * if ANY member is live the whole operation refuses ({@link SessionDeletionError})
+ * and nothing is removed. Otherwise each member's durable log is deleted
+ * root-first through the persistence seam, the operation is recorded in the
+ * ledger (when at least one member existed), and mounted consumers clean
+ * their per-session state.
+ * @param id - the root session to delete.
+ * @param options - optional ledger reason.
+ * @returns the removed and absent scope members.
+ * @throws {@link SessionDeletionError} when any scope member is live.
+ */
+async deleteSession(id: SessionId, options: DeleteSessionOptions = {}): Promise<DeleteSessionResult>
+
+/**
+ * Read the durable deletion ledger, newest first. The ledger is diagnostic:
+ * it answers "was this id deleted, and when", not "what happened to every
+ * session" — a recreated id's later deletion overwrites its earlier record.
+ * @returns one record per delete operation, most recent first.
+ */
+listDeletions(): DeletionRecord[]
+```
+
+Types: [SessionId](core.md)
+
+Source: [`packages/session/session-deletion/src/index.ts:64`](../../packages/session/session-deletion/src/index.ts)
 
 <a id="ctxsessionpersistence--sessionpersistence-abstract-seam"></a>
 
@@ -294,6 +329,21 @@ abstract create(meta: SessionHeader): Promise<void>
  * @param events - the contiguous batch to persist, in seq order.
  */
 abstract append(id: SessionId, events: readonly SessionEvent[]): Promise<void>
+
+/**
+ * Physically delete one persisted session's durable log. Refuses while the
+ * session is live ({@link LiveSessionError}). A created-but-never-appended
+ * session has no artifact and counts as absent. After a successful delete
+ * the id behaves as never-created: `load`/`inspect`/`readFrom` report not
+ * found, `list`/`listSnapshots` omit it, and a later `create` may reuse the
+ * id with a fresh lifecycle. Backends coordinate the removal with the
+ * coordinator's write chain and prepared views; consumers observe the
+ * disappearance through their usual `listSnapshots` reconciliation.
+ * @param id - persisted session to remove.
+ * @param signal - optional cancellation for backend removal work.
+ * @returns whether a persisted artifact was removed (`false` when absent).
+ */
+abstract delete(id: SessionId, signal?: AbortSignal): Promise<boolean>
 
 /**
  * Prepare the exact unpublished Session used by resume. Implementations may
@@ -381,5 +431,5 @@ abstract listSnapshots(signal?: AbortSignal): Promise<SessionPersistenceSnapshot
 
 Types: [SessionEvent](session.md) · [SessionId](core.md)
 
-Source: [`packages/session/session-persistence/src/index.ts:84`](../../packages/session/session-persistence/src/index.ts)
+Source: [`packages/session/session-persistence/src/index.ts:85`](../../packages/session/session-persistence/src/index.ts)
 <!-- END GENERATED cordis-surface -->

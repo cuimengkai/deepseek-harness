@@ -112,6 +112,11 @@ export type WorkspaceBrowserInjected = DirectoryPickingInjected & {
   renameSession: (sessionId: SessionId, title: string) => Promise<void>
   /** Fork a Session at its last completed turn and open the child. */
   forkSession: (sessionId: SessionId) => void
+  /**
+   * Physically delete a Session and its whole subagent tree; the row and its
+   * descendants leave every grouping surface and any selection on them clears.
+   */
+  deleteSession: (sessionId: SessionId) => Promise<void>
   /** Rename a Host Workspace (rejects on name conflict; resolves on durability). */
   renameWorkspace: (workspaceId: WorkspaceId, title: string) => Promise<void>
   /** Delete only a Host Workspace registration; directory and Session logs remain. */

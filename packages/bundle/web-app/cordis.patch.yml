@@ -73,6 +73,14 @@
     - id: workspace
       name: '@deepseek-ai/dsh-workspace'
 
+    # Cascade session deletion: the ledger domain lands under the storage root
+    # beside `workspace.json` via the storage-domain json backend.
+    - id: session-deletion
+      name: '@deepseek-ai/dsh-session-deletion'
+
+    - id: command-session-delete
+      name: '@deepseek-ai/dsh-command-session-delete'
+
     - id: session-projection-cache
       name: '@deepseek-ai/dsh-session-projection-cache'
       config:

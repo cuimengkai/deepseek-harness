@@ -14,8 +14,10 @@ Durable session persistence, semantic checkpoint policy, and the shipped storage
 | [`session-checkpoint-policy/`](session-checkpoint-policy/README.md) | Applies semantic durability checkpoints | wraps `ctx.llm` and `ctx.tools` |
 | [`session-persistence-jsonl/`](session-persistence-jsonl/README.md) | Persists sessions in JSONL files | registers on `ctx.sessionPersistence` |
 | [`session-persistence-sqlite/`](session-persistence-sqlite/README.md) | Persists sessions in SQLite | registers on `ctx.sessionPersistence` |
+| [`session-deletion/`](session-deletion/README.md) | Cascade physical session deletion with a durable deletion ledger | `ctx.sessionDeletion` |
+| [`command-session-delete/`](command-session-delete/README.md) | Human-facing `/session-delete` command | registers on `ctx.commands` |
 
-The [session-persistence decision](../../.agents/notes/implemented/architecture/2026-06-14-session-persistence.md) records the persistence design.
+The [session-persistence decision](../../.agents/notes/implemented/architecture/2026-06-14-session-persistence.md) records the persistence design, and the [session-deletion note](../../.agents/notes/implemented/architecture/2026-08-19-session-deletion.md) records the deletion design.
 
 ## Projection
 

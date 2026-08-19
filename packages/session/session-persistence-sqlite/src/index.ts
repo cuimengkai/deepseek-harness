@@ -182,6 +182,10 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
     return this.coordinator.append(id, events)
   }
 
+  delete(id: SessionId, signal?: AbortSignal): Promise<boolean> {
+    return this.coordinator.delete(id, signal)
+  }
+
   override prepare(id: SessionId, signal?: AbortSignal): Promise<SessionPreparation> {
     return this.coordinator.prepare(id, signal)
   }
@@ -215,6 +219,34 @@ export class SqliteSessionPersistence extends SessionPersistence implements Pers
     signal?.throwIfAborted()
     const row = this.rowFor(id)
     return row === undefined ? undefined : sqliteRevision(this.storeIdentity, row)
+  }
+
+  /**
+   * Physically remove a session's `sessions` row and — via the declared
+   * `ON DELETE CASCADE` foreign key — every `events` row, all in ONE
+   * transaction. `parent_session` is a plain column with no foreign key
+   * (subagent children are enumerated in code, never by this delete), so this
+   * removes exactly the requested session. The row's existence is the
+   * materialization signal, so `changes === 0` means the session was never
+   * materialized (absent); `storeIdentity` is untouched.
+   */
+  async deleteStored(id: SessionId, signal?: AbortSignal): Promise<boolean> {
+    signal?.throwIfAborted()
+    await this.ready
+    signal?.throwIfAborted()
+    this.db.exec('BEGIN')
+    let changes: number | bigint
+    try {
+      changes = this.db.prepare('DELETE FROM sessions WHERE id = ?').run(id).changes
+      this.db.exec('COMMIT')
+    } catch (error: unknown) {
+      /* v8 ignore start -- synchronous delete failures only need transaction cleanup before propagation. */
+      this.db.exec('ROLLBACK')
+      throw error
+      /* v8 ignore stop */
+    }
+    signal?.throwIfAborted()
+    return Number(changes) > 0
   }
 
   /**

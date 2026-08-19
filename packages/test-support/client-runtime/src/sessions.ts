@@ -315,6 +315,11 @@ export class TestSessions implements ISessions {
     })
   }
 
+  /** Physically delete a session (test double: same as remove; the host owns durability). */
+  async delete(id: SessionId): Promise<void> {
+    await this.remove(id)
+  }
+
   /**
    * Register a per-session standard-props provider (production `provide`
    * contract: hooks become `use<Name>` selector hooks on the render side,

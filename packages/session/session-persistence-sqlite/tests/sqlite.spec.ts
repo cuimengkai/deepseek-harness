@@ -255,6 +255,56 @@ describe('SqliteSessionPersistence: durability and crash semantics', () => {
     await dispose()
   })
 
+  it('physically removes the session row and cascades its event rows', async () => {
+    const path = await freshDbPath()
+    const { ctx, dispose } = await backend(path)
+    try {
+      const m = meta('sqlite-delete', '/work')
+      await ctx.sessionPersistence.create(m)
+      await ctx.sessionPersistence.append(m.id, oneTurnLog())
+      expect(await ctx.sessionPersistence.delete(m.id)).toBe(true)
+      expect(await ctx.sessionPersistence.list()).toEqual([])
+      await expect(ctx.sessionPersistence.load(m.id)).rejects.toThrow(/not found/i)
+
+      // Verify the physical cascade at the row level: both the `sessions` row and
+      // every `events` row are gone, in the single delete transaction.
+      const db = openDatabase(path, 'wal')
+      try {
+        const sessionRows = db.prepare('SELECT COUNT(*) AS count FROM sessions WHERE id = ?').get(m.id) as { count: number }
+        expect(sessionRows.count).toBe(0)
+        const eventRows = db.prepare('SELECT COUNT(*) AS count FROM events WHERE session_id = ?').get(m.id) as { count: number }
+        expect(eventRows.count).toBe(0)
+      } finally {
+        db.close()
+      }
+    } finally {
+      await dispose()
+    }
+  })
+
+  it('leaves the store identity and other sessions untouched by a delete', async () => {
+    const path = await freshDbPath()
+    const { ctx, dispose } = await backend(path)
+    try {
+      const keeper = meta('sqlite-delete-keeper', '/work')
+      await ctx.sessionPersistence.create(keeper)
+      await ctx.sessionPersistence.append(keeper.id, oneTurnLog())
+      const before = await ctx.sessionPersistence.listSnapshots()
+
+      const gone = meta('sqlite-delete-stable', '/work')
+      await ctx.sessionPersistence.create(gone)
+      await ctx.sessionPersistence.append(gone.id, oneTurnLog())
+      await ctx.sessionPersistence.delete(gone.id)
+
+      const after = await ctx.sessionPersistence.listSnapshots()
+      expect(after).toHaveLength(1)
+      expect(after[0]?.header.id).toBe(keeper.id)
+      expect(after[0]?.revision).toBe(before[0]?.revision)
+    } finally {
+      await dispose()
+    }
+  })
+
   it('an interrupted turn (rows after the last turn/end) is PRESERVED and closed during load', async () => {
     const path = await freshDbPath()
     const m = meta('crash')

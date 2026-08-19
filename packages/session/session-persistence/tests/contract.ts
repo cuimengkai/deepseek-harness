@@ -428,5 +428,49 @@ export function runPersistenceContract(name: string, make: () => Promise<Contrac
         await dispose()
       }
     })
+
+    it('delete removes the durable session: load/inspect report not found and list omits it', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        const m = meta('delete-me', '/work')
+        await persistence.create(m)
+        await persistence.append(m.id, oneTurnLog())
+        expect(await persistence.delete(m.id)).toBe(true)
+
+        await expect(persistence.load(m.id)).rejects.toThrow(/not found/i)
+        await expect(persistence.inspect(m.id)).rejects.toThrow(/not found/i)
+        expect(await persistence.list()).toEqual([])
+        expect(await persistence.listSnapshots()).toEqual([])
+      } finally {
+        await dispose()
+      }
+    })
+
+    it('delete of an absent session returns false without error', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        expect(await persistence.delete(meta('never-created').id)).toBe(false)
+      } finally {
+        await dispose()
+      }
+    })
+
+    it('a deleted id can be recreated with a fresh lifecycle', async () => {
+      const { persistence, dispose } = await make()
+      try {
+        const m = meta('recreate', '/work')
+        await persistence.create(m)
+        await persistence.append(m.id, oneTurnLog())
+        expect(await persistence.delete(m.id)).toBe(true)
+
+        await persistence.create(m)
+        await persistence.append(m.id, oneTurnLog())
+        const loaded = await persistence.load(m.id)
+        expect(loaded.meta.id).toBe(m.id)
+        expect(loaded.events).toEqual(oneTurnLog())
+      } finally {
+        await dispose()
+      }
+    })
   })
 }
