@@ -30,7 +30,7 @@
   name: '@deepseek-ai/dsh-session-deletion'
 ```
 
-配合 [`@deepseek-ai/dsh-command-session-delete`](../command-session-delete/README.md) 提供 `/session-delete` 斜杠命令,或通过 host API proxy 暴露 `session.delete`。
+配合 [`@deepseek-ai/dsh-command-session-delete`](../command-session-delete/README.zh.md) 提供 `/session-delete` 斜杠命令,或通过 host API proxy 暴露 `session.delete`。
 
 ## 错误模型
 

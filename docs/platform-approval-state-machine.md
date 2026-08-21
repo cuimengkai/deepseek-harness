@@ -1,6 +1,6 @@
 # Approval Flow State Machine
 
-[中文](platform-approval-state-machine.zh.md) | English
+English | [中文](platform-approval-state-machine.zh.md)
 
 > Companion to [platform-architecture.md](platform-architecture.md) (D6): business approval (the platform's self-built state machine) and AI-execution approval (the `interaction` seam) are two layers, chained — business approval grants an authorization scope, and sensitive AI operations pass through execution approval inside that scope. This spec models both, grounded in `examples/platform-agent-demo/`.
 

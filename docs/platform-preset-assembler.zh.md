@@ -2,7 +2,7 @@
 
 [English](platform-preset-assembler.md) | 中文
 
-> [platform-architecture.md](platform-architecture.md)(D5、D2、T7)的配套文档:装配器把"角色 + 一组已选能力"变成可运行的 agent 装配。这是 §9 列出的后续细化设计规格,以 `examples/platform-agent-demo/` 的无密钥原型为依托。
+> [platform-architecture.zh.md](platform-architecture.zh.md)(D5、D2、T7)的配套文档:装配器把"角色 + 一组已选能力"变成可运行的 agent 装配。这是 §9 列出的后续细化设计规格,以 `examples/platform-agent-demo/` 的无密钥原型为依托。
 
 ## 1. 问题
 

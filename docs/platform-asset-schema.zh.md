@@ -2,7 +2,7 @@
 
 [English](platform-asset-schema.md) | 中文
 
-> [platform-architecture.md](platform-architecture.md)(D5、D7)的配套文档:schema 化资产是能力打包单元(插件 + 预设 + 资产 schema)的三分之一。本规范定义资产记录、其 kinds、id 方案与投影规则——以 `examples/platform-agent-demo/` 及其 `platformService` 为依托。
+> [platform-architecture.zh.md](platform-architecture.zh.md)(D5、D7)的配套文档:schema 化资产是能力打包单元(插件 + 预设 + 资产 schema)的三分之一。本规范定义资产记录、其 kinds、id 方案与投影规则——以 `examples/platform-agent-demo/` 及其 `platformService` 为依托。
 
 ## 1. 资产记录
 

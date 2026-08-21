@@ -4,7 +4,7 @@
 
 `product` agent 是产品经理,编写需求并注册为资产;`dev` agent 读取该需求并注册产出的代码;`qa` agent 验证代码并注册测试用例。`platform-agent-demo` 宿主插件与 `platform-service` 提供共享的资产/凭据工具与注册表;`mock-llm` 是无需密钥的模型路由。
 
-[docs/platform-architecture.md](../../docs/platform-architecture.md) 中多角色平台概念的一个无需密钥的可运行原型。三个角色 agent 共享同一个 harness 进程,但暴露不同的模型可见工具面,跨角色交换已注册资产,并把每一轮都写进持久化 session 日志。无需 `DEEPSEEK_API_KEY`,无需网络:`platform-demo` 模型 provider 是进程内脚本化 adapter。
+[docs/platform-architecture.zh.md](../../docs/platform-architecture.zh.md) 中多角色平台概念的一个无需密钥的可运行原型。三个角色 agent 共享同一个 harness 进程,但暴露不同的模型可见工具面,跨角色交换已注册资产,并把每一轮都写进持久化 session 日志。无需 `DEEPSEEK_API_KEY`,无需网络:`platform-demo` 模型 provider 是进程内脚本化 adapter。
 
 ## 运行
 

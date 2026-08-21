@@ -2,7 +2,7 @@
 
 [English](platform-capability-market.md) | 中文
 
-> [platform-architecture.md](platform-architecture.md)(D5、D4)的配套文档:能力市场是目录与装配层,使平台能力(插件 + 预设 + 资产 schema)可发现、可组合、可追溯。本规范定义元模型——打包单元、目录条目、发布/消费流——以 `examples/platform-agent-demo/` 为依托。
+> [platform-architecture.zh.md](platform-architecture.zh.md)(D5、D4)的配套文档:能力市场是目录与装配层,使平台能力(插件 + 预设 + 资产 schema)可发现、可组合、可追溯。本规范定义元模型——打包单元、目录条目、发布/消费流——以 `examples/platform-agent-demo/` 为依托。
 
 ## 1. 打包单元
 
@@ -12,7 +12,7 @@
 |---|---|
 | 插件 | 能力背后的工具/服务 |
 | 预设 | 能力贡献的角色工具面 |
-| 资产 schema | 能力产出的数据形态(见 [platform-asset-schema.md](platform-asset-schema.md)) |
+| 资产 schema | 能力产出的数据形态(见 [platform-asset-schema.zh.md](platform-asset-schema.zh.md)) |
 
 一个能力不是其中任何单样,而是三者合一。原型中的 `register_asset`、`get_asset` 与凭据工具是 demo 的能力;每个角色预设贡献角色工具面;每个资产 kind 是 schema。
 
@@ -33,7 +33,7 @@
 ## 3. 发布与消费
 
 - **发布**:能力作者打包三元组并注册条目。目录校验 id 唯一、依赖存在、schema-kind 已注册。
-- **消费**:用户选一个角色与一组能力;预设装配器(见 [platform-preset-assembler.md](platform-preset-assembler.md))渲染 agent 装配;roster 挂载之。`agent-preset/selected` 事件记录该 agent 运行的能力集。
+- **消费**:用户选一个角色与一组能力;预设装配器(见 [platform-preset-assembler.zh.md](platform-preset-assembler.zh.md))渲染 agent 装配;roster 挂载之。`agent-preset/selected` 事件记录该 agent 运行的能力集。
 
 ## 4. 装配期检查
 

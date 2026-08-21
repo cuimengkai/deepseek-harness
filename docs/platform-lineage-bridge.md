@@ -1,6 +1,6 @@
 # Lineage Bridge Data Model
 
-[中文](platform-lineage-bridge.zh.md) | English
+English | [中文](platform-lineage-bridge.zh.md)
 
 > Companion to [platform-architecture.md](platform-architecture.md) (D7): the lineage bridge connects business-object tables and session-log events through reference relations. This spec defines the bridge's data model — the reference event, the lineage table, and the query semantics — grounded in `examples/platform-agent-demo/`.
 

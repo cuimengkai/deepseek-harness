@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/platform-preset-assembler.md
-platform-preset-assembler.md: d0dbefef98eb66b796b587f9c47788d23eff548a
-platform-preset-assembler.zh.md: f8f4dfa6537df0bda61d8427695e21da6c1948ae
+platform-preset-assembler.md: 2b9509628a62168be4b0bcccd32d40f39162d07e
+platform-preset-assembler.zh.md: 6a8dcb5382138bff7705cea6fbdd57a57f179a10

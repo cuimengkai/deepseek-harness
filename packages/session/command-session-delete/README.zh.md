@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-面向用户的 `/session-delete` 命令,基于 [`ctx.sessionDeletion`](../session-deletion/README.md)。插件通过 [`ctx.commands`](../../interaction/commands/README.md) 注册一个全局命令,每个组成的命令适配器都能执行它,无需模型回合。
+面向用户的 `/session-delete` 命令,基于 [`ctx.sessionDeletion`](../session-deletion/README.zh.md)。插件通过 [`ctx.commands`](../../interaction/commands/README.zh.md) 注册一个全局命令,每个组成的命令适配器都能执行它,无需模型回合。
 
 ## 命令契约
 

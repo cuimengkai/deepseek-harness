@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/platform-asset-schema.md
-platform-asset-schema.md: fb561c485162527affcb4cc4a7f75f8504fe6694
-platform-asset-schema.zh.md: ec7fd788e5fd8eaf88f3bb223b94df8f28a02551
+platform-asset-schema.md: f9acc402ee121a3e140a237c119e91c7f34ee6cb
+platform-asset-schema.zh.md: c442aa6a2f3d59164bad214439d3e8b258cee411

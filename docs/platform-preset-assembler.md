@@ -1,6 +1,6 @@
 # Preset Assembler Design
 
-[中文](platform-preset-assembler.zh.md) | English
+English | [中文](platform-preset-assembler.zh.md)
 
 > Companion to [platform-architecture.md](platform-architecture.md) (D5, D2, T7): the assembler turns a role plus a chosen set of capabilities into a runnable agent composition. This is a design spec for the follow-up listed in §9, grounded in the keyless prototype at `examples/platform-agent-demo/`.
 

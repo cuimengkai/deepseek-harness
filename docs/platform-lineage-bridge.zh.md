@@ -2,11 +2,11 @@
 
 [English](platform-lineage-bridge.md) | 中文
 
-> [platform-architecture.md](platform-architecture.md)(D7)的配套文档:血缘桥通过引用关系把业务对象表与 session 日志事件互联。本规范定义桥的数据模型——引用事件、血缘表与查询语义——以 `examples/platform-agent-demo/` 为依托。
+> [platform-architecture.zh.md](platform-architecture.zh.md)(D7)的配套文档:血缘桥通过引用关系把业务对象表与 session 日志事件互联。本规范定义桥的数据模型——引用事件、血缘表与查询语义——以 `examples/platform-agent-demo/` 为依托。
 
 ## 1. 桥的两侧
 
-- **业务对象侧**:平台自建库持有 `PlatformAsset` 记录(见 [platform-asset-schema.md](platform-asset-schema.md))。每条记录持久,有稳定 `id`。
+- **业务对象侧**:平台自建库持有 `PlatformAsset` 记录(见 [platform-asset-schema.zh.md](platform-asset-schema.zh.md))。每条记录持久,有稳定 `id`。
 - **session 日志侧**:dsh session 日志记录每一个 AI 可见的输入与输出。触及业务对象的 AI 行为写入一条**引用事件**,指名该对象的 `id`。
 
 桥即连接:session 日志中的一行事件指向一个业务对象 id,血缘表记录该关系,使查询能从任一对象走到其祖先与后代。

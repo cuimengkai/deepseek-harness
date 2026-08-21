@@ -1,6 +1,6 @@
 # Capability Market Meta-model
 
-[中文](platform-capability-market.zh.md) | English
+English | [中文](platform-capability-market.zh.md)
 
 > Companion to [platform-architecture.md](platform-architecture.md) (D5, D4): the capability market is the catalog-and-assembly layer that makes a platform capability (plugin + preset + asset schema) discoverable, combinable, and traceable. This spec defines the meta-model — the packaging unit, the catalog entry, and the publish/consume flow — grounded in `examples/platform-agent-demo/`.
 

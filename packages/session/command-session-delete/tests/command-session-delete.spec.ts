@@ -32,7 +32,7 @@ async function run(
   agent: Agent,
   input: string,
 ): Promise<NonNullable<Awaited<ReturnType<CommandRuntime['execute']>>>> {
-  const execution = await ctx.commands.execute(agent, input, new AbortController().signal)
+  const execution = await ctx.commands.execute(agent, input, [], new AbortController().signal)
   if (execution === undefined) throw new Error('session-delete command was not registered')
   return execution
 }

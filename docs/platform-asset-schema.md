@@ -1,6 +1,6 @@
 # Asset Schema Specification
 
-[中文](platform-asset-schema.zh.md) | English
+English | [中文](platform-asset-schema.zh.md)
 
 > Companion to [platform-architecture.md](platform-architecture.md) (D5, D7): the schema-ified asset is one third of the capability packaging unit (plugin + preset + asset schema). This spec defines the asset record, its kinds, the id scheme, and the projection rules — grounded in `examples/platform-agent-demo/` and its `platformService`.
 

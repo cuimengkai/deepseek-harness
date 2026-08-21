@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/platform-lineage-bridge.md
-platform-lineage-bridge.md: ac02b76cf9adc3176106c35ccde2f9bba57645fd
-platform-lineage-bridge.zh.md: f987ced4d66a02d0f9932109aa37582f59781ff3
+platform-lineage-bridge.md: bb59654d2f952217c551f712990db36dc929c8fb
+platform-lineage-bridge.zh.md: 471e26c24f13df44dddaa191c87f6a4b61b8d688

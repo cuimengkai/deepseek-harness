@@ -2,7 +2,7 @@
 
 [English](platform-approval-state-machine.md) | 中文
 
-> [platform-architecture.md](platform-architecture.md)(D6)的配套文档:业务审批(平台自建状态机)与 AI 执行审批(`interaction` 缝)是两层,串接而成——业务审批授予授权范围,范围内的敏感 AI 操作再过执行审批。本规范为两层建模,以 `examples/platform-agent-demo/` 为依托。
+> [platform-architecture.zh.md](platform-architecture.zh.md)(D6)的配套文档:业务审批(平台自建状态机)与 AI 执行审批(`interaction` 缝)是两层,串接而成——业务审批授予授权范围,范围内的敏感 AI 操作再过执行审批。本规范为两层建模,以 `examples/platform-agent-demo/` 为依托。
 
 ## 1. 两层,一条链
 
