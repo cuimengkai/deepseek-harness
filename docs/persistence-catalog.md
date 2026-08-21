@@ -218,7 +218,7 @@ Source: [`packages/interaction/user-approval/src/index.ts:67`](../packages/inter
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:359`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:360`](../packages/experimental/platform-shell/src/types.ts)
 
 <a id="assetregister--log-only"></a>
 
@@ -234,7 +234,7 @@ Source: [`packages/experimental/platform-shell/src/types.ts:359`](../packages/ex
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:366`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:367`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `assistant/*`
 
@@ -289,7 +289,7 @@ Source: [`packages/core/session/src/types.ts:277`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:394`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:405`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `capability/*`
 
@@ -306,7 +306,7 @@ Source: [`packages/experimental/platform-shell/src/types.ts:394`](../packages/ex
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:382`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:393`](../packages/experimental/platform-shell/src/types.ts)
 
 <a id="capabilityselected--log-only"></a>
 
@@ -321,7 +321,7 @@ Source: [`packages/experimental/platform-shell/src/types.ts:382`](../packages/ex
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:388`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:399`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `command/*`
 
@@ -638,7 +638,26 @@ Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/s
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:373`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:384`](../packages/experimental/platform-shell/src/types.ts)
+
+<a id="platformworkspaceisolated--log-only"></a>
+
+#### `platform/workspace/isolated` — log-only
+
+```ts persistence-catalog
+/**
+ * A drive ran in the physical-isolation engine the workspace's isolation
+ * record demands. The control-plane audit log is the authoritative record
+ * of an isolation flip; this event is the durable per-session projection
+ * emitted by the engine that ran the isolated drive.
+ */
+'platform/workspace/isolated': {
+  workspaceId: WorkspaceId
+  isolated: boolean
+}
+```
+
+Source: [`packages/experimental/platform-shell/src/types.ts:379`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `request/*`
 

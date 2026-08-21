@@ -490,6 +490,9 @@ importers:
       '@deepseek-ai/dsh-experimental-agent-team':
         specifier: workspace:*
         version: link:../packages/experimental/agent-team
+      '@deepseek-ai/dsh-experimental-engine-isolation':
+        specifier: workspace:*
+        version: link:../packages/experimental/engine-isolation
       '@deepseek-ai/dsh-experimental-platform-shell':
         specifier: workspace:*
         version: link:../packages/experimental/platform-shell
@@ -4168,6 +4171,31 @@ importers:
       '@deepseek-ai/dsh-subagent-spawn-in-process':
         specifier: workspace:^
         version: link:../../subagent/subagent-spawn-in-process
+
+  packages/experimental/engine-isolation:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-experimental-platform-shell':
+        specifier: workspace:^
+        version: link:../platform-shell
+      '@deepseek-ai/dsh-invariants':
+        specifier: workspace:^
+        version: link:../../runtime-diagnostics/invariants
+      '@deepseek-ai/dsh-session':
+        specifier: workspace:^
+        version: link:../../core/session
+      '@deepseek-ai/dsh-subprocess':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess
+      '@deepseek-ai/dsh-subprocess-local':
+        specifier: workspace:^
+        version: link:../../subprocess/subprocess-local
 
   packages/experimental/platform-shell:
     dependencies:

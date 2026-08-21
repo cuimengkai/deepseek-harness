@@ -13,7 +13,7 @@ import { defineTool, type ToolRunContext, type ValueSchemaSpec } from '@deepseek
 import type { JsonValue, Session } from '@deepseek-ai/dsh-session'
 import { PlatformShellError } from './error.ts'
 import type { PlatformShellService } from './service.ts'
-import type { ApprovalTicket, AssetId, AuditEvent, CapabilityId, ReviewScope, ScenarioId, TicketId, UserId, WorkspaceId } from './types.ts'
+import type { ApprovalTicket, AssetId, AuditEvent, CapabilityId, CapabilityRecord, ReviewScope, ScenarioId, TicketId, UserId, WorkspaceId } from './types.ts'
 import { RoleId, WorkspaceId as brandWorkspaceId } from './types.ts'
 
 /** The closed role set the seeded platform ships (identity seed roles). */
@@ -74,9 +74,27 @@ const capabilitySchema = {
     rollout: { type: 'number', required: true },
     rate: { type: 'number', required: true },
     description: { type: 'string', required: true },
+    tools: { type: 'array', required: true, items: { type: 'string' } },
     createdAt: { type: 'number', required: true },
   },
 } satisfies ValueSchemaSpec
+
+/** Project a durable capability record into the mutable JSON the schema declares. */
+function toCapabilityJson(capability: CapabilityRecord): {
+  id: string
+  name: string
+  roleId: string
+  execution: string
+  version: string
+  enabled: boolean
+  rollout: number
+  rate: number
+  description: string
+  tools: string[]
+  createdAt: number
+} {
+  return { ...capability, tools: [...capability.tools] }
+}
 
 /** Model-facing scenario bundle (one pluggable C-side workbench surface). */
 const scenarioSchema = {
@@ -528,6 +546,7 @@ export function registerPlatformShellTools(ctx: Context, options: { readonly res
           description: 'capabilities this capability requires, resolved transitively',
         },
         conflictsWith: { type: 'array', items: { type: 'string' }, description: 'capabilities that must not co-occur in one selection' },
+        tools: { type: 'array', items: { type: 'string' }, description: 'tool names whose execution this capability\'s gate governs' },
         enabled: { type: 'boolean', description: 'execution gate; defaults to enabled' },
         rollout: { type: 'number', description: 'gray-release fraction 0..1 of workspaces allowed; defaults to 1' },
         description: { type: 'string', description: 'capability description' },
@@ -557,13 +576,14 @@ export function registerPlatformShellTools(ctx: Context, options: { readonly res
           ...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
           ...(args.rollout !== undefined ? { rollout: args.rollout } : {}),
           ...(args.description !== undefined ? { description: args.description } : {}),
+          ...(args.tools !== undefined ? { tools: args.tools } : {}),
         })
         session.append('capability/published', {
           capabilityId: capability.id,
           version: capability.version,
           roleId: capability.roleId,
         })
-        return { capability }
+        return { capability: toCapabilityJson(capability) }
       },
     }),
     defineTool({
@@ -583,7 +603,7 @@ export function registerPlatformShellTools(ctx: Context, options: { readonly res
       },
       async execute(_args, exec) {
         const { actor } = boundCall(exec, resolveActor)
-        return { capabilities: shell().listCapabilities(actor) }
+        return { capabilities: shell().listCapabilities(actor).map(toCapabilityJson) }
       },
     }),
     defineTool({
@@ -622,7 +642,7 @@ export function registerPlatformShellTools(ctx: Context, options: { readonly res
         })
         // The output schema's items are plain JSON, so the durable readonly
         // sets project into mutable arrays.
-        return { requested: [...resolved.requested], resolved: [...resolved.resolved], preset: resolved.preset }
+        return { requested: [...resolved.requested], resolved: resolved.resolved.map(toCapabilityJson), preset: resolved.preset }
       },
     }),
     defineTool({
@@ -651,7 +671,7 @@ export function registerPlatformShellTools(ctx: Context, options: { readonly res
           capabilityIdOf(args.capabilityId),
           { enabled: args.enabled, rollout: args.rollout },
         )
-        return { capability }
+        return { capability: toCapabilityJson(capability) }
       },
     }),
     defineTool({

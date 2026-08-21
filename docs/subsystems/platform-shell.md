@@ -140,9 +140,28 @@ registerUser(name: string): UserId
 /**
  * Create one workspace.
  * @param name - the workspace's display name.
+ * @param options - optional creation options.
+ * @param options.isolated - whether the workspace demands on-demand physical
+ * isolation (schema v3); the default shares the physical store.
  * @returns the created workspace identity.
  */
-createWorkspace(name: string): WorkspaceId
+createWorkspace(name: string, options: { readonly isolated?: boolean } = {}): WorkspaceId
+
+/**
+ * Set whether one workspace demands on-demand physical isolation.
+ * Requires the `platform.isolation` permission.
+ * @param actor - the platform user making the change.
+ * @param workspaceId - the workspace to re-flag.
+ * @param isolated - the new isolation state.
+ */
+setWorkspaceIsolation(actor: UserId, workspaceId: WorkspaceId, isolated: boolean): void
+
+/**
+ * Whether one workspace demands on-demand physical isolation.
+ * @param workspaceId - the workspace to inspect.
+ * @returns true when the workspace is isolated, false when shared.
+ */
+workspaceIsolation(workspaceId: WorkspaceId): boolean
 
 /**
  * Register or merge one role with its permission set (idempotent).
@@ -341,6 +360,15 @@ getCapability(actor: UserId, capabilityId: CapabilityId): CapabilityRecord | und
  * @returns the committed entry.
  */
 setCapabilityGate(actor: UserId, capabilityId: CapabilityId, gate: CapabilityGate): CapabilityRecord
+
+/**
+ * The fresh catalog record whose gate governs one tool's execution, or
+ * `undefined` when no capability owns the tool. The execution-gate read: it
+ * must never cache, because the operator may flip the gate between calls.
+ * @param toolName - the tool name to resolve an owner for.
+ * @returns the owning capability's fresh record, or undefined when unowned.
+ */
+runtimeCapabilityOwningTool(toolName: string): CapabilityRecord | undefined
 
 /**
  * Register one scenario bundle (a pluggable C-side workbench surface).

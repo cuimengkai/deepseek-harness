@@ -82,7 +82,7 @@ describe('openDatabase ownership', () => {
       // Insert a member with an unknown role; the foreign key must reject it.
       db.exec(sql('begin-immediate'))
       db.prepare(sql('insert-user')).run('u-1', 'Alice', 1)
-      db.prepare(sql('insert-workspace')).run('w-1', 'Platform', 1)
+      db.prepare(sql('insert-workspace')).run('w-1', 'Platform', 0, 1)
       expect(() => db.prepare(sql('insert-member')).run('w-1', 'u-1', 'missing-role')).toThrow()
       db.exec(sql('rollback'))
       const journal = db.prepare(sql('select-journal-mode')).get() as { journal_mode: string }

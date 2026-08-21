@@ -70,7 +70,10 @@ async function importNodeSqlite(): Promise<typeof import('node:sqlite')> {
   /* v8 ignore stop */
 }
 
-/** Validate the parent directory of one platform database path. */
+/**
+ * Validate the parent directory of one platform database path.
+ * @param path - resolved database parent path.
+ */
 export async function validateParentDirectory(path: string): Promise<void> {
   const parent = await lstat(path)
   if (parent.isSymbolicLink() || !parent.isDirectory()) {
@@ -100,7 +103,10 @@ export async function prepareDatabasePath(path: string): Promise<string> {
   return actual
 }
 
-/** Load the Node SQLite constructor once (shared warning-filter lifetime). */
+/**
+ * Load the Node SQLite constructor once (shared warning-filter lifetime).
+ * @returns the lazily loaded Node SQLite module.
+ */
 export function loadSqliteConstructor(): Promise<typeof import('node:sqlite')> {
   return loadNodeSqlite()
 }

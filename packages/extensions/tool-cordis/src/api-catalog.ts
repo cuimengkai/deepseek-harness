@@ -709,6 +709,38 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'engineIsolation',
+    summary: 'The engine-isolation service.',
+    description: 'The engine-isolation service. Register via `ctx.plugin(EngineIsolationService, config)`; the service is injected as `ctx.engineIsolation`. Requires the platformShell control-plane service, whose isolation record routes each workspace to its engine.',
+    methods: [
+      {
+        signature: 'driver(workspaceId: WorkspaceId): EngineDriver',
+        description: 'Resolve the engine driver one workspace\'s runs use.',
+        parameters: [{ name: 'workspaceId', description: 'the workspace to route.' }],
+        returns: 'the process-out driver for an isolated workspace, the in-process driver for a shared one.',
+        throws: ['the platform store\'s UNKNOWN_WORKSPACE when the workspace does not exist.'],
+      },
+      {
+        signature: 'async drive(request: AgentRunRequest): Promise<RunHandle>',
+        description: 'Drive one agent run in the workspace\'s engine (routed by isolation).',
+        parameters: [{ name: 'request', description: 'the run to execute.' }],
+        returns: 'the durable outcome handle.',
+      },
+      {
+        signature: 'async listSessions(workspaceId: WorkspaceId): Promise<readonly SessionId[]>',
+        description: 'List the sessions one workspace\'s engine holds durably.',
+        parameters: [{ name: 'workspaceId', description: 'the workspace whose engine to ask.' }],
+        returns: 'the engine\'s durable session ids for that workspace.',
+      },
+      {
+        signature: 'async readLog(sessionId: SessionId): Promise<readonly SessionEvent[]>',
+        description: 'Read one session\'s durable log from the workspace engine that owns it. A session id alone does not name its workspace, so the process-out engine is asked first (isolated sessions live in its per-workspace roots) and the in-process engine only when the process-out roots hold no such session.',
+        parameters: [{ name: 'sessionId', description: 'the session to read.' }],
+        returns: 'the committed events, or an empty list when the session is absent from both engines.',
+      },
+    ],
+  },
+  {
     key: 'fileReferences',
     summary: 'Host capability for cancellable file-reference discovery.',
     description: 'Host capability for cancellable file-reference discovery.',
@@ -1145,10 +1177,21 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the registered platform user identity.',
       },
       {
-        signature: 'createWorkspace(name: string): WorkspaceId',
+        signature: 'createWorkspace(name: string, options: { readonly isolated?: boolean } = {}): WorkspaceId',
         description: 'Create one workspace.',
-        parameters: [{ name: 'name', description: 'the workspace\'s display name.' }],
+        parameters: [{ name: 'name', description: 'the workspace\'s display name.' }, { name: 'options', description: '.isolated - whether the workspace demands on-demand physical isolation (schema v3); the default shares the physical store.' }],
         returns: 'the created workspace identity.',
+      },
+      {
+        signature: 'setWorkspaceIsolation(actor: UserId, workspaceId: WorkspaceId, isolated: boolean): void',
+        description: 'Set whether one workspace demands on-demand physical isolation. Requires the `platform.isolation` permission.',
+        parameters: [{ name: 'actor', description: 'the platform user making the change.' }, { name: 'workspaceId', description: 'the workspace to re-flag.' }, { name: 'isolated', description: 'the new isolation state.' }],
+      },
+      {
+        signature: 'workspaceIsolation(workspaceId: WorkspaceId): boolean',
+        description: 'Whether one workspace demands on-demand physical isolation.',
+        parameters: [{ name: 'workspaceId', description: 'the workspace to inspect.' }],
+        returns: 'true when the workspace is isolated, false when shared.',
       },
       {
         signature: 'registerRole(roleId: RoleId, displayName: string, permissions: readonly Permission[]): void',
@@ -1294,6 +1337,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Set one catalog entry\'s execution gate.',
         parameters: [{ name: 'actor', description: 'the operator setting the gate.' }, { name: 'capabilityId', description: 'the catalog entry to gate.' }, { name: 'gate', description: 'enabled flag and 0..1 rollout fraction.' }],
         returns: 'the committed entry.',
+      },
+      {
+        signature: 'runtimeCapabilityOwningTool(toolName: string): CapabilityRecord | undefined',
+        description: 'The fresh catalog record whose gate governs one tool\'s execution, or `undefined` when no capability owns the tool. The execution-gate read: it must never cache, because the operator may flip the gate between calls.',
+        parameters: [{ name: 'toolName', description: 'the tool name to resolve an owner for.' }],
+        returns: 'the owning capability\'s fresh record, or undefined when unowned.',
       },
       {
         signature: 'publishScenario(actor: UserId, request: PublishScenarioRequest): ScenarioBundle',
@@ -3140,6 +3189,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type AgentCancelCause = {\n    readonly kind: \'user\';\n} | {\n    readonly kind: \'parent\';\n} | {\n    readonly kind: \'hook\';\n    readonly reason: string;\n} | {\n    readonly kind: \'disposed\';\n};',
   },
   {
+    name: 'AgentDrive',
+    declaration: 'export interface AgentDrive {\n    readonly prompt: string;\n    readonly provider: string;\n    readonly model: string;\n    readonly cwd: string;\n}',
+  },
+  {
     name: 'AgentFactory',
     declaration: 'export interface AgentFactory {\n    createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>;\n    resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>;\n}',
   },
@@ -3154,6 +3207,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AgentPreset',
     declaration: 'export interface AgentPreset {\n    readonly id: string;\n    readonly trust: PresetTrust;\n    readonly path: string;\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n    readonly broken?: string;\n}',
+  },
+  {
+    name: 'AgentRunRequest',
+    declaration: 'export interface AgentRunRequest {\n    readonly sessionId: SessionId;\n    readonly workspaceId: WorkspaceId;\n    readonly drive: AgentDrive;\n}',
   },
   {
     name: 'AgentSetup',
@@ -3349,7 +3406,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CapabilityRecord',
-    declaration: 'export interface CapabilityRecord {\n    readonly id: CapabilityId;\n    readonly name: string;\n    readonly roleId: RoleId;\n    readonly execution: ExecutionMode;\n    readonly version: string;\n    readonly enabled: boolean;\n    readonly rollout: number;\n    readonly rate: number;\n    readonly description: string;\n    readonly createdAt: number;\n}',
+    declaration: 'export interface CapabilityRecord {\n    readonly id: CapabilityId;\n    readonly name: string;\n    readonly roleId: RoleId;\n    readonly execution: ExecutionMode;\n    readonly version: string;\n    readonly enabled: boolean;\n    readonly rollout: number;\n    readonly rate: number;\n    readonly description: string;\n    readonly tools: readonly string[];\n    readonly createdAt: number;\n}',
   },
   {
     name: 'ClientResponse',
@@ -3678,6 +3735,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EncodedImageAttachment',
     declaration: 'export interface EncodedImageAttachment {\n    mediaType: ImageMediaType;\n    data: string;\n    name?: string;\n}',
+  },
+  {
+    name: 'EngineDriver',
+    declaration: 'export interface EngineDriver {\n    readonly kind: EngineKind;\n    drive(request: AgentRunRequest): Promise<RunHandle>;\n    listSessions(workspaceId: WorkspaceId): Promise<readonly SessionId[]>;\n    readLog(sessionId: SessionId): Promise<readonly SessionEvent[]>;\n}',
+  },
+  {
+    name: 'EngineKind',
+    declaration: 'export type EngineKind = \'in-process\' | \'process-out\';',
   },
   {
     name: 'EpochHeader',
@@ -4157,7 +4222,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Permission',
-    declaration: 'export type Permission = \'asset.read\' | \'asset.register\' | \'approval.review\' | \'approval.release\' | \'audit.read\' | \'capability.publish\' | \'capability.consume\' | \'billing.read\' | \'billing.settle\';',
+    declaration: 'export type Permission = \'asset.read\' | \'asset.register\' | \'approval.review\' | \'approval.release\' | \'audit.read\' | \'capability.publish\' | \'capability.consume\' | \'billing.read\' | \'billing.settle\' | \'platform.isolation\';',
   },
   {
     name: 'PermissionSelect',
@@ -4245,7 +4310,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PublishCapabilityRequest',
-    declaration: 'export interface PublishCapabilityRequest {\n    readonly id: CapabilityId;\n    readonly name: string;\n    readonly roleId: RoleId;\n    readonly execution: ExecutionMode;\n    readonly version: string;\n    readonly rate: number;\n    readonly dependencies?: readonly {\n        readonly id: CapabilityId;\n        readonly range?: string;\n    }[];\n    readonly conflictsWith?: readonly CapabilityId[];\n    readonly enabled?: boolean;\n    readonly rollout?: number;\n    readonly description?: string;\n}',
+    declaration: 'export interface PublishCapabilityRequest {\n    readonly id: CapabilityId;\n    readonly name: string;\n    readonly roleId: RoleId;\n    readonly execution: ExecutionMode;\n    readonly version: string;\n    readonly rate: number;\n    readonly tools?: readonly string[];\n    readonly dependencies?: readonly {\n        readonly id: CapabilityId;\n        readonly range?: string;\n    }[];\n    readonly conflictsWith?: readonly CapabilityId[];\n    readonly enabled?: boolean;\n    readonly rollout?: number;\n    readonly description?: string;\n}',
   },
   {
     name: 'PublishScenarioRequest',
@@ -4366,6 +4431,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RpcResult',
     declaration: 'export type RpcResult<T> = {\n    ok: true;\n    value: T;\n} | {\n    ok: false;\n    error: RpcError;\n};',
+  },
+  {
+    name: 'RunHandle',
+    declaration: 'export interface RunHandle {\n    readonly sessionId: SessionId;\n    readonly workspaceId: WorkspaceId;\n    readonly pid: number;\n    readonly status: \'completed\' | \'failed\';\n    readonly storePath: string;\n    readonly logRoot: string;\n}',
   },
   {
     name: 'RunnerFailureRule',

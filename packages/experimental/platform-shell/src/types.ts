@@ -139,6 +139,7 @@ export type Permission =
   | 'capability.consume'
   | 'billing.read'
   | 'billing.settle'
+  | 'platform.isolation'
 
 /** The closed set of asset kinds the store validates against (asset-schema §2). */
 export type AssetKind = 'requirement' | 'design' | 'code' | 'test-case' | 'handoff'
@@ -239,6 +240,8 @@ export interface CapabilityRecord {
   readonly rollout: number
   readonly rate: number
   readonly description: string
+  /** The tool surface whose execution this capability's gate governs. */
+  readonly tools: readonly string[]
   readonly createdAt: number
 }
 
@@ -299,6 +302,8 @@ export interface PublishCapabilityRequest {
   readonly execution: ExecutionMode
   readonly version: string
   readonly rate: number
+  /** The tool names whose execution this capability's gate governs. */
+  readonly tools?: readonly string[]
   readonly dependencies?: readonly { readonly id: CapabilityId; readonly range?: string }[]
   readonly conflictsWith?: readonly CapabilityId[]
   readonly enabled?: boolean
@@ -368,6 +373,16 @@ declare module '@deepseek-ai/dsh-session/types' {
       kind: AssetKind
       roleId: RoleId
       workspaceId: WorkspaceId
+    }
+    /**
+     * A drive ran in the physical-isolation engine the workspace's isolation
+     * record demands. The control-plane audit log is the authoritative record
+     * of an isolation flip; this event is the durable per-session projection
+     * emitted by the engine that ran the isolated drive.
+     */
+    'platform/workspace/isolated': {
+      workspaceId: WorkspaceId
+      isolated: boolean
     }
     /** A business approval ticket crossed a state-machine edge. */
     'platform/approval/transition': {

@@ -34,6 +34,8 @@ const NO_MODEL_EXPERIENCE_SECTION: Readonly<Record<string, string>> = {
   'packages/util/brand': 'The package is a type-only primitive erased at compile time.',
   'packages/util/home-paths': 'The package only resolves harness-owned host paths; model-facing consumers own any rendered use.',
   'packages/util/launch-environment': 'The package only resolves host environment values; model-facing consumers own any rendered use.',
+  'packages/session/command-session-delete': 'The command is human-invoked (per its JSDoc) and executes without a model turn; it registers no prompt, tool schema, or model-facing effect.',
+  'packages/session/session-deletion': 'The cascade deletion seam and its durable ledger register no prompt, tool schema, or model-facing effect; the slash-command consumer owns the human-facing surface.',
 }
 
 /**
@@ -167,6 +169,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/web/web-fetch-http': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
   'packages/web/web-search-exa': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
   'packages/workflow/workflow': { kind: 'indirect', reason: 'The service delegates parent and child model rendering to its consumer and engine.' },
+  'packages/experimental/engine-isolation': { kind: 'indirect', reason: 'The engine seam delegates agent running to the in-process runner and the process-out child assembly, which own every model-facing registration the drive makes visible.' },
 }
 
 interface Failure {

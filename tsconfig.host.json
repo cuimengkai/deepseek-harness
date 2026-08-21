@@ -282,6 +282,7 @@
     { "path": "./packages/experimental/agent-team" },
     { "path": "./packages/experimental/tool-agent-team" },
     { "path": "./packages/experimental/platform-shell" },
+    { "path": "./packages/experimental/engine-isolation" },
     { "path": "./packages/workflow/workflow" },
     { "path": "./packages/workflow/workflow-worker-thread" },
     { "path": "./packages/workflow/tool-workflow" },

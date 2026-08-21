@@ -3235,6 +3235,7 @@ export interface Config {
 - `@deepseek-ai/dsh-command-compact` — 需要 `commands` · `compact`（[`packages/compaction/command-compact/src/index.ts`](../packages/compaction/command-compact/src/index.ts)）
 - `@deepseek-ai/dsh-command-feedback` — 需要 `commands`（[`packages/feedback/command-feedback/src/index.ts`](../packages/feedback/command-feedback/src/index.ts)）
 - `@deepseek-ai/dsh-command-goal` — 需要 `commands` · `goals`（[`packages/goal/command-goal/src/index.ts`](../packages/goal/command-goal/src/index.ts)）
+- `@deepseek-ai/dsh-command-session-delete` — 需要 `commands` · `sessionDeletion`（[`packages/session/command-session-delete/src/index.ts`](../packages/session/command-session-delete/src/index.ts)）
 - `@deepseek-ai/dsh-commands`（[`packages/interaction/commands/src/index.ts`](../packages/interaction/commands/src/index.ts)）
 - `@deepseek-ai/dsh-cordis-client-runner`（[`packages/extensions/cordis-client-runner/src/index.ts`](../packages/extensions/cordis-client-runner/src/index.ts)）
 - `@deepseek-ai/dsh-fs-e2b` — 需要 `e2b`（[`packages/e2b/fs-e2b/src/index.ts`](../packages/e2b/fs-e2b/src/index.ts)）
@@ -3248,6 +3249,7 @@ export interface Config {
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）
 - `@deepseek-ai/dsh-session`（[`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts)）
 - `@deepseek-ai/dsh-session-checkpoint-policy` — 需要 `llm` · `sessionPersistence` · `sessions` · `tools`（[`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts)）
+- `@deepseek-ai/dsh-session-deletion` — 需要 `storageDomain` · `sessions` · `sessionPersistence`（[`packages/session/session-deletion/src/index.ts`](../packages/session/session-deletion/src/index.ts)）
 - `@deepseek-ai/dsh-session-log-export` — 需要 `commands`（[`packages/session-query/session-log-export/src/index.ts`](../packages/session-query/session-log-export/src/index.ts)）
 - `@deepseek-ai/dsh-session-projection`（[`packages/session/session-projection/src/index.ts`](../packages/session/session-projection/src/index.ts)）
 - `@deepseek-ai/dsh-session-stats` — 需要 `sessionProjections`（[`packages/session/session-stats/src/index.ts`](../packages/session/session-stats/src/index.ts)）
@@ -3300,6 +3302,8 @@ export interface Config {
 - `@deepseek-ai/dsh-client-web`（[`packages/client/web/src/index.ts`](../packages/client/web/src/index.ts)）
 - `@deepseek-ai/dsh-cmdline`（[`packages/boot/cmdline/src/index.ts`](../packages/boot/cmdline/src/index.ts)）
 - `@deepseek-ai/dsh-code-runtime-python`（[`packages/code-runtime/code-runtime-python/src/index.ts`](../packages/code-runtime/code-runtime-python/src/index.ts)）
+- `@deepseek-ai/dsh-experimental-engine-isolation`（[`packages/experimental/engine-isolation/src/index.ts`](../packages/experimental/engine-isolation/src/index.ts)）
+- `@deepseek-ai/dsh-experimental-platform-shell`（[`packages/experimental/platform-shell/src/index.ts`](../packages/experimental/platform-shell/src/index.ts)）
 - `@deepseek-ai/dsh-home-paths`（[`packages/util/home-paths/src/index.ts`](../packages/util/home-paths/src/index.ts)）
 - `@deepseek-ai/dsh-hook-protocol`（[`packages/hooks/hook-protocol/src/index.ts`](../packages/hooks/hook-protocol/src/index.ts)）
 - `@deepseek-ai/dsh-launch-environment`（[`packages/util/launch-environment/src/index.ts`](../packages/util/launch-environment/src/index.ts)）

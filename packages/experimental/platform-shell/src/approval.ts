@@ -31,7 +31,17 @@ const TRANSITIONS: Readonly<Record<BusinessApprovalStatus, readonly BusinessAppr
   released: [],
 }
 
-/** Create one ticket in `draft`, referencing a business asset. */
+/**
+ * Create one ticket in `draft`, referencing a business asset.
+ * @param db - the SQLite database handle.
+ * @param workspaceId - the workspace the subject asset belongs to.
+ * @param subjectKind - the subject asset's kind.
+ * @param subjectId - the subject asset's branded id.
+ * @param actorUserId - the platform user creating the ticket.
+ * @param now - the epoch-ms timestamp.
+ * @param sequence - the ticket-local deterministic sequence.
+ * @returns the committed draft ticket.
+ */
 export function createTicket(
   db: DatabaseSync,
   workspaceId: WorkspaceId,
@@ -67,7 +77,16 @@ export function createTicket(
   }
 }
 
-/** Move one ticket across an allowed edge, appending its transition row. */
+/**
+ * Move one ticket across an allowed edge, appending its transition row.
+ * @param db - the SQLite database handle.
+ * @param ticket - the ticket to move.
+ * @param to - the target status.
+ * @param actorUserId - the platform user authorizing the transition.
+ * @param now - the epoch-ms timestamp.
+ * @param scope - the review scope the `approved` edge requires, else omitted.
+ * @returns the committed ticket.
+ */
 export function transitionTicket(
   db: DatabaseSync,
   ticket: ApprovalTicket,
@@ -90,32 +109,55 @@ export function transitionTicket(
   return { ...ticket, status: to, reviewScope: scope, updatedAt: now }
 }
 
-/** Read one ticket. */
+/**
+ * Read one ticket.
+ * @param db - the SQLite database handle.
+ * @param ticketId - the ticket's branded id.
+ * @returns the ticket, or undefined when absent.
+ */
 export function getTicket(db: DatabaseSync, ticketId: TicketId): ApprovalTicket | undefined {
   const row = db.prepare(sql('select-ticket')).get(ticketId)
   return row === undefined ? undefined : decodeTicketRow(row)
 }
 
-/** List tickets in one workspace. */
+/**
+ * List tickets in one workspace.
+ * @param db - the SQLite database handle.
+ * @param workspaceId - the workspace to list.
+ * @returns the workspace's tickets.
+ */
 export function listTickets(db: DatabaseSync, workspaceId: WorkspaceId): ApprovalTicket[] {
   const rows = db.prepare(sql('select-tickets-by-workspace')).all(workspaceId)
   return rows.map(row => decodeTicketRow(row))
 }
 
-/** Read one ticket's transition log in deterministic order. */
+/**
+ * Read one ticket's transition log in deterministic order.
+ * @param db - the SQLite database handle.
+ * @param ticketId - the ticket's branded id.
+ * @returns the ticket's transition records.
+ */
 export function transitions(db: DatabaseSync, ticketId: TicketId): ApprovalTransition[] {
   const rows = db.prepare(sql('select-transitions')).all(ticketId)
   return rows.map(row => decodeTransitionRow(row))
 }
 
-/** Assert that one ticket exists. */
+/**
+ * Assert that one ticket exists.
+ * @param db - the SQLite database handle.
+ * @param ticketId - the ticket's branded id.
+ */
 export function assertTicketExists(db: DatabaseSync, ticketId: TicketId): void {
   if (getTicket(db, ticketId) === undefined) {
     throw new PlatformShellError('TICKET_NOT_FOUND', `unknown ticket ${ticketId}`)
   }
 }
 
-/** The next approval sequence derived from the stored ticket ids. */
+/**
+ * The next approval sequence derived from the stored ticket ids.
+ * @param db - the SQLite database handle.
+ * @returns the next unused approval sequence.
+ */
 export function nextTicketSequence(db: DatabaseSync): number {
   const rows = db.prepare(sql('select-ticket-ids')).all() as { ticket_id: string }[]
   let max = 0

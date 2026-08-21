@@ -1,4 +1,4 @@
--- Platform control-plane schema (version 2).
+-- Platform control-plane schema (version 3).
 --
 -- This is a NEW business-object database, independent of the dsh session
 -- database (application id 0x504C5348 'PLSH', not the session store's
@@ -14,6 +14,7 @@ CREATE TABLE users (
 CREATE TABLE workspaces (
   workspace_id TEXT PRIMARY KEY,
   name         TEXT NOT NULL,
+  isolated     INTEGER NOT NULL DEFAULT 0,
   created_at   INTEGER NOT NULL
 ) STRICT;
 
@@ -112,6 +113,14 @@ CREATE TABLE capability_conflicts (
   conflicts_with TEXT NOT NULL REFERENCES capabilities(capability_id) ON DELETE RESTRICT,
   created_at     INTEGER NOT NULL,
   PRIMARY KEY (capability_id, conflicts_with)
+) STRICT;
+
+-- The tool surface one capability owns: the tool names whose execution the
+-- capability's gate governs. Unpublishing the capability cascades the rows.
+CREATE TABLE capability_tools (
+  capability_id TEXT NOT NULL REFERENCES capabilities(capability_id) ON DELETE CASCADE,
+  tool_name     TEXT NOT NULL,
+  PRIMARY KEY (capability_id, tool_name)
 ) STRICT;
 
 -- Scenario bundles: one pluggable C-side workbench surface per customer group.

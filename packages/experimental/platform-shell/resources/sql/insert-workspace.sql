@@ -1,1 +1,1 @@
-INSERT INTO workspaces (workspace_id, name, created_at) VALUES (?, ?, ?);
+INSERT INTO workspaces (workspace_id, name, isolated, created_at) VALUES (?, ?, ?, ?);

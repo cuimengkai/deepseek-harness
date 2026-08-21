@@ -21,16 +21,19 @@ import {
   type ToolResultBlock,
 } from '@deepseek-ai/dsh-llm'
 
+/** A workspace id as created by the demo (`ws-<epochMs>-<seq>`). */
+const WORKSPACE_ID = /\bws-\d+-\d+\b/g
+
 /** The workspace id the demo driver named in the FIRST user directive. */
 function firstWorkspaceId(options: GenerateOptions): string {
   const text = firstUserText(options)
-  return /\bws-\d+\b/.exec(text)?.[0] ?? 'ws-1'
+  return text.match(WORKSPACE_ID)?.[0] ?? 'ws-1'
 }
 
 /** Every workspace id named in the most recent user directive (settle turn). */
 function workspaceIdsFrom(options: GenerateOptions): string[] {
   const text = lastUserText(options)
-  return [...text.matchAll(/\bws-\d+\b/g)].map(match => match[0])
+  return [...text.matchAll(WORKSPACE_ID)].map(match => match[0])
 }
 
 /** The `YYYY-MM` billing period named in the most recent user directive. */
@@ -112,6 +115,7 @@ class CapabilityMarketAdapter extends LlmAdapter {
         yield* this.toolCall('op-publish-analysis', 'publish_capability', {
           id: 'code-analysis', name: 'Code Analysis', roleId: 'product', execution: 'managed',
           version: '1.0.0', rate: 3, description: 'static analysis of code assets',
+          tools: ['analyze_code'],
         })
         return
       }
@@ -300,23 +304,40 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      yield* this.textReply('Reassembled code-refactor after the catalog fix and metered consumption until the overdraft refused.')
+      if (last?.toolCallId === CallId('p-consume-overdraft')) {
+        // code-analysis is still enabled at this point in the drive, so the
+        // runtime gate admits analyze_code — the first runtime-gate proof.
+        yield* this.toolCall('p-analyze-open', 'analyze_code', {
+          code: 'const x = 1\nconsole.log(x)',
+        })
+        return
+      }
+      yield* this.textReply('Reassembled code-refactor after the catalog fix, metered consumption until the overdraft refused, and ran the gated analyze_code while its gate was open.')
       return
     }
 
     if (turn === 3) {
-      if (atTurnStart(last, 'p-consume-overdraft')) {
+      if (atTurnStart(last, 'p-analyze-open')) {
         yield* this.toolCall('p-dep-disabled', 'assemble_capabilities', {
           workspaceId: ws, scenarioId: 'product-engineering', selected: ['requirement-management'],
         })
         return
       }
-      yield* this.textReply('Requirement-management refused: its code-analysis dependency is disabled.')
+      if (last?.toolCallId === CallId('p-dep-disabled')) {
+        // The operator disabled code-analysis between turns, so the runtime
+        // gate now refuses the same analyze_code call at invocation time — the
+        // runtime block, not an assembly-time absence.
+        yield* this.toolCall('p-analyze-closed', 'analyze_code', {
+          code: 'const y = 2\nconsole.log(y)',
+        })
+        return
+      }
+      yield* this.textReply('Requirement-management refused its disabled dependency, and the runtime gate refused analyze_code after code-analysis was disabled.')
       return
     }
 
     if (turn === 4) {
-      if (atTurnStart(last, 'p-dep-disabled')) {
+      if (atTurnStart(last, 'p-analyze-closed')) {
         yield* this.toolCall('p-rollout-0', 'assemble_capabilities', {
           workspaceId: ws, scenarioId: 'product-engineering', selected: ['test-execution'],
         })

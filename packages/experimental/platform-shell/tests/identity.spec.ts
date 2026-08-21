@@ -27,7 +27,7 @@ function seedUsersAndWorkspace(db: DatabaseSync): { alice: UserId; bob: UserId; 
   db.exec(sql('begin-immediate'))
   insertUser(db, alice, 'Alice', 1)
   insertUser(db, bob, 'Bob', 1)
-  insertWorkspace(db, ws, 'Platform', 1)
+  insertWorkspace(db, ws, 'Platform', false, 1)
   upsertRole(db, RoleId('product'), 'Product', ['asset.register', 'asset.read'])
   assignRole(db, ws, alice, RoleId('product'))
   db.exec(sql('commit'))

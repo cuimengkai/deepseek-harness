@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/platform-capability-market.md
-platform-capability-market.md: 6f707a51dd2a9973777a870d4484fc59192fbeba
-platform-capability-market.zh.md: 2a72f3e1d6671bbcd4878627ad80b18ac8c49145
+platform-capability-market.md: 9a0bdbc5bed772a3845ebf47cada2dd10c829219
+platform-capability-market.zh.md: d59b08314b8a616a5ad2440b04bb0b8274757518

@@ -85,6 +85,7 @@
     "@deepseek-ai/dsh-system-prompt": "workspace:*",
     "@deepseek-ai/dsh-jobs-local": "workspace:*",
     "@deepseek-ai/dsh-experimental-agent-team": "workspace:*",
+    "@deepseek-ai/dsh-experimental-engine-isolation": "workspace:*",
     "@deepseek-ai/dsh-experimental-platform-shell": "workspace:*",
     "@deepseek-ai/dsh-time-context": "workspace:*",
     "@deepseek-ai/dsh-tool-call-timeout-policy": "workspace:*",

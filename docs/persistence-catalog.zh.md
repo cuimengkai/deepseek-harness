@@ -642,6 +642,25 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/experimental/platform-shell/src/types.ts:373`](../packages/experimental/platform-shell/src/types.ts)
 
+<a id="platformworkspaceisolated--log-only"></a>
+
+#### `platform/workspace/isolated` — log-only
+
+```ts persistence-catalog
+/**
+ * A drive ran in the physical-isolation engine the workspace's isolation
+ * record demands. The control-plane audit log is the authoritative record
+ * of an isolation flip; this event is the durable per-session projection
+ * emitted by the engine that ran the isolated drive.
+ */
+'platform/workspace/isolated': {
+  workspaceId: WorkspaceId
+  isolated: boolean
+}
+```
+
+来源：[`packages/experimental/platform-shell/src/types.ts:379`](../packages/experimental/platform-shell/src/types.ts)
+
 ### `request/*`
 
 <a id="requestcontext--log-only"></a>

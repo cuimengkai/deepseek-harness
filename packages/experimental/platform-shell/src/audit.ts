@@ -21,7 +21,12 @@ export interface AuditWrite {
   readonly detail: string | null
 }
 
-/** Write one audit row inside the caller's mutation transaction. */
+/**
+ * Write one audit row inside the caller's mutation transaction.
+ * @param db - the SQLite database handle.
+ * @param entry - the audit row to write.
+ * @param now - the epoch-ms timestamp.
+ */
 export function writeAudit(db: DatabaseSync, entry: AuditWrite, now: number): void {
   db.prepare(sql('insert-audit')).run(
     entry.actorUserId,
@@ -34,7 +39,12 @@ export function writeAudit(db: DatabaseSync, entry: AuditWrite, now: number): vo
   )
 }
 
-/** List audit rows, optionally filtered by workspace and action. */
+/**
+ * List audit rows, optionally filtered by workspace and action.
+ * @param db - the SQLite database handle.
+ * @param filter - optional workspace and action filters.
+ * @returns the matching audit events.
+ */
 export function listAudit(
   db: DatabaseSync,
   filter: { readonly workspaceId?: WorkspaceId; readonly action?: string } = {},
@@ -50,7 +60,12 @@ export function listAudit(
   return rows.map(row => decodeAuditRow(row))
 }
 
-/** Read one audit row by its event identity. */
+/**
+ * Read one audit row by its event identity.
+ * @param db - the SQLite database handle.
+ * @param id - the event's branded id.
+ * @returns the audit event, or undefined when absent.
+ */
 export function getAudit(db: DatabaseSync, id: AuditEventId): AuditEvent | undefined {
   const rows = db.prepare(sql('select-audit')).all() as unknown
   for (const row of rows as { event_id: number }[]) {

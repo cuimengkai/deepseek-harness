@@ -16,7 +16,7 @@ The driver boots the host composition, creates two customer-group workspaces, dr
 
 - **One catalog for two customer groups.** The operator publishes eight capabilities with dependency, conflict, version, execution, and rate attributes; two scenario bundles register the product-engineering and short-video-creation workbenches with disjoint capability sets (`workbenches.heterogeneous`).
 - **Assembly refuses loudly and fixes restore resolution.** Assembling `test-execution` resolves the transitive chain dependency-first (`code-analysis → test-case-generation → test-execution`); a conflict pair refuses with `CAPABILITY_CONFLICT`, a version-range mismatch with `VERSION_MISMATCH`, and republishing the fixed range restores resolution (`assembly.note`).
-- **Execution gating is assembly-time.** A disabled dependency refuses the assembly that reaches it with `CAPABILITY_DISABLED`, a rollout-0 capability refuses every workspace, and opening the rollout to 1 admits it again (`gating`).
+- **The execution gate refuses at both assembly and invocation.** Assembly-time: a disabled dependency refuses the assembly that reaches it with `CAPABILITY_DISABLED`, a rollout-0 capability refuses every workspace, and opening the rollout to 1 admits it again. Runtime: the same `analyze_code` call is admitted while `code-analysis` is enabled and refused `CAPABILITY_DISABLED` after the operator disables it between turns — the registered runtime gate re-checks the fresh gate state per workspace at `tools/execute` time (`gating`).
 - **The workbench is a per-group binding.** Each customer group's workbench returns its own capability set and preset id, and `roster.mount` binds each agent's scope chain to it — `workbenches.rosterMount` shows `product-engineering` and `short-video-creation` (a scenario bundle is the served descriptor; page rendering is the web-app layer).
 - **The billing ledger meters and settles.** The product workspace is credited 100 credits, the two consumes meter 98 (8 + 90), a third consume refuses on `INSUFFICIENT_BALANCE` with the debit rolled back, and the operator settles both periods as `settled` (`billing`).
 - **Model-visible ⟺ logged.** Each market tool's `presentationMeta` code lands in the PERSISTED `tool/result` event (`traceability.metaCodes`), and both workbench agents see the same market tool surface (`traceability.uniformlyVisible`).
@@ -24,7 +24,7 @@ The driver boots the host composition, creates two customer-group workspaces, dr
 
 ## Layout
 
-Per-file roles: `cordis.yml` is the host composition, `presets/platform-admin/`, `presets/product-engineering/`, and `presets/short-video-creation/` are the persona-only presets, `src/demo.ts` drives the three agents and asserts the evidence, `src/mock-llm.ts` is the scripted keyless model adapter, and `src/capability-market-demo.ts` registers the market tools with the demo's session→user binding.
+Per-file roles: `cordis.yml` is the host composition, `presets/platform-admin/`, `presets/product-engineering/`, and `presets/short-video-creation/` are the persona-only presets, `src/demo.ts` drives the three agents and asserts the evidence, `src/mock-llm.ts` is the scripted keyless model adapter, and `src/capability-market-demo.ts` registers the market tools with the demo's session→user binding, binds sessions to workspaces, and registers the runtime execution gate.
 
 ```
 cordis.yml

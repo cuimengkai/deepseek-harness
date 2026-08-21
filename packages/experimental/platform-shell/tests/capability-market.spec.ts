@@ -6,6 +6,7 @@ import { insertWorkspace } from '../src/identity.ts'
 import {
   accrueSettlement,
   assertGateOpen,
+  capabilityOwningTool,
   creditAccount,
   debitAccount,
   deleteCapability,
@@ -34,7 +35,7 @@ import {
   versionSatisfies,
 } from '../src/capability-market.ts'
 import type { CatalogSnapshot } from '../src/capability-market.ts'
-import type { PublishCapabilityRequest } from '../src/types.ts'
+import type { CapabilityRecord, PublishCapabilityRequest } from '../src/types.ts'
 import { CapabilityId, RoleId, ScenarioId, WorkspaceId } from '../src/types.ts'
 import { expectPlatformError } from './expect-platform-error.ts'
 
@@ -48,7 +49,7 @@ const now = 1_700_000_000_000
 /** Seed the workspace the billing ledger references. */
 function seedWorkspace(db: DatabaseSync): void {
   db.exec(sql('begin-immediate'))
-  insertWorkspace(db, ws, 'Platform', now)
+  insertWorkspace(db, ws, 'Platform', false, now)
   db.exec(sql('commit'))
 }
 
@@ -100,6 +101,27 @@ describe('capability catalog', () => {
       expect(gated.enabled).toBe(false)
       expect(gated.rollout).toBe(0.5)
       expect(getCapability(db, CapabilityId('requirement-management'))).toMatchObject({ enabled: false, rollout: 0.5 })
+    } finally {
+      db.close()
+    }
+  })
+
+  it('persists the governed tool surface and resolves an owning capability freshly', async () => {
+    const db = await freshDb()
+    try {
+      const published = publish(db, 'code-analysis', { tools: ['analyze_code', 'scan_metrics'] })
+      expect(published.tools).toEqual(['analyze_code', 'scan_metrics'])
+      expect(getCapability(db, CapabilityId('code-analysis'))).toEqual(published)
+      expect(listCapabilities(db)[0]?.tools).toEqual(['analyze_code', 'scan_metrics'])
+      // The enforcement-path read joins the live gate row, so a gate flip is
+      // observed on the next call — never a stale snapshot. The record's tools
+      // carries the matched tool (the gate path reads only the gate fields).
+      const owner = capabilityOwningTool(db, 'analyze_code') as CapabilityRecord
+      expect(owner.id).toEqual(CapabilityId('code-analysis'))
+      expect(owner.tools).toEqual(['analyze_code'])
+      setCapabilityGate(db, CapabilityId('code-analysis'), false, 1)
+      expect(capabilityOwningTool(db, 'analyze_code')?.enabled).toBe(false)
+      expect(capabilityOwningTool(db, 'unowned_tool')).toBeUndefined()
     } finally {
       db.close()
     }

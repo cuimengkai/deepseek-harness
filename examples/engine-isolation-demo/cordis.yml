@@ -1,0 +1,90 @@
+# engine-isolation-demo host composition.
+#
+# Demonstrates on-demand workspace isolation from docs/platform-architecture.md
+# §7 (Phase 3) through the D3 engine-driver seam: a SHARED workspace runs its
+# agent drive in the current process, while an ISOLATED workspace delegates the
+# drive to a dedicated child engine process whose data lives in a per-workspace
+# SQLite store and JSONL log root. Runs keyless: the `engine-demo` provider is a
+# scripted in-process adapter, so the whole composition (parent + child) boots
+# in a sandbox with no DEEPSEEK_API_KEY and no network.
+#
+# Layering: this static tree mounts the shared control-plane services (the
+# platform-shell service over ONE SQLite database, its model-facing tools, the
+# package invariant, the local subprocess seam, and the agent spine). The
+# engine-isolation SERVICE is NOT in this file — it carries host closures
+# (the in-process runner) and process-out scratch roots, so the demo driver
+# mounts it programmatically with those values.
+
+# ── keyless model route ─────────────────────────────────────────────────────
+
+# `engine-isolation-demo-mock-llm` registers the `engine-demo` provider
+# in-process. Both the parent's shared drive and the child engine's isolated
+# drive use this provider; the script is keyed by session id, so the shared and
+# isolated agents each emit their own register_asset call against their own
+# workspace. Swap the agent provider for `deepseek-official` and mount
+# `dsh-llm-deepseek` (un-disable below) with your key to run live.
+- id: mock-llm
+  name: './src/mock-llm.ts'
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  disabled: true
+
+# ── agent spine: core services for every agent ──────────────────────────────
+
+# `dsh-agent-spine-demo` mounts the shared core once: Timer, LlmRuntime,
+# SessionStore, SessionTitleService, SystemPrompt, ToolRuntime, SkillRegistry,
+# AgentRegistry, AgentLoop, and the invariant registry. `toolBash: false` and
+# `workspaceContext: false` keep the composition hermetic. `agents: []` because
+# the demo driver and the child worker create agents through `createAgent`.
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents: []
+    persona: ''
+    workspaceContext: false
+    toolBash: false
+
+# ── session persistence: the durable log surface ────────────────────────────
+
+# Every turn appends to the JSONL session log. The demo driver overrides `root`
+# at boot time with a fresh scratch directory (and the child worker overrides it
+# with the isolated workspace's per-workspace log root), so `readLog` reads the
+# durable JSONL across process boundaries.
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: './.engine-isolation-demo-sessions'
+    compression: none
+
+# ── platform control plane ──────────────────────────────────────────────────
+
+# Mounts `ctx.platformShell`: the self-built control-plane service over one
+# SQLite database holding the tenant/RBAC + isolation record. The demo driver
+# overrides `path` with a scratch file; the child worker overrides it with its
+# per-workspace store so the isolated workspace's data lives in the child.
+- id: platform-shell
+  name: '@deepseek-ai/dsh-experimental-platform-shell/src/index.ts'
+  config:
+    path: './.engine-isolation.sqlite'
+
+# The package invariant companion: validates every committed reference event
+# against the control-plane store. Needs the invariant registry agent-spine
+# mounts, so this row must follow agent-spine.
+- id: platform-shell-invariant
+  name: '@deepseek-ai/dsh-experimental-platform-shell/src/invariant.ts'
+
+# ── local subprocess seam ───────────────────────────────────────────────────
+
+# The process-out engine driver spawns its child through `ctx.subprocess`; this
+# config-free provider makes that seam available to the programmatically
+# mounted engine-isolation service. Config-free: every spawn disposition arrives
+# on the spec the driver builds.
+- id: subprocess-local
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+# Registers the model-facing platform tools with the demo's session→user
+# binding; both the parent and the child worker populate the binding before
+# their agent runs.
+- id: engine-isolation-demo
+  name: './src/engine-isolation-demo.ts'

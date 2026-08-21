@@ -9,7 +9,7 @@ import { boot, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { CapabilityId, RoleId, ScenarioId } from '@deepseek-ai/dsh-experimental-platform-shell/src/types.ts'
-import { bindActor } from './capability-market-demo.ts'
+import { bindActor, bindWorkspace } from './capability-market-demo.ts'
 
 const COMPOSE_PATH = fileURLToPath(new URL('../cordis.yml', import.meta.url))
 const PRESETS_ROOT = fileURLToPath(new URL('../presets', import.meta.url))
@@ -94,6 +94,20 @@ function toolErrorTexts(events: SessionEvent[]): string[] {
   })
 }
 
+/** The tool/result outcome of every `analyze_code` call, paired by call id. */
+function analyzeCodeOutcomes(events: SessionEvent[]): { callId: string; error: string | null; text: string }[] {
+  return events.flatMap((event) => {
+    if (event.type !== 'tool/result') return []
+    const toolCallId = event.data.message.content[0]?.toolCallId
+    if (toolCallId === undefined) return []
+    return [{
+      callId: String(toolCallId),
+      error: event.data.error?.code ?? null,
+      text: renderedText(event.data.message),
+    }]
+  }).filter(result => result.callId === 'p-analyze-open' || result.callId === 'p-analyze-closed')
+}
+
 /** The market tools registered by the platform-shell consumer. */
 const marketTools = ['publish_capability', 'list_capabilities', 'assemble_capabilities',
   'set_capability_gate', 'publish_scenario', 'list_scenarios',
@@ -165,10 +179,15 @@ async function main() {
   shell.assignRole(wsVideo, admin, RoleId('platform-admin'))
   shell.assignRole(wsVideo, bob, RoleId('product'))
 
-  // Bind each agent session to the platform user acting through it.
+  // Bind each agent session to the platform user acting through it and to the
+  // platform workspace it runs in (the execution gate re-checks the market gate
+  // per workspace at tool-call time).
   bindActor('market-operator', admin)
   bindActor('market-product', alice)
   bindActor('market-video', bob)
+  bindWorkspace('market-operator', wsProduct)
+  bindWorkspace('market-product', wsProduct)
+  bindWorkspace('market-video', wsVideo)
 
   // Open the simulated billing accounts before any consumption is metered.
   shell.creditAccount(admin, wsProduct, 100)
@@ -360,6 +379,13 @@ async function main() {
   const rolloutRejected = productErrors.includes('CAPABILITY_DISABLED')
     && productErrorTexts.some(text => text.includes('test-execution'))
   const overdraftRejected = productErrors.includes('INSUFFICIENT_BALANCE')
+  const analyzeCodeResults = analyzeCodeOutcomes(productEvents)
+  const runtimeGateOpen = analyzeCodeResults
+    .some(result => result.callId === 'p-analyze-open' && result.error === null)
+  const runtimeGateClosed = analyzeCodeResults
+    .some(result => result.callId === 'p-analyze-closed' && result.error === 'CAPABILITY_DISABLED')
+  const analyzeOpenText = analyzeCodeResults.find(result => result.callId === 'p-analyze-open')?.text ?? null
+  const analyzeClosedText = analyzeCodeResults.find(result => result.callId === 'p-analyze-closed')?.text ?? null
   const transitiveChain = transitive.resolved.map(c => c.id)
   const settlementsSettled = settlements.length === 2 && settlements.every(s => s.status === 'settled')
   const wsProductSpend = wsProductUsage.reduce((sum, row) => sum + row.cost, 0)
@@ -427,7 +453,12 @@ async function main() {
       disabledCapabilityRefused: disabledDependencyRejected,
       rollout0Refused: rolloutRejected,
       rollout1Admits: transitive.resolved.some(c => c.id === 'test-execution'),
-      note: 'a disabled capability refuses any assembly that reaches it (directly or as a dependency); a rollout-0 capability refuses every workspace; rollout 1 admits all',
+      runtimeGateOpen,
+      runtimeGateClosed,
+      analyzeOpenText,
+      analyzeClosedText,
+      gateOpenIsRuntime: productErrors.includes('CAPABILITY_DISABLED'),
+      note: 'the assembly-time gate refuses disabled or rollout-excluded capabilities at selection; the runtime gate re-checks the same market gate at tool-call time (analyze_code ran open while code-analysis was enabled, then refused with CAPABILITY_DISABLED at invocation after the operator disabled it)',
     },
     billing: {
       credited: { [String(wsProduct)]: 100, [String(wsVideo)]: 10 },

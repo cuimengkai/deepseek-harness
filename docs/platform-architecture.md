@@ -96,7 +96,7 @@ The following are the **load-bearing decisions** locked in this version. They de
 - **Execution mode is a capability attribute** (`execution: managed | sandboxed | none`):
   - Default `managed` (platform-scheduled);
   - Specific advanced capabilities (sandbox-verified) may allow `sandboxed` (restricted real execution);
-  - Gated per capability on a gray-release basis.
+  - Gated per capability on a gray-release basis. **Realized** as a runtime execution gate that re-checks the owning capability's gate state per workspace at `tools/execute` time ([spec](platform-capability-market.md)).
 - **Rationale**: safe, cost-effective; dsh's local sandbox (Landlock/bwrap) is a single-machine design, and real code execution under cloud multi-tenancy is hard, so it moves to phase 2.
 
 ### D5 Capability packaging spec: reuse dsh plugins + presets + schema'd assets
@@ -158,7 +158,7 @@ The following are the **load-bearing decisions** locked in this version. They de
 
 - Shared runtime + isolation by workspace grouping.
 - A workspace holds: role set, asset subspace, preset bindings, member table.
-- Optional physical isolation (large accounts/compliance): assigned to separate processes/containers.
+- Optional physical isolation (large accounts/compliance): assigned to separate processes/containers. **Realized** as a per-workspace `isolated` record that routes the drive to a dedicated child engine process ([spec](platform-engine-isolation.md)).
 
 ### 3.3 The four data planes
 
@@ -181,13 +181,14 @@ The following are the **load-bearing decisions** locked in this version. They de
 
 - A capability = a plugin + a preset + an asset schema.
 - A user assembles capabilities to taste → the adapter layer renders them into a preset config → mounts it onto the corresponding agent session.
-- The capability market provides the catalog, dependency/conflict checks, and versions.
+- The capability market provides the catalog, dependency/conflict checks, versions, and the execution gate.
 
 ### 3.6 Engine adapter layer responsibilities
 
 - Role → preset translation: translate role + permission + asset context into `agent.cordis.yml`.
 - Business-object ↔ session-log lineage bridge: write business-object references, read lineage relationships.
 - ACL → provider policy: inject role permissions into the `fs`/`sandbox` policy seam.
+- Engine routing (realized): the `EngineDriver` seam resolves each drive by the workspace isolation record — in-process for shared workspaces, process-out for isolated ones, and never silent for an unknown workspace ([spec](platform-engine-isolation.md)).
 
 ---
 
@@ -256,6 +257,7 @@ The following are the **load-bearing decisions** locked in this version. They de
 | T5 | Multi-tenant shared process | multiple workspaces share one runtime, resource quotas effective | Passed |
 | T6 | Approval seam | after business approval grants, the AI receives the authorized scope; sensitive operations trigger AI approval | Passed |
 | T7 | Capability market assembly | user assembles capabilities to taste → rendered into a preset config → takes effect | Passed |
+| T8 | On-demand physical isolation + process-out | an isolated workspace's drive runs in a dedicated child engine process with per-workspace store and log roots; shared stays in-process; store separation and log reconstructability verified | Passed |
 
 ---
 
@@ -267,14 +269,14 @@ The following are the **load-bearing decisions** locked in this version. They de
 - Product-engineering scenario: one vertical slice of requirement→design→development→test→release.
 - Capability market: a catalog seed (preset assembly, no billing).
 
-### Phase 2 (extend to C-side self-assembly)
-- Complete the capability market: dependency/conflict checks, versions, billing/settlement.
-- C-side lightweight workbench: users assemble capabilities to taste.
-- Restricted execution (gated per capability on a gray-release basis).
+### Phase 2 (extend to C-side self-assembly) — realized as experimental prototypes
+- Complete the capability market: dependency/conflict checks, versions, billing/settlement ([spec](platform-capability-market.md), [billing](platform-billing-ledger.md)).
+- C-side lightweight workbench: users assemble capabilities to taste through scenario bundles served per customer group.
+- Restricted execution (gated per capability on a gray-release basis): a registered runtime gate re-checks each tool's owning capability's gate state per workspace at `tools/execute` time and refuses `CAPABILITY_DISABLED` ([spec](platform-capability-market.md)).
 
-### Phase 3 (scale and isolation upgrade)
-- On-demand physical isolation (large accounts/compliance).
-- Engine process-out (if isolation/stability requirements rise).
+### Phase 3 (scale and isolation upgrade) — realized as experimental prototypes
+- On-demand physical isolation (large accounts/compliance): a workspace's `isolated` record routes its agent drive to a dedicated child engine process; container/VM isolation remains a backend swap on the same seam ([spec](platform-engine-isolation.md), [package](../packages/experimental/engine-isolation/README.md)).
+- Engine process-out: the `EngineDriver` seam (`drive`/`listSessions`/`readLog`) with an in-process runner and a process-out child engine; session persistence is file-backed and process-agnostic, so the parent reads the child's durable logs ([keyless demo](../examples/engine-isolation-demo/README.md)).
 
 ### Phase 4 (evaluate low-code)
 - After the composable-preset market is validated, evaluate the low-code direction where "users build for users".

@@ -16,7 +16,7 @@ node --import tsx/esm examples/capability-market-demo/src/demo.ts
 
 - **一个目录服务两个客户群。** 操作者发布八个带依赖、冲突、版本、执行与费率属性的能力;两个场景捆绑注册 product-engineering 与 short-video-creation 工作台,能力集互不相交(`workbenches.heterogeneous`)。
 - **装配响亮地拒绝,修复后恢复解析。** 装配 `test-execution` 依依赖优先顺序解析传递链(`code-analysis → test-case-generation → test-execution`);冲突对以 `CAPABILITY_CONFLICT` 拒绝,版本范围不匹配以 `VERSION_MISMATCH` 拒绝,重新发布修复后的范围即恢复解析(`assembly.note`)。
-- **执行门禁是装配期的。** 禁用依赖以 `CAPABILITY_DISABLED` 拒绝到达它的装配,灰度 0 的能力拒绝每个工作区,把灰度开到 1 后重新接纳(`gating`)。
+- **执行门禁在装配与调用两处都拒绝。** 装配期:禁用依赖以 `CAPABILITY_DISABLED` 拒绝到达它的装配,灰度 0 的能力拒绝每个工作区,把灰度开到 1 后重新接纳。运行期:同一个 `analyze_code` 调用在 `code-analysis` 启用时被放行,操作者在回合之间禁用它后以 `CAPABILITY_DISABLED` 被拒——注册的运行时门禁在 `tools/execute` 时按工作区重新检查实时门禁状态(`gating`)。
 - **工作台是按群组的绑定。** 每个客户群的工作台返回自己的能力集与预设 id,`roster.mount` 把每个 agent 的作用域链绑定到它——`workbenches.rosterMount` 显示 `product-engineering` 与 `short-video-creation`(被提供的是场景捆绑描述符;页面渲染属于 Web 应用层)。
 - **计费账本计量并结算。** 产品工作区充值 100 信用点,两次消费计量 98(8 + 90),第三次消费因 `INSUFFICIENT_BALANCE` 被拒且扣款回滚,操作者把两个账期都结算为 `settled`(`billing`)。
 - **模型可见 ⟺ 已记录。** 每个市场工具的 `presentationMeta` code 落在持久化的 `tool/result` 事件里(`traceability.metaCodes`),两个工作台 agent 看到同样的市场工具表面(`traceability.uniformlyVisible`)。
@@ -24,7 +24,7 @@ node --import tsx/esm examples/capability-market-demo/src/demo.ts
 
 ## 结构
 
-各文件职责:`cordis.yml` 是宿主装配,`presets/platform-admin/`、`presets/product-engineering/` 与 `presets/short-video-creation/` 是纯人设预设,`src/demo.ts` 驱动三个 agent 并断言证据,`src/mock-llm.ts` 是脚本化无密钥模型 adapter,`src/capability-market-demo.ts` 用 demo 的 session→用户绑定注册市场工具。
+各文件职责:`cordis.yml` 是宿主装配,`presets/platform-admin/`、`presets/product-engineering/` 与 `presets/short-video-creation/` 是纯人设预设,`src/demo.ts` 驱动三个 agent 并断言证据,`src/mock-llm.ts` 是脚本化无密钥模型 adapter,`src/capability-market-demo.ts` 用 demo 的 session→用户绑定注册市场工具,把 session 绑定到工作区,并注册运行时执行门禁。
 
 ```
 cordis.yml

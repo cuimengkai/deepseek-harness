@@ -6,7 +6,7 @@ import { Context } from '@deepseek-ai/cordis'
 import SessionStore from '@deepseek-ai/dsh-session'
 import { PlatformShellService } from '../src/service.ts'
 import { periodOf } from '../src/capability-market.ts'
-import { CapabilityId, RoleId, ScenarioId, UserId } from '../src/types.ts'
+import { CapabilityId, RoleId, ScenarioId, UserId, WorkspaceId } from '../src/types.ts'
 import { expectPlatformError } from './expect-platform-error.ts'
 
 const dirs: string[] = []
@@ -230,6 +230,32 @@ describe('PlatformShellService capability market', () => {
     }
   })
 
+  it('persists the governed tool surface through the service and rejects an empty tool name', async () => {
+    const ctx = new Context()
+    try {
+      const shell = await start(ctx)
+      const { admin, alice } = seedMarket(shell)
+      const published = shell.publishCapability(admin, {
+        id: CapabilityId('code-analysis'), name: 'Code Analysis', roleId: RoleId('product'),
+        execution: 'managed', version: '1.0.0', rate: 3, tools: ['analyze_code'],
+      })
+      expect(published.tools).toEqual(['analyze_code'])
+      expect(shell.getCapability(alice, published.id)?.tools).toEqual(['analyze_code'])
+      expect(shell.listCapabilities(alice)[0]?.tools).toEqual(['analyze_code'])
+      expect(shell.runtimeCapabilityOwningTool('analyze_code')?.id).toEqual(CapabilityId('code-analysis'))
+      expect(shell.runtimeCapabilityOwningTool('unowned_tool')).toBeUndefined()
+      expectPlatformError(
+        () => shell.publishCapability(admin, {
+          id: CapabilityId('broken'), name: 'Broken', roleId: RoleId('product'),
+          execution: 'managed', version: '1.0.0', rate: 1, tools: [''],
+        }),
+        'INVALID_ARGUMENT',
+      )
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
   it('publishes a scenario and resolves a selection within its workbench', async () => {
     const ctx = new Context()
     try {
@@ -335,6 +361,40 @@ describe('PlatformShellService capability market', () => {
         () => shell.consumeCapability(alice, { workspaceId: ws, capabilityId: CapabilityId('premium'), qty: 11 }),
         'INSUFFICIENT_BALANCE',
       )
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('creates an isolated workspace and exposes the isolation probe', async () => {
+    const ctx = new Context()
+    try {
+      const shell = await start(ctx)
+      const ws = shell.createWorkspace('Compliance', { isolated: true })
+      expect(shell.workspaceIsolation(ws)).toBe(true)
+      expect(shell.workspaceIsolation(shell.createWorkspace('Shared'))).toBe(false)
+      expectPlatformError(() => shell.workspaceIsolation(WorkspaceId('ghost')), 'UNKNOWN_WORKSPACE')
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('re-flags an existing workspace only with the platform.isolation permission', async () => {
+    const ctx = new Context()
+    try {
+      const shell = await start(ctx)
+      const ws = shell.createWorkspace('Shared')
+      const admin = shell.registerUser('Admin')
+      const alice = shell.registerUser('Alice')
+      shell.assignRole(ws, admin, RoleId('platform-admin'))
+      shell.assignRole(ws, alice, RoleId('product'))
+      expectPlatformError(() => shell.setWorkspaceIsolation(alice, ws, true), 'PERMISSION_DENIED')
+      shell.setWorkspaceIsolation(admin, ws, true)
+      expect(shell.workspaceIsolation(ws)).toBe(true)
+      const rows = shell.listAudit(admin, { workspaceId: ws, action: 'tenant.workspace.isolate' })
+      expect(rows).toHaveLength(1)
+      expect(rows[0]?.detail).toBe(JSON.stringify({ isolated: true }))
+      expectPlatformError(() => shell.setWorkspaceIsolation(admin, WorkspaceId('ghost'), true), 'UNKNOWN_WORKSPACE')
     } finally {
       await dispose(ctx)
     }

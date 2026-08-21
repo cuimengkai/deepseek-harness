@@ -26,9 +26,10 @@ A capability is not one of these — it is the triple. `register_asset`, `get_as
 | `dependencies` | capabilities it requires, each with a semver range |
 | `conflicts` | capabilities it cannot coexist with |
 | `execution` | `managed \| sandboxed \| none` (D4) |
+| `tools` | the tool names the capability governs; a registered runtime gate blocks their execution when the gate is closed |
 | `version` | the packaged semver |
 | `rate` | the per-unit credit cost (see [platform-billing-ledger.md](platform-billing-ledger.md)) |
-| `enabled` / `rollout` | the execution gate: a disabled or rollout-excluded capability refuses assembly loudly |
+| `enabled` / `rollout` | the execution gate: a disabled or rollout-excluded capability refuses assembly loudly, and a registered runtime gate refuses its tools at call time |
 
 The market catalog stores each entry as a `capabilities` row plus `capability_dependencies` / `capability_conflicts` edge tables, and the capability's workbench memberships in `scenario_capabilities` — all in the platform-shell control-plane store.
 
@@ -39,12 +40,14 @@ The market catalog stores each entry as a `capabilities` row plus `capability_de
 
 ## 4. Assembly-time checking
 
-`resolveCapabilities` walks the dependency graph dependency-first, validates every visited capability's version range, checks the full conflict-pair matrix, and applies the execution gate — a disabled capability refuses any assembly that reaches it, directly or as a dependency, and a rollout-0 capability refuses every workspace. Every refusal is loud (`PlatformShellError` with `CAPABILITY_CONFLICT`, `VERSION_MISMATCH`, or `CAPABILITY_DISABLED`); nothing is skipped silently. The resolved set is ordered dependency-first, which is the order the workbench mounts.
+`resolveCapabilities` walks the dependency graph dependency-first, validates every visited capability's version range, checks the full conflict-pair matrix, and applies the execution gate — a disabled capability refuses any assembly that reaches it, directly or as a dependency, and a rollout-0 capability refuses every workspace. Every refusal is loud (`PlatformShellError` with `CAPABILITY_CONFLICT`, `VERSION_MISMATCH`, or `CAPABILITY_DISABLED`); nothing is skipped silently. The resolved set is ordered dependency-first, which is the order the workbench mounts. The same gate also governs execution at call time when the runtime gate is registered (§5).
 
 ## 5. The realized market
 
 The market's catalog, resolution, gating, and billing live in the `capability-market` module of `@deepseek-ai/dsh-experimental-platform-shell`, served to agents through the `publish_capability`, `publish_scenario`, `assemble_capabilities`, `set_capability_gate`, `consume_capability`, `account_balance`, and `settle_account` tools. The workbench is a scenario bundle — a per-customer-group capability set plus a preset binding — registered over the harness plugin mechanism; page rendering is the web-app layer's concern. Billing is the simulated integer-credit ledger specified in [platform-billing-ledger.md](platform-billing-ledger.md).
 
+The catalog entry also records the tool names each capability governs (`capability_tools`), and `runtimeCapabilityOwningTool(toolName)` reverse-looks-up the live catalog row for one tool. `registerCapabilityExecutionGate(ctx, { resolveWorkspace })` plugs a `tools/execute` waterfall that re-checks every gated tool's owning capability against the calling session's workspace and throws `CAPABILITY_DISABLED` at invocation time — the assembly-time gate becomes a runtime block. The read joins the live gate row, so an operator's gate flip takes effect on the next call.
+
 ## 6. Verification
 
-`examples/capability-market-demo/` proves the market keyless: the operator publishes the catalog, two customer-group workbenches serve disjoint capability sets, the product assembly rejects a conflict and a version-range mismatch loudly, a disabled dependency and a rollout-0 capability refuse, and the billing ledger meters usage and settles both periods — all reconstructed from persisted session logs.
+`examples/capability-market-demo/` proves the market keyless: the operator publishes the catalog, two customer-group workbenches serve disjoint capability sets, the product assembly rejects a conflict and a version-range mismatch loudly, a disabled dependency and a rollout-0 capability refuse, and the billing ledger meters usage and settles both periods — all reconstructed from persisted session logs. The same drive proves the runtime gate: the same `analyze_code` call is admitted while `code-analysis` is enabled and refused `CAPABILITY_DISABLED` after the operator disables it between turns.

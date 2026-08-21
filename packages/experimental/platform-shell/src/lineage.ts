@@ -12,7 +12,14 @@ import { PlatformShellError } from './error.ts'
 import { decodeLineageRow } from './schema.ts'
 import { sql } from './sql.ts'
 
-/** Record that one asset derives from another, with the producing role. */
+/**
+ * Record that one asset derives from another, with the producing role.
+ * @param db - the SQLite database handle.
+ * @param assetId - the derived asset's branded id.
+ * @param parentId - the asset it derives from.
+ * @param roleId - the role producing the derived asset.
+ * @param now - the epoch-ms timestamp.
+ */
 export function linkAsset(
   db: DatabaseSync,
   assetId: AssetId,
@@ -32,19 +39,34 @@ export function linkAsset(
   db.prepare(sql('insert-lineage')).run(assetId, parentId, roleId, now)
 }
 
-/** One edge's direct parents. */
+/**
+ * One edge's direct parents.
+ * @param db - the SQLite database handle.
+ * @param assetId - the asset's branded id.
+ * @returns the direct parent edges.
+ */
 export function parents(db: DatabaseSync, assetId: AssetId): LineageEdge[] {
   const rows = db.prepare(sql('select-lineage-parents')).all(assetId)
   return rows.map(row => decodeLineageRow(row))
 }
 
-/** One edge's direct children. */
+/**
+ * One edge's direct children.
+ * @param db - the SQLite database handle.
+ * @param assetId - the asset's branded id.
+ * @returns the direct child edges.
+ */
 export function children(db: DatabaseSync, assetId: AssetId): LineageEdge[] {
   const rows = db.prepare(sql('select-lineage-children')).all(assetId)
   return rows.map(row => decodeLineageRow(row))
 }
 
-/** Walk all transitive ancestors toward the derivation source. */
+/**
+ * Walk all transitive ancestors toward the derivation source.
+ * @param db - the SQLite database handle.
+ * @param assetId - the asset's branded id.
+ * @returns ancestor edges in derivation order.
+ */
 export function ancestors(db: DatabaseSync, assetId: AssetId): LineageEdge[] {
   const result: LineageEdge[] = []
   const seen = new Set<string>()
@@ -61,7 +83,12 @@ export function ancestors(db: DatabaseSync, assetId: AssetId): LineageEdge[] {
   return result
 }
 
-/** Walk all transitive descendants. */
+/**
+ * Walk all transitive descendants.
+ * @param db - the SQLite database handle.
+ * @param assetId - the asset's branded id.
+ * @returns descendant edges in derivation order.
+ */
 export function descendants(db: DatabaseSync, assetId: AssetId): LineageEdge[] {
   const result: LineageEdge[] = []
   const seen = new Set<string>()

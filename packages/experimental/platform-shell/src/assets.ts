@@ -37,6 +37,7 @@ export const DEFAULT_KIND_ALLOWED_ROLES: Readonly<Record<AssetKind, readonly Rol
 
 /**
  * Validate one asset kind against the closed set.
+ * @param kind - the asset kind to validate.
  * @throws UNKNOWN_ASSET_KIND when the kind is not registered.
  */
 export function validateKind(kind: AssetKind): void {
@@ -45,7 +46,11 @@ export function validateKind(kind: AssetKind): void {
   }
 }
 
-/** Read the next global asset sequence, allocating one per call. */
+/**
+ * Read the next global asset sequence, allocating one per call.
+ * @param db - the SQLite database handle.
+ * @returns the next unused asset sequence.
+ */
 export function nextAssetSequence(db: DatabaseSync): number {
   const rows = db.prepare(sql('select-asset-ids')).all() as { asset_id: string }[]
   let max = 0
@@ -57,7 +62,16 @@ export function nextAssetSequence(db: DatabaseSync): number {
   return max + 1
 }
 
-/** Register one asset, assigning `<kind>-<seq>` and recording the produce role. */
+/**
+ * Register one asset, assigning `<kind>-<seq>` and recording the produce role.
+ * @param db - the SQLite database handle.
+ * @param workspaceId - the workspace the asset belongs to.
+ * @param kind - the asset's kind.
+ * @param content - the asset's content.
+ * @param roleId - the role producing the asset.
+ * @param now - the epoch-ms timestamp.
+ * @returns the committed asset record.
+ */
 export function registerAsset(
   db: DatabaseSync,
   workspaceId: WorkspaceId,
@@ -77,6 +91,9 @@ export function registerAsset(
 
 /**
  * Read one asset, scoped to the caller's workspace.
+ * @param db - the SQLite database handle.
+ * @param assetId - the asset's branded id.
+ * @param workspaceId - the workspace to scope the read to.
  * @returns the asset record, or `undefined` when absent or not in the workspace.
  */
 export function getAsset(db: DatabaseSync, assetId: AssetId, workspaceId: WorkspaceId): AssetRecord | undefined {
@@ -86,7 +103,12 @@ export function getAsset(db: DatabaseSync, assetId: AssetId, workspaceId: Worksp
   return asset.workspaceId === workspaceId ? asset : undefined
 }
 
-/** List all assets in one workspace, ordered by identity. */
+/**
+ * List all assets in one workspace, ordered by identity.
+ * @param db - the SQLite database handle.
+ * @param workspaceId - the workspace to list.
+ * @returns the workspace's asset records.
+ */
 export function listAssets(db: DatabaseSync, workspaceId: WorkspaceId): AssetRecord[] {
   const rows = db.prepare(sql('select-assets-by-workspace')).all(workspaceId)
   return rows.map(row => decodeAssetRow(row))
@@ -94,6 +116,8 @@ export function listAssets(db: DatabaseSync, workspaceId: WorkspaceId): AssetRec
 
 /**
  * Assert that one asset exists.
+ * @param db - the SQLite database handle.
+ * @param assetId - the asset's branded id.
  * @throws ASSET_NOT_FOUND when the asset does not exist.
  */
 export function assertAssetExists(db: DatabaseSync, assetId: AssetId): void {

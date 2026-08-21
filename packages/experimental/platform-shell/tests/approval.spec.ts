@@ -24,7 +24,7 @@ function seedWorkspace(db: DatabaseSync): { ws: WorkspaceId; asset: AssetId } {
   const ws = WorkspaceId('ws-1')
   db.exec(sql('begin-immediate'))
   insertUser(db, UserId('user-p'), 'Producer', 1)
-  insertWorkspace(db, ws, 'Platform', 1)
+  insertWorkspace(db, ws, 'Platform', false, 1)
   upsertRole(db, RoleId('product'), 'Product', ['asset.register', 'approval.review'])
   assignRole(db, ws, UserId('user-p'), RoleId('product'))
   const asset = registerAsset(db, ws, 'requirement', 'R1', RoleId('product'), 1).id

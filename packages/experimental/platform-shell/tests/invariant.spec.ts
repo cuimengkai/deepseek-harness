@@ -270,4 +270,34 @@ describe('platform-shell market reference invariant', () => {
       await ctx.fiber.dispose()
     }
   })
+
+  it('accepts a platform/workspace/isolated event matching the isolation record', async () => {
+    const { ctx, shell } = await setup()
+    try {
+      const isolated = shell.createWorkspace('Isolated', { isolated: true })
+      const session = ctx.sessions.create(SessionId('platform-invariant-isolated'))
+      expect(() => {
+        session.append('platform/workspace/isolated', { workspaceId: isolated, isolated: true })
+      }).not.toThrow()
+      expect(session.events).toHaveLength(1)
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('rejects a platform/workspace/isolated event diverging from the isolation record', async () => {
+    const { ctx, ws } = await setup()
+    try {
+      const session = ctx.sessions.create(SessionId('platform-invariant-isolated-false'))
+      expect(() => {
+        session.append('platform/workspace/isolated', { workspaceId: ws, isolated: true })
+      }).toThrow(expect.objectContaining<Partial<InvariantError>>({
+        code: 'INVARIANT',
+        packageName: '@deepseek-ai/dsh-experimental-platform-shell',
+      }))
+      expect(session.events).toEqual([])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
 })

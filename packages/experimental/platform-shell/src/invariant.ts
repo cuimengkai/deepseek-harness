@@ -20,15 +20,21 @@ const PACKAGE_NAME = '@deepseek-ai/dsh-experimental-platform-shell'
 type PlatformReferenceEvent =
   | SessionEvent<'asset/read'>
   | SessionEvent<'asset/register'>
+  | SessionEvent<'platform/workspace/isolated'>
   | SessionEvent<'platform/approval/transition'>
   | SessionEvent<'capability/published'>
   | SessionEvent<'capability/selected'>
   | SessionEvent<'billing/settlement'>
 
-/** Whether one session event is a platform reference event. */
+/**
+ * Whether one session event is a platform reference event.
+ * @param event - the session event to test.
+ * @returns whether the event is owned by this package.
+ */
 export function isPlatformReferenceEvent(event: SessionEvent): event is PlatformReferenceEvent {
   return event.type === 'asset/read'
     || event.type === 'asset/register'
+    || event.type === 'platform/workspace/isolated'
     || event.type === 'platform/approval/transition'
     || event.type === 'capability/published'
     || event.type === 'capability/selected'
@@ -46,6 +52,15 @@ export function validateReferenceEvent(ctx: Context, event: PlatformReferenceEve
     if (!ctx.platformShell.assetExists(event.data.assetId)) {
       throw new Error(
         `${event.type} references ${event.data.assetId}, which the platform store does not hold`,
+      )
+    }
+    return
+  }
+  if (event.type === 'platform/workspace/isolated') {
+    const committed = ctx.platformShell.workspaceIsolation(event.data.workspaceId)
+    if (committed !== event.data.isolated) {
+      throw new Error(
+        `platform/workspace/isolated claims ${event.data.workspaceId} is ${event.data.isolated ? 'isolated' : 'shared'}, but the store reports ${committed ? 'isolated' : 'shared'}`,
       )
     }
     return

@@ -40,7 +40,11 @@ export class PlatformShellError extends HarnessError {
   }
 }
 
-/** Recover the message text from an unknown throw value. */
+/**
+ * Recover the message text from an unknown throw value.
+ * @param error - the throw value to read.
+ * @returns the error message, or the stringified value for non-Error throws.
+ */
 export function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }

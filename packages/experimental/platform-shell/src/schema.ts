@@ -37,7 +37,7 @@ import { sql } from './sql.ts'
 import { PlatformShellError } from './error.ts'
 
 /** Current physical schema version of the platform control-plane database. */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 4
 /** Application id reserved for DeepSeek Harness platform control-plane databases. */
 export const PLATFORM_SHELL_SQLITE_APPLICATION_ID = 0x504c5348
 
@@ -48,21 +48,25 @@ export interface UserRow {
   readonly created_at: number
 }
 
+/** A raw row from the workspaces table. */
 export interface WorkspaceRow {
   readonly workspace_id: string
   readonly name: string
   readonly created_at: number
 }
 
+/** A raw row from the membership join. */
 export interface MembershipRow {
   readonly role_id: string
   readonly role_name: string
 }
 
+/** A raw row from the role_permissions table. */
 export interface PermissionRow {
   readonly permission: string
 }
 
+/** A raw row from the assets table. */
 export interface AssetRow {
   readonly asset_id: string
   readonly kind: string
@@ -72,6 +76,7 @@ export interface AssetRow {
   readonly created_at: number
 }
 
+/** A raw row from the lineage table. */
 export interface LineageRow {
   readonly asset_id: string
   readonly parent_id: string
@@ -79,6 +84,7 @@ export interface LineageRow {
   readonly created_at: number
 }
 
+/** A raw row from the approval_tickets table. */
 export interface TicketRow {
   readonly ticket_id: string
   readonly workspace_id: string
@@ -91,6 +97,7 @@ export interface TicketRow {
   readonly updated_at: number
 }
 
+/** A raw row from the approval_transitions table. */
 export interface TransitionRow {
   readonly ticket_id: string
   readonly seq: number
@@ -100,6 +107,7 @@ export interface TransitionRow {
   readonly created_at: number
 }
 
+/** A raw row from the audit_events table. */
 export interface AuditRow {
   readonly event_id: number
   readonly actor_user_id: string
@@ -111,6 +119,7 @@ export interface AuditRow {
   readonly created_at: number
 }
 
+/** A raw row from the capabilities table. */
 export interface CapabilityRow {
   readonly capability_id: string
   readonly name: string
@@ -124,11 +133,13 @@ export interface CapabilityRow {
   readonly created_at: number
 }
 
+/** A raw row from the capability_dependencies table. */
 export interface CapabilityDependencyRow {
   readonly depends_on: string
   readonly range: string | null
 }
 
+/** A raw row from the scenario_bundles table. */
 export interface ScenarioRow {
   readonly scenario_id: string
   readonly name: string
@@ -138,12 +149,14 @@ export interface ScenarioRow {
   readonly created_at: number
 }
 
+/** A raw row from the accounts table. */
 export interface AccountRow {
   readonly workspace_id: string
   readonly balance: number
   readonly created_at: number
 }
 
+/** A raw row from the usage_records table. */
 export interface UsageRow {
   readonly usage_id: string
   readonly workspace_id: string
@@ -154,6 +167,7 @@ export interface UsageRow {
   readonly created_at: number
 }
 
+/** A raw row from the settlements table. */
 export interface SettlementRow {
   readonly settlement_id: string
   readonly workspace_id: string
@@ -323,7 +337,7 @@ function journalResource(mode: JournalMode):
 function initializeDatabase(db: DatabaseSync): void {
   db.exec(sql('schema'))
   db.exec(sql('set-application-id'))
-  db.exec(sql('set-user-version-2'))
+  db.exec(sql('set-user-version-4'))
 }
 
 let canonicalSchema: readonly SchemaObjectRow[] | undefined
@@ -392,7 +406,11 @@ export function validateSchemaForMutation(
   }
 }
 
-/** Decode one validated asset row into an AssetRecord. */
+/**
+ * Decode one validated asset row into an AssetRecord.
+ * @param value - the raw row to decode.
+ * @returns the decoded asset record.
+ */
 export function decodeAssetRow(value: unknown): AssetRecord {
   const row = record(value, 'stored asset')
   return {
@@ -405,7 +423,11 @@ export function decodeAssetRow(value: unknown): AssetRecord {
   }
 }
 
-/** Decode one validated lineage row into a LineageEdge. */
+/**
+ * Decode one validated lineage row into a LineageEdge.
+ * @param value - the raw row to decode.
+ * @returns the decoded lineage edge.
+ */
 export function decodeLineageRow(value: unknown): LineageEdge {
   const row = record(value, 'stored lineage edge')
   return {
@@ -416,7 +438,11 @@ export function decodeLineageRow(value: unknown): LineageEdge {
   }
 }
 
-/** Decode one validated ticket row into an ApprovalTicket. */
+/**
+ * Decode one validated ticket row into an ApprovalTicket.
+ * @param value - the raw row to decode.
+ * @returns the decoded approval ticket.
+ */
 export function decodeTicketRow(value: unknown): ApprovalTicket {
   const row = record(value, 'stored approval ticket')
   const scope = nullableStringField(row, 'review_scope')
@@ -433,7 +459,11 @@ export function decodeTicketRow(value: unknown): ApprovalTicket {
   }
 }
 
-/** Decode one validated transition row into an ApprovalTransition. */
+/**
+ * Decode one validated transition row into an ApprovalTransition.
+ * @param value - the raw row to decode.
+ * @returns the decoded approval transition.
+ */
 export function decodeTransitionRow(value: unknown): ApprovalTransition {
   const row = record(value, 'stored approval transition')
   return {
@@ -445,7 +475,11 @@ export function decodeTransitionRow(value: unknown): ApprovalTransition {
   }
 }
 
-/** Decode one validated audit row into an AuditEvent. */
+/**
+ * Decode one validated audit row into an AuditEvent.
+ * @param value - the raw row to decode.
+ * @returns the decoded audit event.
+ */
 export function decodeAuditRow(value: unknown): AuditEvent {
   const row = record(value, 'stored audit event')
   return {
@@ -460,8 +494,14 @@ export function decodeAuditRow(value: unknown): AuditEvent {
   }
 }
 
-/** Decode one validated capability row into a CapabilityRecord. */
-export function decodeCapabilityRow(value: unknown): CapabilityRecord {
+/**
+ * Decode one validated capability row into a CapabilityRecord.
+ * @param value - the raw row to decode.
+ * @param tools - the tool surface the capability's gate governs (the owning
+ * query supplies it from the capability_tools table; a lone row decodes empty).
+ * @returns the decoded capability record.
+ */
+export function decodeCapabilityRow(value: unknown, tools: readonly string[] = []): CapabilityRecord {
   const row = record(value, 'stored capability')
   return {
     id: CapabilityId(nonemptyStringField(row, 'capability_id')),
@@ -473,11 +513,16 @@ export function decodeCapabilityRow(value: unknown): CapabilityRecord {
     rollout: rolloutField(numberField(row, 'rollout')),
     rate: nonnegativeIntegerField(row, 'rate'),
     description: stringField(row, 'description'),
+    tools,
     createdAt: nonnegativeSafeIntegerField(row, 'created_at'),
   }
 }
 
-/** Decode one validated capability dependency row into a CapabilityDependency. */
+/**
+ * Decode one validated capability dependency row into a CapabilityDependency.
+ * @param value - the raw row to decode.
+ * @returns the decoded capability dependency.
+ */
 export function decodeCapabilityDependencyRow(value: unknown): CapabilityDependency {
   const row = record(value, 'stored capability dependency')
   return {
@@ -486,7 +531,11 @@ export function decodeCapabilityDependencyRow(value: unknown): CapabilityDepende
   }
 }
 
-/** Decode one validated scenario row into a ScenarioBundle (without capability ids). */
+/**
+ * Decode one validated scenario row into a ScenarioBundle (without capability ids).
+ * @param value - the raw row to decode.
+ * @returns the decoded scenario bundle.
+ */
 export function decodeScenarioRow(value: unknown): ScenarioBundle {
   const row = record(value, 'stored scenario bundle')
   return {
@@ -500,7 +549,11 @@ export function decodeScenarioRow(value: unknown): ScenarioBundle {
   }
 }
 
-/** Decode one validated account row into an AccountRecord. */
+/**
+ * Decode one validated account row into an AccountRecord.
+ * @param value - the raw row to decode.
+ * @returns the decoded account record.
+ */
 export function decodeAccountRow(value: unknown): AccountRecord {
   const row = record(value, 'stored account')
   return {
@@ -510,7 +563,11 @@ export function decodeAccountRow(value: unknown): AccountRecord {
   }
 }
 
-/** Decode one validated usage row into a UsageRecord. */
+/**
+ * Decode one validated usage row into a UsageRecord.
+ * @param value - the raw row to decode.
+ * @returns the decoded usage record.
+ */
 export function decodeUsageRecordRow(value: unknown): UsageRecord {
   const row = record(value, 'stored usage record')
   return {
@@ -524,7 +581,11 @@ export function decodeUsageRecordRow(value: unknown): UsageRecord {
   }
 }
 
-/** Decode one validated settlement row into a SettlementRecord. */
+/**
+ * Decode one validated settlement row into a SettlementRecord.
+ * @param value - the raw row to decode.
+ * @returns the decoded settlement record.
+ */
 export function decodeSettlementRow(value: unknown): SettlementRecord {
   const row = record(value, 'stored settlement')
   return {

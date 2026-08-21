@@ -55,13 +55,16 @@ import {
 } from './database.ts'
 import {
   assignRole,
+  assertWorkspaceExists,
   canAccessWorkspace,
   deleteUser,
   insertUser,
   insertWorkspace,
   membership,
   requirePermission,
+  setWorkspaceIsolation as setWorkspaceIsolationInStore,
   upsertRole,
+  workspaceIsolation as readWorkspaceIsolation,
 } from './identity.ts'
 import {
   getAsset,
@@ -88,6 +91,7 @@ import { listAudit, writeAudit } from './audit.ts'
 import {
   accrueSettlement,
   assertGateOpen,
+  capabilityOwningTool,
   creditAccount,
   debitAccount,
   deleteCapability,
@@ -131,7 +135,7 @@ export const DEFAULT_ROLES: readonly DefaultRoleSeed[] = [
   { id: RoleId('product'), displayName: 'Product', permissions: ['asset.register', 'asset.read', 'approval.review', 'audit.read', 'capability.consume'] },
   { id: RoleId('dev'), displayName: 'Developer', permissions: ['asset.register', 'asset.read', 'capability.consume'] },
   { id: RoleId('qa'), displayName: 'QA', permissions: ['asset.register', 'asset.read', 'capability.consume'] },
-  { id: RoleId('platform-admin'), displayName: 'Platform Admin', permissions: ['asset.read', 'approval.review', 'approval.release', 'audit.read', 'capability.publish', 'capability.consume', 'billing.read', 'billing.settle'] },
+  { id: RoleId('platform-admin'), displayName: 'Platform Admin', permissions: ['asset.read', 'approval.review', 'approval.release', 'audit.read', 'capability.publish', 'capability.consume', 'billing.read', 'billing.settle', 'platform.isolation'] },
 ]
 
 declare module '@deepseek-ai/cordis' {
@@ -142,6 +146,10 @@ declare module '@deepseek-ai/cordis' {
 
 /** One mutation wrapped in an immediate transaction with schema validation and audit. */
 type Mutation = (db: DatabaseSync, now: number) => void
+
+/** Monotonic per-process sequence guaranteeing workspace-id uniqueness across
+ * rapid creates (Date.now() alone collides within one millisecond). */
+let workspaceSequence = 0
 
 /**
  * The platform control-plane service.
@@ -242,15 +250,43 @@ export class PlatformShellService extends Service {
   /**
    * Create one workspace.
    * @param name - the workspace's display name.
+   * @param options - optional creation options.
+   * @param options.isolated - whether the workspace demands on-demand physical
+   * isolation (schema v3); the default shares the physical store.
    * @returns the created workspace identity.
    */
-  createWorkspace(name: string): WorkspaceId {
-    const workspaceId = WorkspaceId(`ws-${Date.now()}`)
+  createWorkspace(name: string, options: { readonly isolated?: boolean } = {}): WorkspaceId {
+    const workspaceId = WorkspaceId(`ws-${Date.now()}-${++workspaceSequence}`)
     this.mutate((db, now) => {
-      insertWorkspace(db, workspaceId, name, now)
-      writeAudit(db, { actorUserId: UserId('system'), workspaceId: null, action: 'tenant.workspace.create', targetKind: 'workspace', targetId: workspaceId, detail: null }, now)
+      insertWorkspace(db, workspaceId, name, options.isolated ?? false, now)
+      writeAudit(db, { actorUserId: UserId('system'), workspaceId: null, action: 'tenant.workspace.create', targetKind: 'workspace', targetId: workspaceId, detail: options.isolated ? JSON.stringify({ isolated: true }) : null }, now)
     })
     return workspaceId
+  }
+
+  /**
+   * Set whether one workspace demands on-demand physical isolation.
+   * Requires the `platform.isolation` permission.
+   * @param actor - the platform user making the change.
+   * @param workspaceId - the workspace to re-flag.
+   * @param isolated - the new isolation state.
+   */
+  setWorkspaceIsolation(actor: UserId, workspaceId: WorkspaceId, isolated: boolean): void {
+    this.mutate((db, now) => {
+      assertWorkspaceExists(db, workspaceId)
+      this.requirePlatformPermission(db, actor, 'platform.isolation')
+      setWorkspaceIsolationInStore(db, workspaceId, isolated)
+      writeAudit(db, { actorUserId: actor, workspaceId, action: 'tenant.workspace.isolate', targetKind: 'workspace', targetId: workspaceId, detail: JSON.stringify({ isolated }) }, now)
+    })
+  }
+
+  /**
+   * Whether one workspace demands on-demand physical isolation.
+   * @param workspaceId - the workspace to inspect.
+   * @returns true when the workspace is isolated, false when shared.
+   */
+  workspaceIsolation(workspaceId: WorkspaceId): boolean {
+    return readWorkspaceIsolation(this.requireDb(), workspaceId)
   }
 
   /**
@@ -648,6 +684,17 @@ export class PlatformShellService extends Service {
       writeAudit(db, { actorUserId: actor, workspaceId: onlyWorkspaceOf(db, actor), action: 'market.capability.gate', targetKind: 'capability', targetId: capabilityId, detail: JSON.stringify({ enabled: gate.enabled, rollout: gate.rollout }) }, now)
     })
     return updated as CapabilityRecord
+  }
+
+  /**
+   * The fresh catalog record whose gate governs one tool's execution, or
+   * `undefined` when no capability owns the tool. The execution-gate read: it
+   * must never cache, because the operator may flip the gate between calls.
+   * @param toolName - the tool name to resolve an owner for.
+   * @returns the owning capability's fresh record, or undefined when unowned.
+   */
+  runtimeCapabilityOwningTool(toolName: string): CapabilityRecord | undefined {
+    return capabilityOwningTool(this.requireDb(), toolName)
   }
 
   /**

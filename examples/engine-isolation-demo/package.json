@@ -1,0 +1,7 @@
+{
+  "name": "engine-isolation-demo-example",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Runnable demo: on-demand workspace isolation routed through the engine-driver seam — shared workspaces run in-process, isolated workspaces delegate to a dedicated child engine with a per-workspace store and JSONL log root (keyless)"
+}
