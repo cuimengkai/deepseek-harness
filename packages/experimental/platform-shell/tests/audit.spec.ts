@@ -33,8 +33,8 @@ describe('audit log', () => {
       db.exec(sql('commit'))
       const rows = listAudit(db)
       expect(rows).toHaveLength(1)
-      expect(rows[0].action).toBe('asset.register')
-      expect(rows[0].actorUserId).toBe(alice)
+      expect(rows[0]?.action).toBe('asset.register')
+      expect(rows[0]?.actorUserId).toBe(alice)
     } finally {
       db.close()
     }
@@ -79,7 +79,7 @@ describe('audit log', () => {
       db.exec(sql('begin-immediate'))
       writeAudit(db, { actorUserId: alice, workspaceId: ws, action: 'asset.register', targetKind: 'asset', targetId: 'requirement-1', detail: null }, 1)
       db.exec(sql('commit'))
-      const written = listAudit(db)[0]
+      const written = listAudit(db)[0]!
       expect(getAudit(db, written.id)?.action).toBe('asset.register')
       expect(getAudit(db, 'event-does-not-exist' as never)).toBeUndefined()
     } finally {
@@ -95,7 +95,7 @@ describe('audit log', () => {
       registerAsset(db, ws, 'requirement', 'R1', RoleId('product'), 1)
       writeAudit(db, { actorUserId: alice, workspaceId: ws, action: 'asset.register', targetKind: 'asset', targetId: 'requirement-1', detail: JSON.stringify({ kind: 'requirement' }) }, 1)
       db.exec(sql('commit'))
-      const row = listAudit(db, { action: 'asset.register' })[0]
+      const row = listAudit(db, { action: 'asset.register' })[0]!
       expect(row.targetId).toBe('requirement-1')
       expect(JSON.parse(row.detail as string).kind).toBe('requirement')
     } finally {

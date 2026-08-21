@@ -304,6 +304,146 @@ assetExists(assetId: AssetId): boolean
 ticketStatus(ticketId: TicketId): BusinessApprovalStatus | undefined
 
 /**
+ * Publish one capability to the market catalog.
+ * @param actor - the operator publishing the capability.
+ * @param request - catalog entry fields, dependency and conflict edges, and the execution gate.
+ * @returns the committed catalog entry.
+ */
+publishCapability(actor: UserId, request: PublishCapabilityRequest): CapabilityRecord
+
+/**
+ * Remove one capability from the market catalog.
+ * @param actor - the operator unpublishing the capability.
+ * @param capabilityId - the catalog entry to remove.
+ */
+unpublishCapability(actor: UserId, capabilityId: CapabilityId): void
+
+/**
+ * List every catalog entry in identity order.
+ * @param actor - the platform user listing the catalog.
+ * @returns the catalog entries.
+ */
+listCapabilities(actor: UserId): CapabilityRecord[]
+
+/**
+ * Read one catalog entry.
+ * @param actor - the platform user reading the catalog.
+ * @param capabilityId - the catalog entry to read.
+ * @returns the entry, or `undefined` when absent.
+ */
+getCapability(actor: UserId, capabilityId: CapabilityId): CapabilityRecord | undefined
+
+/**
+ * Set one catalog entry's execution gate.
+ * @param actor - the operator setting the gate.
+ * @param capabilityId - the catalog entry to gate.
+ * @param gate - enabled flag and 0..1 rollout fraction.
+ * @returns the committed entry.
+ */
+setCapabilityGate(actor: UserId, capabilityId: CapabilityId, gate: CapabilityGate): CapabilityRecord
+
+/**
+ * Register one scenario bundle (a pluggable C-side workbench surface).
+ * @param actor - the operator publishing the scenario.
+ * @param request - bundle fields and the workbench's capability set.
+ * @returns the committed scenario bundle.
+ */
+publishScenario(actor: UserId, request: PublishScenarioRequest): ScenarioBundle
+
+/**
+ * Remove one scenario bundle (a pluggable C-side workbench surface).
+ * @param actor - the operator unpublishing the scenario.
+ * @param scenarioId - the scenario to remove.
+ */
+unpublishScenario(actor: UserId, scenarioId: ScenarioId): void
+
+/**
+ * List every scenario bundle in identity order.
+ * @param actor - the platform user listing the workbenches.
+ * @returns the scenario bundles.
+ */
+listScenarios(actor: UserId): ScenarioBundle[]
+
+/**
+ * Read one scenario bundle.
+ * @param actor - the platform user reading the workbench.
+ * @param scenarioId - the scenario to read.
+ * @returns the bundle, or `undefined` when absent.
+ */
+getScenario(actor: UserId, scenarioId: ScenarioId): ScenarioBundle | undefined
+
+/**
+ * Resolve one capability selection within one scenario's workbench surface.
+ * @param actor - the platform user assembling capabilities.
+ * @param request - the workspace, scenario, and selected capability ids.
+ * @returns the ordered resolved set plus the scenario's preset id.
+ */
+resolveCapabilities(actor: UserId, request: ResolveCapabilitiesRequest): ResolvedCapabilitySet
+
+/**
+ * Credit one workspace's billing account.
+ * @param actor - the operator crediting the account.
+ * @param workspaceId - the workspace account to credit.
+ * @param amount - non-negative credits to add.
+ * @returns the updated account.
+ */
+creditAccount(actor: UserId, workspaceId: WorkspaceId, amount: number): AccountRecord
+
+/**
+ * Read one workspace's billing account.
+ * @param actor - the platform user reading the account.
+ * @param workspaceId - the workspace account to read.
+ * @returns the account, or `undefined` when no account has been opened.
+ */
+accountBalance(actor: UserId, workspaceId: WorkspaceId): AccountRecord | undefined
+
+/**
+ * List one workspace's usage records in billing order.
+ * @param actor - the platform user reading the ledger.
+ * @param workspaceId - the workspace whose usage to list.
+ * @returns the usage records.
+ */
+listUsage(actor: UserId, workspaceId: WorkspaceId): UsageRecord[]
+
+/**
+ * Consume one capability against a workspace account, metering usage.
+ * @param actor - the platform user consuming the capability.
+ * @param request - the workspace, capability, and quantity.
+ * @returns the committed usage record.
+ */
+consumeCapability(actor: UserId, request: ConsumeCapabilityRequest): UsageRecord
+
+/**
+ * Close one workspace's open settlement for a period as `settled`.
+ * @param actor - the operator settling the account.
+ * @param workspaceId - the workspace whose period to settle.
+ * @param period - the `YYYY-MM` billing period to close.
+ * @returns the committed settlement.
+ */
+settleAccount(actor: UserId, workspaceId: WorkspaceId, period: string): SettlementRecord
+
+/**
+ * Whether one capability exists in the market catalog.
+ * @param capabilityId - the catalog entry to test.
+ * @returns whether the catalog holds the entry.
+ */
+capabilityExists(capabilityId: CapabilityId): boolean
+
+/**
+ * Whether one scenario bundle exists.
+ * @param scenarioId - the scenario to test.
+ * @returns whether the market holds the bundle.
+ */
+scenarioExists(scenarioId: ScenarioId): boolean
+
+/**
+ * One settlement's committed status, or `undefined` when absent.
+ * @param settlementId - the settlement to inspect.
+ * @returns the committed status, or `undefined` for an unknown settlement.
+ */
+settlementStatus(settlementId: SettlementId): SettlementStatus | undefined
+
+/**
  * List audit rows, filtered by workspace and action.
  * @param actor - the platform user reading the audit log.
  * @param filter - optional workspace and action filters; a workspace-less

@@ -220,7 +220,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/experimental/platform-shell/src/types.ts:184`](../packages/experimental/platform-shell/src/types.ts)
+来源：[`packages/experimental/platform-shell/src/types.ts:359`](../packages/experimental/platform-shell/src/types.ts)
 
 <a id="assetregister--log-only"></a>
 
@@ -236,7 +236,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/experimental/platform-shell/src/types.ts:191`](../packages/experimental/platform-shell/src/types.ts)
+来源：[`packages/experimental/platform-shell/src/types.ts:366`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `assistant/*`
 
@@ -274,6 +274,56 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 类型：[TokenUsage](subsystems/llm-streaming.zh.md)
 
 来源：[`packages/core/session/src/types.ts:277`](../packages/core/session/src/types.ts)
+
+### `billing/*`
+
+<a id="billingsettlement--log-only"></a>
+
+#### `billing/settlement` — log-only
+
+```ts persistence-catalog
+/** One billing settlement closed for a workspace account. */
+'billing/settlement': {
+  settlementId: SettlementId
+  workspaceId: WorkspaceId
+  period: string
+  status: SettlementStatus
+}
+```
+
+来源：[`packages/experimental/platform-shell/src/types.ts:394`](../packages/experimental/platform-shell/src/types.ts)
+
+### `capability/*`
+
+<a id="capabilitypublished--log-only"></a>
+
+#### `capability/published` — log-only
+
+```ts persistence-catalog
+/** The operator published one capability to the market catalog. */
+'capability/published': {
+  capabilityId: CapabilityId
+  version: string
+  roleId: RoleId
+}
+```
+
+来源：[`packages/experimental/platform-shell/src/types.ts:382`](../packages/experimental/platform-shell/src/types.ts)
+
+<a id="capabilityselected--log-only"></a>
+
+#### `capability/selected` — log-only
+
+```ts persistence-catalog
+/** The market committed one resolved capability selection for a workspace. */
+'capability/selected': {
+  workspaceId: WorkspaceId
+  capabilityIds: readonly CapabilityId[]
+  preset: string
+}
+```
+
+来源：[`packages/experimental/platform-shell/src/types.ts:388`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `command/*`
 
@@ -582,14 +632,15 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 /** A business approval ticket crossed a state-machine edge. */
 'platform/approval/transition': {
   ticketId: TicketId
-  from: BusinessApprovalStatus
+  /** The status the ticket left; `null` marks the initial draft creation. */
+  from: BusinessApprovalStatus | null
   to: BusinessApprovalStatus
   actorUserId: UserId
   workspaceId: WorkspaceId
 }
 ```
 
-来源：[`packages/experimental/platform-shell/src/types.ts:198`](../packages/experimental/platform-shell/src/types.ts)
+来源：[`packages/experimental/platform-shell/src/types.ts:373`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `request/*`
 

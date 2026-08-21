@@ -80,8 +80,65 @@ export function AuditEventId(id: string): AuditEventId {
   return id as AuditEventId
 }
 
+/** A capability-market catalog entry identity (a slug the operator chooses). */
+export type CapabilityId = Branded<'CapabilityId'>
+
+/**
+ * Brand a capability identity.
+ * @param id - validated capability identity string.
+ * @returns the same string branded as a CapabilityId.
+ */
+export function CapabilityId(id: string): CapabilityId {
+  return id as CapabilityId
+}
+
+/** A scenario-bundle identity (one pluggable C-side workbench surface). */
+export type ScenarioId = Branded<'ScenarioId'>
+
+/**
+ * Brand a scenario-bundle identity.
+ * @param id - validated scenario identity string.
+ * @returns the same string branded as a ScenarioId.
+ */
+export function ScenarioId(id: string): ScenarioId {
+  return id as ScenarioId
+}
+
+/** A billing usage-record identity (`usage-<seq>`). */
+export type UsageRecordId = Branded<'UsageRecordId'>
+
+/**
+ * Brand a usage-record identity.
+ * @param id - generated usage-record identity (`usage-<seq>`).
+ * @returns the same string branded as a UsageRecordId.
+ */
+export function UsageRecordId(id: string): UsageRecordId {
+  return id as UsageRecordId
+}
+
+/** A billing settlement identity (`settlement-<seq>`). */
+export type SettlementId = Branded<'SettlementId'>
+
+/**
+ * Brand a settlement identity.
+ * @param id - generated settlement identity (`settlement-<seq>`).
+ * @returns the same string branded as a SettlementId.
+ */
+export function SettlementId(id: string): SettlementId {
+  return id as SettlementId
+}
+
 /** One permission held by a role within a workspace. */
-export type Permission = 'asset.read' | 'asset.register' | 'approval.review' | 'approval.release' | 'audit.read'
+export type Permission =
+  | 'asset.read'
+  | 'asset.register'
+  | 'approval.review'
+  | 'approval.release'
+  | 'audit.read'
+  | 'capability.publish'
+  | 'capability.consume'
+  | 'billing.read'
+  | 'billing.settle'
 
 /** The closed set of asset kinds the store validates against (asset-schema §2). */
 export type AssetKind = 'requirement' | 'design' | 'code' | 'test-case' | 'handoff'
@@ -168,6 +225,124 @@ export interface RegisterAssetRequest {
   readonly roleId: RoleId
 }
 
+/** The execution depth a capability is granted within a workspace (architecture D4). */
+export type ExecutionMode = 'managed' | 'sandboxed' | 'none'
+
+/** One capability-market catalog entry (platform-capability-market §2). */
+export interface CapabilityRecord {
+  readonly id: CapabilityId
+  readonly name: string
+  readonly roleId: RoleId
+  readonly execution: ExecutionMode
+  readonly version: string
+  readonly enabled: boolean
+  readonly rollout: number
+  readonly rate: number
+  readonly description: string
+  readonly createdAt: number
+}
+
+/** One dependency edge of a capability on another catalog entry. */
+export interface CapabilityDependency {
+  readonly id: CapabilityId
+  readonly range: string | null
+}
+
+/** One pluggable C-side workbench bundle (scenario layer, architecture D5). */
+export interface ScenarioBundle {
+  readonly id: ScenarioId
+  readonly name: string
+  readonly workbenchId: string
+  readonly roleId: RoleId
+  readonly preset: string
+  readonly capabilityIds: readonly CapabilityId[]
+  readonly createdAt: number
+}
+
+/** One workspace's billing account (platform-billing-ledger §1). */
+export interface AccountRecord {
+  readonly workspaceId: WorkspaceId
+  readonly balance: number
+  readonly createdAt: number
+}
+
+/** One metered capability consumption (platform-billing-ledger §3). */
+export interface UsageRecord {
+  readonly id: UsageRecordId
+  readonly workspaceId: WorkspaceId
+  readonly capabilityId: CapabilityId
+  readonly qty: number
+  readonly cost: number
+  readonly billedAt: number
+  readonly createdAt: number
+}
+
+/** Billing settlement lifecycle (platform-billing-ledger §4). */
+export type SettlementStatus = 'open' | 'settled'
+
+/** One workspace billing settlement period. */
+export interface SettlementRecord {
+  readonly id: SettlementId
+  readonly workspaceId: WorkspaceId
+  readonly period: string
+  readonly amount: number
+  readonly status: SettlementStatus
+  readonly createdAt: number
+  readonly settledAt: number | null
+}
+
+/** Input for publishing one market capability. */
+export interface PublishCapabilityRequest {
+  readonly id: CapabilityId
+  readonly name: string
+  readonly roleId: RoleId
+  readonly execution: ExecutionMode
+  readonly version: string
+  readonly rate: number
+  readonly dependencies?: readonly { readonly id: CapabilityId; readonly range?: string }[]
+  readonly conflictsWith?: readonly CapabilityId[]
+  readonly enabled?: boolean
+  readonly rollout?: number
+  readonly description?: string
+}
+
+/** Input for registering one scenario bundle. */
+export interface PublishScenarioRequest {
+  readonly id: ScenarioId
+  readonly name: string
+  readonly workbenchId: string
+  readonly roleId: RoleId
+  readonly preset: string
+  readonly capabilityIds: readonly CapabilityId[]
+}
+
+/** The outcome of resolving one capability selection for a workspace. */
+export interface ResolvedCapabilitySet {
+  readonly requested: readonly CapabilityId[]
+  readonly resolved: readonly CapabilityRecord[]
+  readonly preset: string
+}
+
+/** Input for consuming one capability against a workspace account. */
+export interface ConsumeCapabilityRequest {
+  readonly workspaceId: WorkspaceId
+  readonly capabilityId: CapabilityId
+  readonly qty?: number
+}
+
+/** One capability's execution gate: the enabled flag and 0..1 rollout fraction. */
+export interface CapabilityGate {
+  readonly enabled: boolean
+  readonly rollout: number
+}
+
+/** Input for resolving one capability selection within a scenario workbench. */
+export interface ResolveCapabilitiesRequest {
+  readonly workspaceId: WorkspaceId
+  readonly scenarioId: ScenarioId
+  readonly selected: readonly CapabilityId[]
+}
+
 /** Platform-shell deployment configuration. */
 export interface Config {
   /** Database path; `:memory:` for ephemeral stores. */
@@ -202,6 +377,25 @@ declare module '@deepseek-ai/dsh-session/types' {
       to: BusinessApprovalStatus
       actorUserId: UserId
       workspaceId: WorkspaceId
+    }
+    /** The operator published one capability to the market catalog. */
+    'capability/published': {
+      capabilityId: CapabilityId
+      version: string
+      roleId: RoleId
+    }
+    /** The market committed one resolved capability selection for a workspace. */
+    'capability/selected': {
+      workspaceId: WorkspaceId
+      capabilityIds: readonly CapabilityId[]
+      preset: string
+    }
+    /** One billing settlement closed for a workspace account. */
+    'billing/settlement': {
+      settlementId: SettlementId
+      workspaceId: WorkspaceId
+      period: string
+      status: SettlementStatus
     }
   }
 }

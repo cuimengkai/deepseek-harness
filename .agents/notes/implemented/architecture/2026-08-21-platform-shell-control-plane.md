@@ -23,3 +23,7 @@ The plan named three roles; the demo seeds a fourth, `platform-admin`. The appro
 **Drive the release edge from the demo driver directly.** The demo's purpose is to prove agents drive the control plane, so the release must go through a role agent, not a host-side store call.
 
 **Repeat the fs/shell role isolation in this demo.** The sibling demo already proves that surface with sandboxed workspace fences and tool-set differences; duplicating it adds runtime cost and evidence noise, and the control plane's access boundary is RBAC at the service layer, not tool mounting.
+
+## Consequences
+
+The control plane lives in one private, source-only experimental package that no release package depends on, so its record types and events are not part of the published SDK. The persona-only presets keep the demo free of fs/shell isolation that the sibling platform-agent-demo already proves; RBAC at the service boundary is the enforced access wall. The package ships no built `lib/`, so consumers load it through the `./src/*` export under the tsx ESM hook.

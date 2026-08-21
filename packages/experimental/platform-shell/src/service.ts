@@ -13,19 +13,34 @@ import {
   RoleId,
   UserId,
   WorkspaceId,
+  type AccountRecord,
   type ApprovalTicket,
   type ApprovalTransition,
   type AssetId,
   type AssetRecord,
   type AuditEvent,
   type BusinessApprovalStatus,
+  type CapabilityGate,
+  type CapabilityId,
+  type CapabilityRecord,
   type Config,
+  type ConsumeCapabilityRequest,
   type LineageEdge,
   type Membership,
   type Permission,
+  type PublishCapabilityRequest,
+  type PublishScenarioRequest,
   type RegisterAssetRequest,
+  type ResolveCapabilitiesRequest,
+  type ResolvedCapabilitySet,
   type ReviewScope,
+  type ScenarioBundle,
+  type ScenarioId,
+  type SettlementId,
+  type SettlementRecord,
+  type SettlementStatus,
   type TicketId,
+  type UsageRecord,
 } from './types.ts'
 import { PlatformShellError } from './error.ts'
 import {
@@ -70,6 +85,38 @@ import {
   transitions,
 } from './approval.ts'
 import { listAudit, writeAudit } from './audit.ts'
+import {
+  accrueSettlement,
+  assertGateOpen,
+  creditAccount,
+  debitAccount,
+  deleteCapability,
+  deleteScenario,
+  ensureAccount,
+  ensureOpenSettlement,
+  getAccount,
+  getCapability,
+  getScenario,
+  getSettlement,
+  insertCapability,
+  insertCapabilityConflict,
+  insertCapabilityDependency,
+  insertScenario,
+  insertScenarioCapability,
+  insertUsage,
+  listCapabilities,
+  listScenarios,
+  listUsage,
+  loadCatalog,
+  periodOf,
+  requireCapability,
+  requireScenario,
+  resolveSelection,
+  settleSettlement,
+  setCapabilityGate,
+  validateCapabilityRequest,
+  validateScenarioRequest,
+} from './capability-market.ts'
 import { sql } from './sql.ts'
 
 /** One seed entry in {@link DEFAULT_ROLES}. */
@@ -81,10 +128,10 @@ type DefaultRoleSeed = {
 
 /** Default roles seeded into every fresh platform database. */
 export const DEFAULT_ROLES: readonly DefaultRoleSeed[] = [
-  { id: RoleId('product'), displayName: 'Product', permissions: ['asset.register', 'asset.read', 'approval.review', 'audit.read'] },
-  { id: RoleId('dev'), displayName: 'Developer', permissions: ['asset.register', 'asset.read'] },
-  { id: RoleId('qa'), displayName: 'QA', permissions: ['asset.register', 'asset.read'] },
-  { id: RoleId('platform-admin'), displayName: 'Platform Admin', permissions: ['asset.read', 'approval.review', 'approval.release', 'audit.read'] },
+  { id: RoleId('product'), displayName: 'Product', permissions: ['asset.register', 'asset.read', 'approval.review', 'audit.read', 'capability.consume'] },
+  { id: RoleId('dev'), displayName: 'Developer', permissions: ['asset.register', 'asset.read', 'capability.consume'] },
+  { id: RoleId('qa'), displayName: 'QA', permissions: ['asset.register', 'asset.read', 'capability.consume'] },
+  { id: RoleId('platform-admin'), displayName: 'Platform Admin', permissions: ['asset.read', 'approval.review', 'approval.release', 'audit.read', 'capability.publish', 'capability.consume', 'billing.read', 'billing.settle'] },
 ]
 
 declare module '@deepseek-ai/cordis' {
@@ -167,6 +214,11 @@ export class PlatformShellService extends Service {
       throw new PlatformShellError('INVALID_ARGUMENT', 'platform database is not open')
     }
     return this.db
+  }
+
+  /** Require a platform-level permission via the actor's single membership workspace. */
+  private requirePlatformPermission(db: DatabaseSync, actor: UserId, permission: Permission): void {
+    requirePermission(db, actor, onlyWorkspaceOf(db, actor), permission)
   }
 
   // --- identity / tenant / rbac ---
@@ -495,6 +547,336 @@ export class PlatformShellService extends Service {
    */
   ticketStatus(ticketId: TicketId): BusinessApprovalStatus | undefined {
     return getTicket(this.requireDb(), ticketId)?.status
+  }
+
+  // --- capability market ---
+
+  /**
+   * Publish one capability to the market catalog.
+   * @param actor - the operator publishing the capability.
+   * @param request - catalog entry fields, dependency and conflict edges, and the execution gate.
+   * @returns the committed catalog entry.
+   */
+  publishCapability(actor: UserId, request: PublishCapabilityRequest): CapabilityRecord {
+    validateCapabilityRequest(request)
+    let published: CapabilityRecord | undefined
+    this.mutate((db, now) => {
+      this.requirePlatformPermission(db, actor, 'capability.publish')
+      if (getCapability(db, request.id) !== undefined) {
+        throw new PlatformShellError('DUPLICATE_CAPABILITY', `capability ${request.id} is already published`)
+      }
+      for (const dependency of request.dependencies ?? []) requireCapability(db, dependency.id)
+      for (const conflict of request.conflictsWith ?? []) requireCapability(db, conflict)
+      insertCapability(db, request, now)
+      for (const dependency of request.dependencies ?? []) {
+        insertCapabilityDependency(db, request.id, dependency.id, dependency.range ?? null, now)
+      }
+      for (const conflict of request.conflictsWith ?? []) {
+        insertCapabilityConflict(db, request.id, conflict, now)
+      }
+      published = getCapability(db, request.id)
+      writeAudit(db, {
+        actorUserId: actor,
+        workspaceId: onlyWorkspaceOf(db, actor),
+        action: 'market.capability.publish',
+        targetKind: 'capability',
+        targetId: request.id,
+        detail: JSON.stringify({
+          name: request.name,
+          version: request.version,
+          execution: request.execution,
+          roleId: request.roleId,
+          rate: request.rate,
+        }),
+      }, now)
+    })
+    return published as CapabilityRecord
+  }
+
+  /**
+   * Remove one capability from the market catalog.
+   * @param actor - the operator unpublishing the capability.
+   * @param capabilityId - the catalog entry to remove.
+   */
+  unpublishCapability(actor: UserId, capabilityId: CapabilityId): void {
+    this.mutate((db, now) => {
+      this.requirePlatformPermission(db, actor, 'capability.publish')
+      requireCapability(db, capabilityId)
+      deleteCapability(db, capabilityId)
+      writeAudit(db, { actorUserId: actor, workspaceId: onlyWorkspaceOf(db, actor), action: 'market.capability.unpublish', targetKind: 'capability', targetId: capabilityId, detail: null }, now)
+    })
+  }
+
+  /**
+   * List every catalog entry in identity order.
+   * @param actor - the platform user listing the catalog.
+   * @returns the catalog entries.
+   */
+  listCapabilities(actor: UserId): CapabilityRecord[] {
+    const db = this.requireDb()
+    this.requirePlatformPermission(db, actor, 'capability.consume')
+    return listCapabilities(db)
+  }
+
+  /**
+   * Read one catalog entry.
+   * @param actor - the platform user reading the catalog.
+   * @param capabilityId - the catalog entry to read.
+   * @returns the entry, or `undefined` when absent.
+   */
+  getCapability(actor: UserId, capabilityId: CapabilityId): CapabilityRecord | undefined {
+    const db = this.requireDb()
+    this.requirePlatformPermission(db, actor, 'capability.consume')
+    return getCapability(db, capabilityId)
+  }
+
+  /**
+   * Set one catalog entry's execution gate.
+   * @param actor - the operator setting the gate.
+   * @param capabilityId - the catalog entry to gate.
+   * @param gate - enabled flag and 0..1 rollout fraction.
+   * @returns the committed entry.
+   */
+  setCapabilityGate(actor: UserId, capabilityId: CapabilityId, gate: CapabilityGate): CapabilityRecord {
+    if (gate.rollout < 0 || gate.rollout > 1) {
+      throw new PlatformShellError('INVALID_ARGUMENT', 'capability rollout must be within 0..1')
+    }
+    let updated: CapabilityRecord | undefined
+    this.mutate((db, now) => {
+      this.requirePlatformPermission(db, actor, 'capability.publish')
+      updated = setCapabilityGate(db, capabilityId, gate.enabled, gate.rollout)
+      writeAudit(db, { actorUserId: actor, workspaceId: onlyWorkspaceOf(db, actor), action: 'market.capability.gate', targetKind: 'capability', targetId: capabilityId, detail: JSON.stringify({ enabled: gate.enabled, rollout: gate.rollout }) }, now)
+    })
+    return updated as CapabilityRecord
+  }
+
+  /**
+   * Register one scenario bundle (a pluggable C-side workbench surface).
+   * @param actor - the operator publishing the scenario.
+   * @param request - bundle fields and the workbench's capability set.
+   * @returns the committed scenario bundle.
+   */
+  publishScenario(actor: UserId, request: PublishScenarioRequest): ScenarioBundle {
+    validateScenarioRequest(request)
+    let published: ScenarioBundle | undefined
+    this.mutate((db, now) => {
+      this.requirePlatformPermission(db, actor, 'capability.publish')
+      if (getScenario(db, request.id) !== undefined) {
+        throw new PlatformShellError('DUPLICATE_SCENARIO', `scenario ${request.id} is already published`)
+      }
+      for (const capabilityId of request.capabilityIds) requireCapability(db, capabilityId)
+      insertScenario(db, request, now)
+      for (const capabilityId of request.capabilityIds) {
+        insertScenarioCapability(db, request.id, capabilityId)
+      }
+      published = getScenario(db, request.id)
+      writeAudit(db, {
+        actorUserId: actor,
+        workspaceId: onlyWorkspaceOf(db, actor),
+        action: 'market.scenario.publish',
+        targetKind: 'scenario',
+        targetId: request.id,
+        detail: JSON.stringify({ name: request.name, workbenchId: request.workbenchId, preset: request.preset }),
+      }, now)
+    })
+    return published as ScenarioBundle
+  }
+
+  /**
+   * Remove one scenario bundle (a pluggable C-side workbench surface).
+   * @param actor - the operator unpublishing the scenario.
+   * @param scenarioId - the scenario to remove.
+   */
+  unpublishScenario(actor: UserId, scenarioId: ScenarioId): void {
+    this.mutate((db, now) => {
+      this.requirePlatformPermission(db, actor, 'capability.publish')
+      requireScenario(db, scenarioId)
+      deleteScenario(db, scenarioId)
+      writeAudit(db, { actorUserId: actor, workspaceId: onlyWorkspaceOf(db, actor), action: 'market.scenario.unpublish', targetKind: 'scenario', targetId: scenarioId, detail: null }, now)
+    })
+  }
+
+  /**
+   * List every scenario bundle in identity order.
+   * @param actor - the platform user listing the workbenches.
+   * @returns the scenario bundles.
+   */
+  listScenarios(actor: UserId): ScenarioBundle[] {
+    const db = this.requireDb()
+    this.requirePlatformPermission(db, actor, 'capability.consume')
+    return listScenarios(db)
+  }
+
+  /**
+   * Read one scenario bundle.
+   * @param actor - the platform user reading the workbench.
+   * @param scenarioId - the scenario to read.
+   * @returns the bundle, or `undefined` when absent.
+   */
+  getScenario(actor: UserId, scenarioId: ScenarioId): ScenarioBundle | undefined {
+    const db = this.requireDb()
+    this.requirePlatformPermission(db, actor, 'capability.consume')
+    return getScenario(db, scenarioId)
+  }
+
+  /**
+   * Resolve one capability selection within one scenario's workbench surface.
+   * @param actor - the platform user assembling capabilities.
+   * @param request - the workspace, scenario, and selected capability ids.
+   * @returns the ordered resolved set plus the scenario's preset id.
+   */
+  resolveCapabilities(actor: UserId, request: ResolveCapabilitiesRequest): ResolvedCapabilitySet {
+    const db = this.requireDb()
+    requirePermission(db, actor, request.workspaceId, 'capability.consume')
+    const scenario = requireScenario(db, request.scenarioId)
+    for (const id of request.selected) {
+      if (!scenario.capabilityIds.includes(id)) {
+        throw new PlatformShellError('INVALID_ARGUMENT', `capability ${id} is not part of workbench ${scenario.workbenchId}`)
+      }
+    }
+    const resolved = resolveSelection(loadCatalog(db), request.workspaceId, request.selected)
+    writeAudit(db, {
+      actorUserId: actor,
+      workspaceId: request.workspaceId,
+      action: 'market.capability.resolve',
+      targetKind: 'scenario',
+      targetId: request.scenarioId,
+      detail: JSON.stringify({ requested: request.selected, resolved: resolved.map(c => c.id) }),
+    }, Date.now())
+    return { requested: request.selected, resolved, preset: scenario.preset }
+  }
+
+  // --- billing ---
+
+  /**
+   * Credit one workspace's billing account.
+   * @param actor - the operator crediting the account.
+   * @param workspaceId - the workspace account to credit.
+   * @param amount - non-negative credits to add.
+   * @returns the updated account.
+   */
+  creditAccount(actor: UserId, workspaceId: WorkspaceId, amount: number): AccountRecord {
+    if (!Number.isSafeInteger(amount) || amount < 0) {
+      throw new PlatformShellError('INVALID_ARGUMENT', 'credit amount must be a non-negative integer of credits')
+    }
+    let account: AccountRecord | undefined
+    this.mutate((db, now) => {
+      this.requirePlatformPermission(db, actor, 'billing.settle')
+      account = creditAccount(db, workspaceId, amount, now)
+      writeAudit(db, { actorUserId: actor, workspaceId, action: 'billing.account.credit', targetKind: 'account', targetId: workspaceId, detail: JSON.stringify({ amount }) }, now)
+    })
+    return account as AccountRecord
+  }
+
+  /**
+   * Read one workspace's billing account.
+   * @param actor - the platform user reading the account.
+   * @param workspaceId - the workspace account to read.
+   * @returns the account, or `undefined` when no account has been opened.
+   */
+  accountBalance(actor: UserId, workspaceId: WorkspaceId): AccountRecord | undefined {
+    const db = this.requireDb()
+    requirePermission(db, actor, workspaceId, 'billing.read')
+    return getAccount(db, workspaceId)
+  }
+
+  /**
+   * List one workspace's usage records in billing order.
+   * @param actor - the platform user reading the ledger.
+   * @param workspaceId - the workspace whose usage to list.
+   * @returns the usage records.
+   */
+  listUsage(actor: UserId, workspaceId: WorkspaceId): UsageRecord[] {
+    const db = this.requireDb()
+    requirePermission(db, actor, workspaceId, 'billing.read')
+    return listUsage(db, workspaceId)
+  }
+
+  /**
+   * Consume one capability against a workspace account, metering usage.
+   * @param actor - the platform user consuming the capability.
+   * @param request - the workspace, capability, and quantity.
+   * @returns the committed usage record.
+   */
+  consumeCapability(actor: UserId, request: ConsumeCapabilityRequest): UsageRecord {
+    const qty = request.qty ?? 1
+    if (!Number.isSafeInteger(qty) || qty < 1) {
+      throw new PlatformShellError('INVALID_ARGUMENT', 'consumption quantity must be a positive integer')
+    }
+    let usage: UsageRecord | undefined
+    this.mutate((db, now) => {
+      requirePermission(db, actor, request.workspaceId, 'capability.consume')
+      const capability = requireCapability(db, request.capabilityId)
+      assertGateOpen(capability, request.workspaceId)
+      const account = ensureAccount(db, request.workspaceId, now)
+      const cost = capability.rate * qty
+      if (account.balance < cost) {
+        throw new PlatformShellError('INSUFFICIENT_BALANCE', `workspace ${request.workspaceId} has ${account.balance} credits, needs ${cost}`)
+      }
+      const period = periodOf(now)
+      debitAccount(db, request.workspaceId, cost)
+      usage = insertUsage(db, request.workspaceId, request.capabilityId, qty, cost, now)
+      const settlement = ensureOpenSettlement(db, request.workspaceId, period, now)
+      accrueSettlement(db, settlement.id, settlement.amount + cost)
+      writeAudit(db, {
+        actorUserId: actor,
+        workspaceId: request.workspaceId,
+        action: 'billing.consume',
+        targetKind: 'capability',
+        targetId: request.capabilityId,
+        detail: JSON.stringify({ qty, cost, balance: account.balance - cost }),
+      }, now)
+    })
+    return usage as UsageRecord
+  }
+
+  /**
+   * Close one workspace's open settlement for a period as `settled`.
+   * @param actor - the operator settling the account.
+   * @param workspaceId - the workspace whose period to settle.
+   * @param period - the `YYYY-MM` billing period to close.
+   * @returns the committed settlement.
+   */
+  settleAccount(actor: UserId, workspaceId: WorkspaceId, period: string): SettlementRecord {
+    if (period.length === 0) {
+      throw new PlatformShellError('INVALID_ARGUMENT', 'settlement period must not be empty')
+    }
+    let settlement: SettlementRecord | undefined
+    this.mutate((db, now) => {
+      this.requirePlatformPermission(db, actor, 'billing.settle')
+      settlement = settleSettlement(db, workspaceId, period, now)
+      writeAudit(db, { actorUserId: actor, workspaceId, action: 'billing.settlement.settle', targetKind: 'settlement', targetId: settlement.id, detail: JSON.stringify({ period, amount: settlement.amount }) }, now)
+    })
+    return settlement as SettlementRecord
+  }
+
+  // --- market probes (invariant backing) ---
+
+  /**
+   * Whether one capability exists in the market catalog.
+   * @param capabilityId - the catalog entry to test.
+   * @returns whether the catalog holds the entry.
+   */
+  capabilityExists(capabilityId: CapabilityId): boolean {
+    return getCapability(this.requireDb(), capabilityId) !== undefined
+  }
+
+  /**
+   * Whether one scenario bundle exists.
+   * @param scenarioId - the scenario to test.
+   * @returns whether the market holds the bundle.
+   */
+  scenarioExists(scenarioId: ScenarioId): boolean {
+    return getScenario(this.requireDb(), scenarioId) !== undefined
+  }
+
+  /**
+   * One settlement's committed status, or `undefined` when absent.
+   * @param settlementId - the settlement to inspect.
+   * @returns the committed status, or `undefined` for an unknown settlement.
+   */
+  settlementStatus(settlementId: SettlementId): SettlementStatus | undefined {
+    return getSettlement(this.requireDb(), settlementId)?.status
   }
 
   // --- audit ---

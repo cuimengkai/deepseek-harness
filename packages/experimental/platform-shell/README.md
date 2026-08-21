@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-A self-built platform control plane: tenant/RBAC, a business-object asset store with lineage, a business-approval flow, and an audit log, all over one SQLite database. The service injects as `ctx.platformShell`; `registerPlatformShellTools` mounts the model-visible tools. The durable record types are documented in the [platform-shell subsystem catalog](../../../docs/subsystems/platform-shell.md), the [keyless demo](../../../examples/platform-shell-demo/README.md) drives the full surface, and the [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-21-platform-shell-control-plane.md) records the placement and preset decisions.
+A self-built platform control plane: tenant/RBAC, a business-object asset store with lineage, a business-approval flow, an audit log, a capability market, and a billing ledger, all over one SQLite database. The service injects as `ctx.platformShell`; `registerPlatformShellTools` mounts the model-visible tools. The durable record types are documented in the [platform-shell subsystem catalog](../../../docs/subsystems/platform-shell.md), the [keyless demo](../../../examples/platform-shell-demo/README.md) drives the control-plane surface, the [capability-market demo](../../../examples/capability-market-demo/README.md) proves the market and ledger keyless, and the [Agent Note](../../../.agents/notes/implemented/architecture/2026-08-21-platform-shell-control-plane.md) records the placement and preset decisions.
 
 ## Config
 
@@ -36,6 +36,14 @@ Each asset is one durable business object with a kind, producing role, content, 
 
 A ticket carries one subject asset through the state machine `draft → review → approved → released` (rejected returns to `draft`). The `approved` transition requires a `ReviewScope` naming the roles and workspace the approval grants; the release transition clears it. Every transition is recorded, and the first row records `from: null → draft` at creation so the history always contains the chain start.
 
+## Capability market
+
+The market makes capabilities publishable, combinable, and billable. `publishCapability` validates id uniqueness, dependency existence, and dependency semver ranges; `publishScenario` registers a workbench bundle — a per-customer-group capability set plus a preset binding. `assemble_capabilities` resolves a requested set dependency-first, validating version ranges and conflict pairs, and applies the execution gate: a disabled capability refuses any assembly that reaches it, and a rollout-0 capability refuses every workspace. The market tools mount on every agent that consumes the seam. See the [capability-market meta-model](../../../docs/platform-capability-market.md).
+
+## Billing ledger
+
+A simulated integer-credit ledger. `creditAccount` opens or credits a workspace account; `consume_capability` meters usage at the capability's rate (`cost = rate × qty`), refusing `INSUFFICIENT_BALANCE` with the debit rolled back; `settle_account` closes a workspace's `open` settlement for a `YYYY-MM` period as `settled`. See the [billing ledger spec](../../../docs/platform-billing-ledger.md).
+
 ## Audit
 
 Every mutation writes one durable audit row in the same transaction as the store commit; denied reads write none. `listAudit` filters by workspace and action, and a workspace-less actor resolves to its single membership.
@@ -50,11 +58,11 @@ The store is one SQLite database with a monotonic `SCHEMA_VERSION` and `applicat
 
 #### What the model sees
 
-The ten tools (`register_asset`, `get_asset`, `link_asset`, `asset_ancestors`, `asset_descendants`, `submit_ticket`, `get_ticket`, `list_tickets`, `approve_ticket`, `audit_query`) return the control-plane records — asset, lineage edge, ticket, and audit event — as their result content. These are the same records the store committed; the model reads the authoritative durable form, never a derived view. A read denied by RBAC returns a `PERMISSION_DENIED` tool error instead of a record.
+The nineteen tools (the ten control-plane tools `register_asset`, `get_asset`, `link_asset`, `asset_ancestors`, `asset_descendants`, `submit_ticket`, `get_ticket`, `list_tickets`, `approve_ticket`, `audit_query`, plus the nine market tools `publish_capability`, `list_capabilities`, `assemble_capabilities`, `set_capability_gate`, `publish_scenario`, `list_scenarios`, `consume_capability`, `account_balance`, `settle_account`) return the control-plane records — asset, lineage edge, ticket, audit event, capability, scenario, usage record, and settlement — as their result content. These are the same records the store committed; the model reads the authoritative durable form, never a derived view. A read denied by RBAC returns a `PERMISSION_DENIED` tool error instead of a record.
 
 #### Token effect
 
-Each tool result appends the returned record or records to the session history. A denied call appends the error text, not the record. Lineage, ticket, and audit reference events are log-only and add no model tokens.
+Each tool result appends the returned record or records to the session history. A denied call appends the error text, not the record. Lineage, ticket, audit, capability, and settlement reference events are log-only and add no model tokens.
 
 #### KV Cache effect
 
@@ -66,3 +74,7 @@ Tool results append after the reusable history prefix. The control-plane service
 - **Actor resolution is a consumer obligation** — the tools need a session→platform-user mapping supplied by the consumer (`ResolveActor`); without one, the tools fail loud with `UNKNOWN_ACTOR`. The package ships the resolver type, not a built-in binding.
 - **Approval is a recorded state machine, not an execution gate** — the service enforces the allowed transition edges, but nothing prevents a caller with direct store access from acting; the service boundary is the only enforced wall.
 - **Audit is not tamper-evident** — audit rows commit in the same transaction, but the file has no signing or append-only enforcement against external writers.
+- **Billing is a simulated ledger** — integer credits with a per-capability rate card; there is no real payment, currency, or settlement outside the store.
+- **A workbench is a scenario bundle, not a page** — the proven artifact is the bundle descriptor (capability set + preset binding) served per customer group over the harness plugin mechanism; actual page rendering lives in the web-app layer.
+- **Gating is assembly-time, not runtime** — `resolveCapabilities` and `consumeCapability` refuse a disabled or rollout-excluded capability loudly; enforcement is the gated capability's absence from the mounted composition, not a runtime block.
+- **A dangling dependency edge cannot exist** — publish validates every dependency and the foreign-key chain refuses unpublishing a referenced capability, so `CAPABILITY_DEPENDENCY_MISSING` is unreachable through the service.

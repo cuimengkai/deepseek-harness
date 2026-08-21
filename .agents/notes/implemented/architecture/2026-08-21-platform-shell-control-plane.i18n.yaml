@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-21-platform-shell-control-plane.md
-2026-08-21-platform-shell-control-plane.md: f920ff41df00696f9422ae3f79f60cd61e353117
-2026-08-21-platform-shell-control-plane.zh.md: 28e5ead1e7b86121695e8285398f18cc7dad8c26
+2026-08-21-platform-shell-control-plane.md: 34b51bb762a8060963687edbc59f0a2ef4702f04
+2026-08-21-platform-shell-control-plane.zh.md: be6998b5a352222485fc8d351420f57a07ae1eaa

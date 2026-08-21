@@ -1,11 +1,12 @@
 /**
- * Platform-shell package invariant: every committed lineage-bridge reference
- * event names a business object the control-plane store actually holds
- * (platform-lineage-bridge §5). Asset events must reference an existing asset;
- * an approval transition event must name the state the ticket committed to.
- * The check is store-backed because reference events span sessions (the dev
- * session reads the product session's asset), so a per-session fold cannot see
- * the referenced object.
+ * Platform-shell package invariant: every committed reference event names a
+ * business object the control-plane store actually holds. Asset events must
+ * reference an existing asset; an approval transition event must name the state
+ * the ticket committed to; a market event must reference capabilities,
+ * scenarios, or settlements the catalog and ledger hold. The check is
+ * store-backed because reference events span sessions (the dev session reads
+ * the product session's asset), so a per-session fold cannot see the referenced
+ * object.
  * @module @deepseek-ai/dsh-experimental-platform-shell/invariant
  */
 
@@ -15,17 +16,23 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 
 const PACKAGE_NAME = '@deepseek-ai/dsh-experimental-platform-shell'
 
-/** One committed lineage-bridge reference event this package owns. */
+/** One committed reference event this package owns. */
 type PlatformReferenceEvent =
   | SessionEvent<'asset/read'>
   | SessionEvent<'asset/register'>
   | SessionEvent<'platform/approval/transition'>
+  | SessionEvent<'capability/published'>
+  | SessionEvent<'capability/selected'>
+  | SessionEvent<'billing/settlement'>
 
 /** Whether one session event is a platform reference event. */
 export function isPlatformReferenceEvent(event: SessionEvent): event is PlatformReferenceEvent {
   return event.type === 'asset/read'
     || event.type === 'asset/register'
     || event.type === 'platform/approval/transition'
+    || event.type === 'capability/published'
+    || event.type === 'capability/selected'
+    || event.type === 'billing/settlement'
 }
 
 /**
@@ -39,6 +46,33 @@ export function validateReferenceEvent(ctx: Context, event: PlatformReferenceEve
     if (!ctx.platformShell.assetExists(event.data.assetId)) {
       throw new Error(
         `${event.type} references ${event.data.assetId}, which the platform store does not hold`,
+      )
+    }
+    return
+  }
+  if (event.type === 'capability/published') {
+    if (!ctx.platformShell.capabilityExists(event.data.capabilityId)) {
+      throw new Error(
+        `${event.type} references ${event.data.capabilityId}, which the market catalog does not hold`,
+      )
+    }
+    return
+  }
+  if (event.type === 'capability/selected') {
+    for (const capabilityId of event.data.capabilityIds) {
+      if (!ctx.platformShell.capabilityExists(capabilityId)) {
+        throw new Error(
+          `${event.type} references ${capabilityId}, which the market catalog does not hold`,
+        )
+      }
+    }
+    return
+  }
+  if (event.type === 'billing/settlement') {
+    const committed = ctx.platformShell.settlementStatus(event.data.settlementId)
+    if (committed !== event.data.status) {
+      throw new Error(
+        `billing/settlement claims ${event.data.settlementId} reached ${event.data.status}, but the ledger reports ${String(committed)}`,
       )
     }
     return

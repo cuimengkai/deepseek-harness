@@ -9,23 +9,35 @@ import { setTimeout as delay } from 'node:timers/promises'
 import {
   AuditEventId,
   AssetId,
+  CapabilityId,
   RoleId,
+  ScenarioId,
+  SettlementId,
   TicketId,
+  UsageRecordId,
   UserId,
   WorkspaceId,
+  type AccountRecord,
   type ApprovalTicket,
   type ApprovalTransition,
   type AssetRecord,
   type AuditEvent,
   type BusinessApprovalStatus,
+  type CapabilityDependency,
+  type CapabilityRecord,
+  type ExecutionMode,
   type LineageEdge,
   type ReviewScope,
+  type ScenarioBundle,
+  type SettlementRecord,
+  type SettlementStatus,
+  type UsageRecord,
 } from './types.ts'
 import { sql } from './sql.ts'
 import { PlatformShellError } from './error.ts'
 
 /** Current physical schema version of the platform control-plane database. */
-export const SCHEMA_VERSION = 1
+export const SCHEMA_VERSION = 2
 /** Application id reserved for DeepSeek Harness platform control-plane databases. */
 export const PLATFORM_SHELL_SQLITE_APPLICATION_ID = 0x504c5348
 
@@ -97,6 +109,59 @@ export interface AuditRow {
   readonly target_id: string | null
   readonly detail: string | null
   readonly created_at: number
+}
+
+export interface CapabilityRow {
+  readonly capability_id: string
+  readonly name: string
+  readonly role_id: string
+  readonly execution: string
+  readonly version: string
+  readonly enabled: number
+  readonly rollout: number
+  readonly rate: number
+  readonly description: string
+  readonly created_at: number
+}
+
+export interface CapabilityDependencyRow {
+  readonly depends_on: string
+  readonly range: string | null
+}
+
+export interface ScenarioRow {
+  readonly scenario_id: string
+  readonly name: string
+  readonly workbench_id: string
+  readonly role_id: string
+  readonly preset: string
+  readonly created_at: number
+}
+
+export interface AccountRow {
+  readonly workspace_id: string
+  readonly balance: number
+  readonly created_at: number
+}
+
+export interface UsageRow {
+  readonly usage_id: string
+  readonly workspace_id: string
+  readonly capability_id: string
+  readonly qty: number
+  readonly cost: number
+  readonly billed_at: number
+  readonly created_at: number
+}
+
+export interface SettlementRow {
+  readonly settlement_id: string
+  readonly workspace_id: string
+  readonly period: string
+  readonly amount: number
+  readonly status: string
+  readonly created_at: number
+  readonly settled_at: number | null
 }
 
 interface SchemaObjectRow {
@@ -258,7 +323,7 @@ function journalResource(mode: JournalMode):
 function initializeDatabase(db: DatabaseSync): void {
   db.exec(sql('schema'))
   db.exec(sql('set-application-id'))
-  db.exec(sql('set-user-version-1'))
+  db.exec(sql('set-user-version-2'))
 }
 
 let canonicalSchema: readonly SchemaObjectRow[] | undefined
@@ -395,6 +460,84 @@ export function decodeAuditRow(value: unknown): AuditEvent {
   }
 }
 
+/** Decode one validated capability row into a CapabilityRecord. */
+export function decodeCapabilityRow(value: unknown): CapabilityRecord {
+  const row = record(value, 'stored capability')
+  return {
+    id: CapabilityId(nonemptyStringField(row, 'capability_id')),
+    name: nonemptyStringField(row, 'name'),
+    roleId: RoleId(nonemptyStringField(row, 'role_id')),
+    execution: executionModeField(nonemptyStringField(row, 'execution')),
+    version: nonemptyStringField(row, 'version'),
+    enabled: booleanField(integerField(row, 'enabled')),
+    rollout: rolloutField(numberField(row, 'rollout')),
+    rate: nonnegativeIntegerField(row, 'rate'),
+    description: stringField(row, 'description'),
+    createdAt: nonnegativeSafeIntegerField(row, 'created_at'),
+  }
+}
+
+/** Decode one validated capability dependency row into a CapabilityDependency. */
+export function decodeCapabilityDependencyRow(value: unknown): CapabilityDependency {
+  const row = record(value, 'stored capability dependency')
+  return {
+    id: CapabilityId(nonemptyStringField(row, 'depends_on')),
+    range: nullableStringField(row, 'range'),
+  }
+}
+
+/** Decode one validated scenario row into a ScenarioBundle (without capability ids). */
+export function decodeScenarioRow(value: unknown): ScenarioBundle {
+  const row = record(value, 'stored scenario bundle')
+  return {
+    id: ScenarioId(nonemptyStringField(row, 'scenario_id')),
+    name: nonemptyStringField(row, 'name'),
+    workbenchId: nonemptyStringField(row, 'workbench_id'),
+    roleId: RoleId(nonemptyStringField(row, 'role_id')),
+    preset: nonemptyStringField(row, 'preset'),
+    capabilityIds: [],
+    createdAt: nonnegativeSafeIntegerField(row, 'created_at'),
+  }
+}
+
+/** Decode one validated account row into an AccountRecord. */
+export function decodeAccountRow(value: unknown): AccountRecord {
+  const row = record(value, 'stored account')
+  return {
+    workspaceId: WorkspaceId(nonemptyStringField(row, 'workspace_id')),
+    balance: nonnegativeIntegerField(row, 'balance'),
+    createdAt: nonnegativeSafeIntegerField(row, 'created_at'),
+  }
+}
+
+/** Decode one validated usage row into a UsageRecord. */
+export function decodeUsageRecordRow(value: unknown): UsageRecord {
+  const row = record(value, 'stored usage record')
+  return {
+    id: UsageRecordId(nonemptyStringField(row, 'usage_id')),
+    workspaceId: WorkspaceId(nonemptyStringField(row, 'workspace_id')),
+    capabilityId: CapabilityId(nonemptyStringField(row, 'capability_id')),
+    qty: positiveIntegerField(row, 'qty'),
+    cost: nonnegativeIntegerField(row, 'cost'),
+    billedAt: nonnegativeSafeIntegerField(row, 'billed_at'),
+    createdAt: nonnegativeSafeIntegerField(row, 'created_at'),
+  }
+}
+
+/** Decode one validated settlement row into a SettlementRecord. */
+export function decodeSettlementRow(value: unknown): SettlementRecord {
+  const row = record(value, 'stored settlement')
+  return {
+    id: SettlementId(nonemptyStringField(row, 'settlement_id')),
+    workspaceId: WorkspaceId(nonemptyStringField(row, 'workspace_id')),
+    period: nonemptyStringField(row, 'period'),
+    amount: nonnegativeIntegerField(row, 'amount'),
+    status: settlementStatusField(nonemptyStringField(row, 'status')),
+    createdAt: nonnegativeSafeIntegerField(row, 'created_at'),
+    settledAt: nullableNonnegativeSafeIntegerField(row, 'settled_at'),
+  }
+}
+
 /** Decode the JSON review scope column into a ReviewScope. */
 function decodeReviewScope(value: string): ReviewScope {
   try {
@@ -473,4 +616,56 @@ function nonnegativeSafeIntegerField(value: unknown, key: string): number {
   const field = integerField(value, key)
   if (field < 0) throw new Error(`stored ${key} must be non-negative`)
   return field
+}
+
+function nullableNonnegativeSafeIntegerField(value: unknown, key: string): number | null {
+  const field = record(value, 'SQLite row')[key]
+  if (field === null) return null
+  const parsed = integerField(value, key)
+  if (parsed < 0) throw new Error(`stored ${key} must be non-negative`)
+  return parsed
+}
+
+function numberField(value: unknown, key: string): number {
+  const field = record(value, 'SQLite row')[key]
+  if (typeof field !== 'number') throw new Error(`stored ${key} must be a number`)
+  return field
+}
+
+function nonnegativeIntegerField(value: unknown, key: string): number {
+  const field = integerField(value, key)
+  if (field < 0) throw new Error(`stored ${key} must be a non-negative integer`)
+  return field
+}
+
+function positiveIntegerField(value: unknown, key: string): number {
+  const field = integerField(value, key)
+  if (field < 1) throw new Error(`stored ${key} must be a positive integer`)
+  return field
+}
+
+function booleanField(value: number): boolean {
+  if (value !== 0 && value !== 1) throw new Error(`stored boolean must be 0 or 1, got ${value}`)
+  return value === 1
+}
+
+function rolloutField(value: number): number {
+  if (!Number.isFinite(value) || value < 0 || value > 1) {
+    throw new Error(`stored rollout must be within 0..1, got ${value}`)
+  }
+  return value
+}
+
+function executionModeField(value: string): ExecutionMode {
+  if (value !== 'managed' && value !== 'sandboxed' && value !== 'none') {
+    throw new PlatformShellError('INVALID_ARGUMENT', `stored execution mode "${value}" is not a known mode`)
+  }
+  return value
+}
+
+function settlementStatusField(value: string): SettlementStatus {
+  if (value !== 'open' && value !== 'settled') {
+    throw new PlatformShellError('INVALID_ARGUMENT', `stored settlement status "${value}" is not a settlement status`)
+  }
+  return value
 }

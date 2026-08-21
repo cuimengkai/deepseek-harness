@@ -1,0 +1,7 @@
+{
+  "name": "capability-market-demo-example",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Runnable demo: capability market with dependency/conflict/version/gating checks, pluggable workbench scenarios, and a simulated billing ledger over one SQLite control-plane database (keyless)"
+}

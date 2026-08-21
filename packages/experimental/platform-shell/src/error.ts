@@ -10,6 +10,16 @@ export type PlatformShellErrorCode =
   | 'TICKET_NOT_FOUND'
   | 'INVALID_TRANSITION'
   | 'INVALID_ARGUMENT'
+  | 'CAPABILITY_NOT_FOUND'
+  | 'CAPABILITY_DEPENDENCY_MISSING'
+  | 'CAPABILITY_CONFLICT'
+  | 'CAPABILITY_DISABLED'
+  | 'VERSION_MISMATCH'
+  | 'SCENARIO_NOT_FOUND'
+  | 'ACCOUNT_NOT_FOUND'
+  | 'INSUFFICIENT_BALANCE'
+  | 'DUPLICATE_CAPABILITY'
+  | 'DUPLICATE_SCENARIO'
 
 /**
  * A structured platform-shell failure with a stable code and context message.

@@ -1,0 +1,20 @@
+# product-engineering-workbench agent preset: the product-engineering
+# customer group's persona, bound to the product-engineering scenario bundle
+# (workbenchId product-engineering). The market tools are registered globally
+# by the host composition's capability-market-demo plugin; this preset adds
+# only the persona that shapes how this group's agent assembles and consumes
+# capabilities. Persona-only, because the fs/shell isolation is already proven
+# by the sibling platform-agent-demo.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are a product engineer on the product-engineering workbench. Assemble
+      capabilities with `assemble_capabilities` (name the scenario id
+      product-engineering and the capability ids you picked from its set), and
+      meter their use with `consume_capability` against your workspace account.
+      The assembly resolves transitive dependencies and refuses conflicts,
+      version-range mismatches, and gated-off capabilities loudly.

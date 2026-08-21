@@ -1267,6 +1267,112 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the committed status, or `undefined` for an unknown ticket.',
       },
       {
+        signature: 'publishCapability(actor: UserId, request: PublishCapabilityRequest): CapabilityRecord',
+        description: 'Publish one capability to the market catalog.',
+        parameters: [{ name: 'actor', description: 'the operator publishing the capability.' }, { name: 'request', description: 'catalog entry fields, dependency and conflict edges, and the execution gate.' }],
+        returns: 'the committed catalog entry.',
+      },
+      {
+        signature: 'unpublishCapability(actor: UserId, capabilityId: CapabilityId): void',
+        description: 'Remove one capability from the market catalog.',
+        parameters: [{ name: 'actor', description: 'the operator unpublishing the capability.' }, { name: 'capabilityId', description: 'the catalog entry to remove.' }],
+      },
+      {
+        signature: 'listCapabilities(actor: UserId): CapabilityRecord[]',
+        description: 'List every catalog entry in identity order.',
+        parameters: [{ name: 'actor', description: 'the platform user listing the catalog.' }],
+        returns: 'the catalog entries.',
+      },
+      {
+        signature: 'getCapability(actor: UserId, capabilityId: CapabilityId): CapabilityRecord | undefined',
+        description: 'Read one catalog entry.',
+        parameters: [{ name: 'actor', description: 'the platform user reading the catalog.' }, { name: 'capabilityId', description: 'the catalog entry to read.' }],
+        returns: 'the entry, or `undefined` when absent.',
+      },
+      {
+        signature: 'setCapabilityGate(actor: UserId, capabilityId: CapabilityId, gate: CapabilityGate): CapabilityRecord',
+        description: 'Set one catalog entry\'s execution gate.',
+        parameters: [{ name: 'actor', description: 'the operator setting the gate.' }, { name: 'capabilityId', description: 'the catalog entry to gate.' }, { name: 'gate', description: 'enabled flag and 0..1 rollout fraction.' }],
+        returns: 'the committed entry.',
+      },
+      {
+        signature: 'publishScenario(actor: UserId, request: PublishScenarioRequest): ScenarioBundle',
+        description: 'Register one scenario bundle (a pluggable C-side workbench surface).',
+        parameters: [{ name: 'actor', description: 'the operator publishing the scenario.' }, { name: 'request', description: 'bundle fields and the workbench\'s capability set.' }],
+        returns: 'the committed scenario bundle.',
+      },
+      {
+        signature: 'unpublishScenario(actor: UserId, scenarioId: ScenarioId): void',
+        description: 'Remove one scenario bundle (a pluggable C-side workbench surface).',
+        parameters: [{ name: 'actor', description: 'the operator unpublishing the scenario.' }, { name: 'scenarioId', description: 'the scenario to remove.' }],
+      },
+      {
+        signature: 'listScenarios(actor: UserId): ScenarioBundle[]',
+        description: 'List every scenario bundle in identity order.',
+        parameters: [{ name: 'actor', description: 'the platform user listing the workbenches.' }],
+        returns: 'the scenario bundles.',
+      },
+      {
+        signature: 'getScenario(actor: UserId, scenarioId: ScenarioId): ScenarioBundle | undefined',
+        description: 'Read one scenario bundle.',
+        parameters: [{ name: 'actor', description: 'the platform user reading the workbench.' }, { name: 'scenarioId', description: 'the scenario to read.' }],
+        returns: 'the bundle, or `undefined` when absent.',
+      },
+      {
+        signature: 'resolveCapabilities(actor: UserId, request: ResolveCapabilitiesRequest): ResolvedCapabilitySet',
+        description: 'Resolve one capability selection within one scenario\'s workbench surface.',
+        parameters: [{ name: 'actor', description: 'the platform user assembling capabilities.' }, { name: 'request', description: 'the workspace, scenario, and selected capability ids.' }],
+        returns: 'the ordered resolved set plus the scenario\'s preset id.',
+      },
+      {
+        signature: 'creditAccount(actor: UserId, workspaceId: WorkspaceId, amount: number): AccountRecord',
+        description: 'Credit one workspace\'s billing account.',
+        parameters: [{ name: 'actor', description: 'the operator crediting the account.' }, { name: 'workspaceId', description: 'the workspace account to credit.' }, { name: 'amount', description: 'non-negative credits to add.' }],
+        returns: 'the updated account.',
+      },
+      {
+        signature: 'accountBalance(actor: UserId, workspaceId: WorkspaceId): AccountRecord | undefined',
+        description: 'Read one workspace\'s billing account.',
+        parameters: [{ name: 'actor', description: 'the platform user reading the account.' }, { name: 'workspaceId', description: 'the workspace account to read.' }],
+        returns: 'the account, or `undefined` when no account has been opened.',
+      },
+      {
+        signature: 'listUsage(actor: UserId, workspaceId: WorkspaceId): UsageRecord[]',
+        description: 'List one workspace\'s usage records in billing order.',
+        parameters: [{ name: 'actor', description: 'the platform user reading the ledger.' }, { name: 'workspaceId', description: 'the workspace whose usage to list.' }],
+        returns: 'the usage records.',
+      },
+      {
+        signature: 'consumeCapability(actor: UserId, request: ConsumeCapabilityRequest): UsageRecord',
+        description: 'Consume one capability against a workspace account, metering usage.',
+        parameters: [{ name: 'actor', description: 'the platform user consuming the capability.' }, { name: 'request', description: 'the workspace, capability, and quantity.' }],
+        returns: 'the committed usage record.',
+      },
+      {
+        signature: 'settleAccount(actor: UserId, workspaceId: WorkspaceId, period: string): SettlementRecord',
+        description: 'Close one workspace\'s open settlement for a period as `settled`.',
+        parameters: [{ name: 'actor', description: 'the operator settling the account.' }, { name: 'workspaceId', description: 'the workspace whose period to settle.' }, { name: 'period', description: 'the `YYYY-MM` billing period to close.' }],
+        returns: 'the committed settlement.',
+      },
+      {
+        signature: 'capabilityExists(capabilityId: CapabilityId): boolean',
+        description: 'Whether one capability exists in the market catalog.',
+        parameters: [{ name: 'capabilityId', description: 'the catalog entry to test.' }],
+        returns: 'whether the catalog holds the entry.',
+      },
+      {
+        signature: 'scenarioExists(scenarioId: ScenarioId): boolean',
+        description: 'Whether one scenario bundle exists.',
+        parameters: [{ name: 'scenarioId', description: 'the scenario to test.' }],
+        returns: 'whether the market holds the bundle.',
+      },
+      {
+        signature: 'settlementStatus(settlementId: SettlementId): SettlementStatus | undefined',
+        description: 'One settlement\'s committed status, or `undefined` when absent.',
+        parameters: [{ name: 'settlementId', description: 'the settlement to inspect.' }],
+        returns: 'the committed status, or `undefined` for an unknown settlement.',
+      },
+      {
         signature: 'listAudit(actor: UserId, filter: { readonly workspaceId?: WorkspaceId; readonly action?: string } = {}): AuditEvent[]',
         description: 'List audit rows, filtered by workspace and action.',
         parameters: [{ name: 'actor', description: 'the platform user reading the audit log.' }, { name: 'filter', description: 'optional workspace and action filters; a workspace-less actor resolves to its single membership.' }],
@@ -3018,6 +3124,10 @@ export const EVENT_API: readonly EventApiEntry[] = [
 /** Shapes of every exported type the Service and Event signatures reference (transitively), sorted by name. */
 export const TYPE_API: readonly TypeApiEntry[] = [
   {
+    name: 'AccountRecord',
+    declaration: 'export interface AccountRecord {\n    readonly workspaceId: WorkspaceId;\n    readonly balance: number;\n    readonly createdAt: number;\n}',
+  },
+  {
     name: 'AdapterRegistrationHandle',
     declaration: 'export interface AdapterRegistrationHandle {\n    (): void;\n    replace(providers: string[]): void;\n}',
   },
@@ -3230,6 +3340,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface CancelOptions {\n    keepInbox?: boolean | undefined;\n}',
   },
   {
+    name: 'CapabilityGate',
+    declaration: 'export interface CapabilityGate {\n    readonly enabled: boolean;\n    readonly rollout: number;\n}',
+  },
+  {
+    name: 'CapabilityId',
+    declaration: 'export type CapabilityId = Branded<\'CapabilityId\'>;',
+  },
+  {
+    name: 'CapabilityRecord',
+    declaration: 'export interface CapabilityRecord {\n    readonly id: CapabilityId;\n    readonly name: string;\n    readonly roleId: RoleId;\n    readonly execution: ExecutionMode;\n    readonly version: string;\n    readonly enabled: boolean;\n    readonly rollout: number;\n    readonly rate: number;\n    readonly description: string;\n    readonly createdAt: number;\n}',
+  },
+  {
     name: 'ClientResponse',
     declaration: 'export interface ClientResponse {\n    type: \'client-response\';\n    rpcId: RpcId;\n    result: RpcResult<unknown>;\n}',
   },
@@ -3320,6 +3442,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConfinedSandboxMode',
     declaration: 'export type ConfinedSandboxMode = Exclude<SandboxMode, \'danger-full-access\'>;',
+  },
+  {
+    name: 'ConsumeCapabilityRequest',
+    declaration: 'export interface ConsumeCapabilityRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly capabilityId: CapabilityId;\n    readonly qty?: number;\n}',
   },
   {
     name: 'ContentBlockMap',
@@ -3556,6 +3682,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'EpochHeader',
     declaration: 'export interface EpochHeader {\n    config: LlmCallConfig;\n    adapterDefaults?: LlmCallConfigAdapterDefaults;\n    system?: string;\n    tools?: ToolSchema[];\n}',
+  },
+  {
+    name: 'ExecutionMode',
+    declaration: 'export type ExecutionMode = \'managed\' | \'sandboxed\' | \'none\';',
   },
   {
     name: 'FileDiff',
@@ -4027,7 +4157,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Permission',
-    declaration: 'export type Permission = \'asset.read\' | \'asset.register\' | \'approval.review\' | \'approval.release\' | \'audit.read\';',
+    declaration: 'export type Permission = \'asset.read\' | \'asset.register\' | \'approval.review\' | \'approval.release\' | \'audit.read\' | \'capability.publish\' | \'capability.consume\' | \'billing.read\' | \'billing.settle\';',
   },
   {
     name: 'PermissionSelect',
@@ -4114,6 +4244,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PruneResult {\n    readonly pruned: readonly PrunedEntry[];\n    readonly charsRemoved: number;\n}',
   },
   {
+    name: 'PublishCapabilityRequest',
+    declaration: 'export interface PublishCapabilityRequest {\n    readonly id: CapabilityId;\n    readonly name: string;\n    readonly roleId: RoleId;\n    readonly execution: ExecutionMode;\n    readonly version: string;\n    readonly rate: number;\n    readonly dependencies?: readonly {\n        readonly id: CapabilityId;\n        readonly range?: string;\n    }[];\n    readonly conflictsWith?: readonly CapabilityId[];\n    readonly enabled?: boolean;\n    readonly rollout?: number;\n    readonly description?: string;\n}',
+  },
+  {
+    name: 'PublishScenarioRequest',
+    declaration: 'export interface PublishScenarioRequest {\n    readonly id: ScenarioId;\n    readonly name: string;\n    readonly workbenchId: string;\n    readonly roleId: RoleId;\n    readonly preset: string;\n    readonly capabilityIds: readonly CapabilityId[];\n}',
+  },
+  {
     name: 'ReadFileLine',
     declaration: 'export interface ReadFileLine {\n    number: number;\n    text: string;\n}',
   },
@@ -4158,8 +4296,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type RequestRunOutcome = \'approved\' | \'completed\' | \'rejected\' | \'cancelled\' | \'failed\';',
   },
   {
+    name: 'ResolveCapabilitiesRequest',
+    declaration: 'export interface ResolveCapabilitiesRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly scenarioId: ScenarioId;\n    readonly selected: readonly CapabilityId[];\n}',
+  },
+  {
     name: 'ResolvedAlwaysRetryPolicy',
     declaration: 'export interface ResolvedAlwaysRetryPolicy extends ResolvedRetryBackoff {\n    readonly mode: \'always\';\n}',
+  },
+  {
+    name: 'ResolvedCapabilitySet',
+    declaration: 'export interface ResolvedCapabilitySet {\n    readonly requested: readonly CapabilityId[];\n    readonly resolved: readonly CapabilityRecord[];\n    readonly preset: string;\n}',
   },
   {
     name: 'ResolvedCredential',
@@ -4252,6 +4398,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SaveTextSpill',
     declaration: 'export interface SaveTextSpill {\n    owner: SpillOwner;\n    source: SpillSource;\n    suggestedName: string;\n    content: string;\n}',
+  },
+  {
+    name: 'ScenarioBundle',
+    declaration: 'export interface ScenarioBundle {\n    readonly id: ScenarioId;\n    readonly name: string;\n    readonly workbenchId: string;\n    readonly roleId: RoleId;\n    readonly preset: string;\n    readonly capabilityIds: readonly CapabilityId[];\n    readonly createdAt: number;\n}',
+  },
+  {
+    name: 'ScenarioId',
+    declaration: 'export type ScenarioId = Branded<\'ScenarioId\'>;',
   },
   {
     name: 'ScheduledToolDispatch',
@@ -4568,6 +4722,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SettingsUpdateSource',
     declaration: 'export type SettingsUpdateSource = \'update\' | \'provider\';',
+  },
+  {
+    name: 'SettlementId',
+    declaration: 'export type SettlementId = Branded<\'SettlementId\'>;',
+  },
+  {
+    name: 'SettlementRecord',
+    declaration: 'export interface SettlementRecord {\n    readonly id: SettlementId;\n    readonly workspaceId: WorkspaceId;\n    readonly period: string;\n    readonly amount: number;\n    readonly status: SettlementStatus;\n    readonly createdAt: number;\n    readonly settledAt: number | null;\n}',
+  },
+  {
+    name: 'SettlementStatus',
+    declaration: 'export type SettlementStatus = \'open\' | \'settled\';',
   },
   {
     name: 'ShellExecRequest',
@@ -5160,6 +5326,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UpdateTeamTaskRequest',
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
+  },
+  {
+    name: 'UsageRecord',
+    declaration: 'export interface UsageRecord {\n    readonly id: UsageRecordId;\n    readonly workspaceId: WorkspaceId;\n    readonly capabilityId: CapabilityId;\n    readonly qty: number;\n    readonly cost: number;\n    readonly billedAt: number;\n    readonly createdAt: number;\n}',
+  },
+  {
+    name: 'UsageRecordId',
+    declaration: 'export type UsageRecordId = Branded<\'UsageRecordId\'>;',
   },
   {
     name: 'UserId',

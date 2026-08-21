@@ -298,7 +298,7 @@
 
 - 本仓库规范:遵循 `AGENTS.md` 与 `docs/AGENTS.md`;非平凡改动附 Agent Note。
 - 本文档为**唯一权威**的产品/平台架构草案;载荷性决策变更需更新本文档并评审。
-- 后续细化:预设装配器设计([platform-preset-assembler.zh.md](platform-preset-assembler.zh.md))、资产 schema 规范([platform-asset-schema.zh.md](platform-asset-schema.zh.md))、血缘桥数据模型([platform-lineage-bridge.zh.md](platform-lineage-bridge.zh.md))、审批流状态机([platform-approval-state-machine.zh.md](platform-approval-state-machine.zh.md))、能力市场元模型([platform-capability-market.zh.md](platform-capability-market.zh.md))。
+- 后续细化:预设装配器设计([platform-preset-assembler.zh.md](platform-preset-assembler.zh.md))、资产 schema 规范([platform-asset-schema.zh.md](platform-asset-schema.zh.md))、血缘桥数据模型([platform-lineage-bridge.zh.md](platform-lineage-bridge.zh.md))、审批流状态机([platform-approval-state-machine.zh.md](platform-approval-state-machine.zh.md))、能力市场元模型([platform-capability-market.zh.md](platform-capability-market.zh.md))、计费账本([platform-billing-ledger.zh.md](platform-billing-ledger.zh.md))。
 
 ---
 

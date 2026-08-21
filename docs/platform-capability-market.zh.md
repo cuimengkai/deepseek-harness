@@ -2,7 +2,7 @@
 
 [English](platform-capability-market.md) | 中文
 
-> [platform-architecture.zh.md](platform-architecture.zh.md)(D5、D4)的配套文档:能力市场是目录与装配层,使平台能力(插件 + 预设 + 资产 schema)可发现、可组合、可追溯。本规范定义元模型——打包单元、目录条目、发布/消费流——以 `examples/platform-agent-demo/` 为依托。
+> [platform-architecture.zh.md](platform-architecture.zh.md)(D5、D4)的配套文档:能力市场是目录与装配层,使平台能力(插件 + 预设 + 资产 schema)可发现、可组合、可追溯。本规范定义元模型——打包单元、目录条目、发布/消费流。打包三元组以 `examples/platform-agent-demo/` 为依托;目录、解析、门禁与计费在 `@deepseek-ai/dsh-experimental-platform-shell` 中落地,并由 `examples/capability-market-demo/` 无密钥证明。
 
 ## 1. 打包单元
 
@@ -23,27 +23,28 @@
 | `id` | 能力 id(插件名) |
 | `name` | 展示名 |
 | `role` | 挂在哪个角色预设上 |
-| `dependencies` | 所需能力 |
+| `dependencies` | 所需能力,每条带一个 semver 范围 |
 | `conflicts` | 不能共存的能力 |
 | `execution` | `managed \| sandboxed \| none`(D4) |
-| `version` | 打包版本 |
+| `version` | 打包的 semver 版本 |
+| `rate` | 每单位信用点成本(见 [platform-billing-ledger.zh.md](platform-billing-ledger.zh.md)) |
+| `enabled` / `rollout` | 执行门禁:禁用或灰度排除的能力会响亮地拒绝装配 |
 
-原型中的 roster 是一个最小目录:它扫描预设目录并按 id 列出装配好的预设(`roster.list()`)。真实目录补上依赖/冲突/版本列。
+市场目录把每条条目存为一行 `capabilities` 记录,加 `capability_dependencies` / `capability_conflicts` 边表,并把能力的工作台成员关系存进 `scenario_capabilities`——全部位于 platform-shell 控制平面存储中。
 
 ## 3. 发布与消费
 
-- **发布**:能力作者打包三元组并注册条目。目录校验 id 唯一、依赖存在、schema-kind 已注册。
-- **消费**:用户选一个角色与一组能力;预设装配器(见 [platform-preset-assembler.zh.md](platform-preset-assembler.zh.md))渲染 agent 装配;roster 挂载之。`agent-preset/selected` 事件记录该 agent 运行的能力集。
+- **发布**:`publishCapability` 校验 id 唯一、依赖存在与每条依赖范围;`publishScenario` 注册一个工作台捆绑(工作组 id、展示名、工作台 id、角色、预设 id、能力 id 列表)。卸载一个被其他能力依赖的能力会被外键链拒绝,因此依赖边永远不会悬空。
+- **消费**:`assemble_capabilities` 把请求的能力集解析成(见 §4)工作台挂载所用的有序能力集,`consume_capability` 把用量计入工作区账户。
 
 ## 4. 装配期检查
 
-装配器在挂载前检查目录的依赖与冲突约束(id 唯一、服务注入、工具名遮蔽、禁用行)。市场拒绝一个会产出"两个同名工具"或"缺失注入服务"的 agent 的组合。
+`resolveCapabilities` 依依赖优先顺序遍历依赖图,校验每个访问到的能力的版本范围,检查完整冲突对矩阵,并应用执行门禁——禁用能力会拒绝任何直接或经依赖到达它的装配,灰度 0 的能力拒绝每个工作区。每次拒绝都是响亮的(`PlatformShellError` 带 `CAPABILITY_CONFLICT`、`VERSION_MISMATCH` 或 `CAPABILITY_DISABLED`);不会静默跳过任何东西。解析出的集合依依赖优先排序,这正是工作台挂载的顺序。
 
-## 5. 两阶段路线
+## 5. 落地的市场
 
-- **一期**:目录仅登记——发布注册条目,消费列出并装配,不计费。原型的 roster 即此阶段。
-- **二期**:依赖/冲突解析显式化、版本分级、加入计费(D1、架构 §7)。元模型的依赖与冲突列正是解析作用之处。
+市场的目录、解析、门禁与计费位于 `@deepseek-ai/dsh-experimental-platform-shell` 的 `capability-market` 模块,通过 `publish_capability`、`publish_scenario`、`assemble_capabilities`、`set_capability_gate`、`consume_capability`、`account_balance` 与 `settle_account` 工具提供给 agent。工作台是一个场景捆绑——每个客户群一份能力集加一个预设绑定——通过 harness 插件机制注册;页面渲染属于 Web 应用层。计费是 [platform-billing-ledger.zh.md](platform-billing-ledger.zh.md) 规定的模拟整数信用点账本。
 
 ## 6. 验证
 
-原型无密钥证明消费路径:roster 扫描目录、按 id 装配 agent、把空白 agent 重组装到预设、持久记录选择。本规范的增量是打包三元组、目录条目字段、发布/消费流——即 §9 中的 D5 后续。
+`examples/capability-market-demo/` 无密钥证明市场:操作者发布目录,两个客户群工作台提供互不相交的能力集,产品装配响亮地拒绝一次冲突与一次版本范围不匹配,禁用依赖与灰度 0 能力被拒绝,计费账本计量用量并结算两个账期——全部可从持久化会话日志重建。

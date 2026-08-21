@@ -78,7 +78,9 @@ export function readRolePermissions(db: DatabaseSync, roleId: RoleId): readonly 
 
 function validatePermission(value: string): Permission {
   if (value !== 'asset.read' && value !== 'asset.register' && value !== 'approval.review'
-    && value !== 'approval.release' && value !== 'audit.read') {
+    && value !== 'approval.release' && value !== 'audit.read'
+    && value !== 'capability.publish' && value !== 'capability.consume'
+    && value !== 'billing.read' && value !== 'billing.settle') {
     throw new PlatformShellError('INVALID_ARGUMENT', `stored permission "${value}" is not a known permission`)
   }
   return value

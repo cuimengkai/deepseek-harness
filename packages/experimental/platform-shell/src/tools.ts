@@ -13,7 +13,7 @@ import { defineTool, type ToolRunContext, type ValueSchemaSpec } from '@deepseek
 import type { JsonValue, Session } from '@deepseek-ai/dsh-session'
 import { PlatformShellError } from './error.ts'
 import type { PlatformShellService } from './service.ts'
-import type { ApprovalTicket, AssetId, AuditEvent, ReviewScope, TicketId, UserId, WorkspaceId } from './types.ts'
+import type { ApprovalTicket, AssetId, AuditEvent, CapabilityId, ReviewScope, ScenarioId, TicketId, UserId, WorkspaceId } from './types.ts'
 import { RoleId, WorkspaceId as brandWorkspaceId } from './types.ts'
 
 /** The closed role set the seeded platform ships (identity seed roles). */
@@ -24,6 +24,9 @@ const ASSET_KINDS = ['requirement', 'design', 'code', 'test-case', 'handoff'] as
 
 /** The approval state machine's statuses (approval-state-machine §2). */
 const APPROVAL_STATUSES = ['draft', 'review', 'approved', 'rejected', 'released'] as const
+
+/** The closed execution-depth set a capability may carry (architecture D4). */
+const EXECUTION_MODES = ['managed', 'sandboxed', 'none'] as const
 
 /** Resolve the platform user acting on behalf of one session. */
 export type ResolveActor = (session: Session) => UserId
@@ -54,6 +57,69 @@ const edgeSchema = {
     parentId: { type: 'string', required: true },
     roleId: { type: 'string', required: true },
     createdAt: { type: 'number', required: true },
+  },
+} satisfies ValueSchemaSpec
+
+/** Model-facing market catalog entry. */
+const capabilitySchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', required: true },
+    name: { type: 'string', required: true },
+    roleId: { type: 'string', required: true },
+    execution: { type: 'string', required: true },
+    version: { type: 'string', required: true },
+    enabled: { type: 'boolean', required: true },
+    rollout: { type: 'number', required: true },
+    rate: { type: 'number', required: true },
+    description: { type: 'string', required: true },
+    createdAt: { type: 'number', required: true },
+  },
+} satisfies ValueSchemaSpec
+
+/** Model-facing scenario bundle (one pluggable C-side workbench surface). */
+const scenarioSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', required: true },
+    name: { type: 'string', required: true },
+    workbenchId: { type: 'string', required: true },
+    roleId: { type: 'string', required: true },
+    preset: { type: 'string', required: true },
+    capabilityIds: { type: 'array', required: true, items: { type: 'string' } },
+    createdAt: { type: 'number', required: true },
+  },
+} satisfies ValueSchemaSpec
+
+/** Model-facing metered usage record. */
+const usageSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', required: true },
+    workspaceId: { type: 'string', required: true },
+    capabilityId: { type: 'string', required: true },
+    qty: { type: 'number', required: true },
+    cost: { type: 'number', required: true },
+    billedAt: { type: 'number', required: true },
+    createdAt: { type: 'number', required: true },
+  },
+} satisfies ValueSchemaSpec
+
+/** Model-facing settlement; `settledAt` stays JSON (null while open). */
+const settlementSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    id: { type: 'string', required: true },
+    workspaceId: { type: 'string', required: true },
+    period: { type: 'string', required: true },
+    amount: { type: 'number', required: true },
+    status: { type: 'string', required: true },
+    createdAt: { type: 'number', required: true },
+    settledAt: { type: 'json', required: true },
   },
 } satisfies ValueSchemaSpec
 
@@ -439,6 +505,304 @@ export function registerPlatformShellTools(ctx: Context, options: { readonly res
         return { edges: shell().descendants(actor, assetIdOf(args.assetId)) }
       },
     }),
+    defineTool({
+      name: 'publish_capability',
+      description: 'Publish one capability to the market catalog, with dependency and conflict edges, an execution depth, a graded version, a per-unit credit rate, and a gray-release gate.',
+      parameters: {
+        id: { type: 'string', required: true, description: 'catalog id (a slug the operator chooses), e.g. requirement-management' },
+        name: { type: 'string', required: true, description: 'display name of the capability' },
+        roleId: { type: 'string', required: true, enum: [...KNOWN_ROLES], description: 'the role the capability serves' },
+        execution: { type: 'string', required: true, enum: [...EXECUTION_MODES], description: 'managed | sandboxed | none' },
+        version: { type: 'string', required: true, description: 'graded semver-like version, e.g. 1.2.0' },
+        rate: { type: 'number', required: true, description: 'credits charged per unit consumed' },
+        dependencies: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              id: { type: 'string', required: true, description: 'required capability id' },
+              range: { type: 'string', description: 'required version range, e.g. >=1.0.0' },
+            },
+          },
+          description: 'capabilities this capability requires, resolved transitively',
+        },
+        conflictsWith: { type: 'array', items: { type: 'string' }, description: 'capabilities that must not co-occur in one selection' },
+        enabled: { type: 'boolean', description: 'execution gate; defaults to enabled' },
+        rollout: { type: 'number', description: 'gray-release fraction 0..1 of workspaces allowed; defaults to 1' },
+        description: { type: 'string', description: 'capability description' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            capability: { ...capabilitySchema, required: true },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: `published ${value.capability.id} v${value.capability.version} (${value.capability.execution}, ${value.capability.rate} credits/unit)` }],
+        presentationMeta: (_args, value) => ({ code: 'published', capabilityId: value.capability.id, version: value.capability.version }),
+      },
+      async execute(args, exec) {
+        const { actor, session } = boundCall(exec, resolveActor)
+        const capability = shell().publishCapability(actor, {
+          id: capabilityIdOf(args.id),
+          name: args.name,
+          roleId: RoleId(args.roleId),
+          execution: args.execution,
+          version: args.version,
+          rate: args.rate,
+          ...(args.dependencies !== undefined ? { dependencies: args.dependencies.map(buildDependency) } : {}),
+          ...(args.conflictsWith !== undefined ? { conflictsWith: args.conflictsWith.map(capabilityIdOf) } : {}),
+          ...(args.enabled !== undefined ? { enabled: args.enabled } : {}),
+          ...(args.rollout !== undefined ? { rollout: args.rollout } : {}),
+          ...(args.description !== undefined ? { description: args.description } : {}),
+        })
+        session.append('capability/published', {
+          capabilityId: capability.id,
+          version: capability.version,
+          roleId: capability.roleId,
+        })
+        return { capability }
+      },
+    }),
+    defineTool({
+      name: 'list_capabilities',
+      description: 'List every capability in the market catalog.',
+      parameters: {},
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            capabilities: { type: 'array', required: true, items: capabilitySchema },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: value.capabilities.map(c => `${c.id} v${c.version} [${c.execution}]`).join(', ') || 'no capabilities' }],
+        presentationMeta: (_args, value) => ({ code: 'listed', count: value.capabilities.length }),
+      },
+      async execute(_args, exec) {
+        const { actor } = boundCall(exec, resolveActor)
+        return { capabilities: shell().listCapabilities(actor) }
+      },
+    }),
+    defineTool({
+      name: 'assemble_capabilities',
+      description: 'Resolve one capability selection for a workspace within a scenario workbench: auto-resolves transitive dependencies, rejects conflicts and version-range mismatches, and refuses gated-off capabilities.',
+      parameters: {
+        workspaceId: { type: 'string', required: true, description: 'the workspace assembling capabilities' },
+        scenarioId: { type: 'string', required: true, description: 'the scenario bundle (workbench) to assemble against' },
+        selected: { type: 'array', required: true, items: { type: 'string' }, description: 'the capability ids the user picked from the workbench' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            requested: { type: 'array', required: true, items: { type: 'string' } },
+            resolved: { type: 'array', required: true, items: capabilitySchema },
+            preset: { type: 'string', required: true },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: `resolved ${value.requested.length} requested into ${value.resolved.length} capabilities under preset ${value.preset}` }],
+        presentationMeta: (_args, value) => ({ code: 'resolved', count: value.resolved.length, preset: value.preset }),
+      },
+      async execute(args, exec) {
+        const { actor, session } = boundCall(exec, resolveActor)
+        const workspaceId = brandWorkspaceId(args.workspaceId)
+        const resolved = shell().resolveCapabilities(actor, {
+          workspaceId,
+          scenarioId: scenarioIdOf(args.scenarioId),
+          selected: args.selected.map(capabilityIdOf),
+        })
+        session.append('capability/selected', {
+          workspaceId,
+          capabilityIds: resolved.requested,
+          preset: resolved.preset,
+        })
+        // The output schema's items are plain JSON, so the durable readonly
+        // sets project into mutable arrays.
+        return { requested: [...resolved.requested], resolved: [...resolved.resolved], preset: resolved.preset }
+      },
+    }),
+    defineTool({
+      name: 'set_capability_gate',
+      description: 'Set one capability\'s execution gate: enable or disable it and choose the 0..1 gray-release rollout fraction of workspaces allowed to use it.',
+      parameters: {
+        capabilityId: { type: 'string', required: true, description: 'catalog id to gate' },
+        enabled: { type: 'boolean', required: true, description: 'whether the capability is usable at all' },
+        rollout: { type: 'number', required: true, description: 'fraction 0..1 of workspaces the rollout admits' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            capability: { ...capabilitySchema, required: true },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: `${value.capability.id} gate: ${value.capability.enabled ? 'enabled' : 'disabled'} at rollout ${value.capability.rollout}` }],
+        presentationMeta: (_args, value) => ({ code: 'gated', capabilityId: value.capability.id, enabled: value.capability.enabled, rollout: value.capability.rollout }),
+      },
+      async execute(args, exec) {
+        const { actor } = boundCall(exec, resolveActor)
+        const capability = shell().setCapabilityGate(
+          actor,
+          capabilityIdOf(args.capabilityId),
+          { enabled: args.enabled, rollout: args.rollout },
+        )
+        return { capability }
+      },
+    }),
+    defineTool({
+      name: 'publish_scenario',
+      description: 'Register one scenario bundle: a pluggable C-side workbench surface (its workbench id, role, preset binding, and capability set) for a customer group.',
+      parameters: {
+        id: { type: 'string', required: true, description: 'scenario id, e.g. product-engineering' },
+        name: { type: 'string', required: true, description: 'display name of the workbench' },
+        workbenchId: { type: 'string', required: true, description: 'the customer-group workbench surface, e.g. product-engineering' },
+        roleId: { type: 'string', required: true, enum: [...KNOWN_ROLES], description: 'the role the workbench serves' },
+        preset: { type: 'string', required: true, description: 'the agent preset id the roster mounts for this workbench' },
+        capabilityIds: { type: 'array', required: true, items: { type: 'string' }, description: 'the capability set this workbench offers' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            scenario: { ...scenarioSchema, required: true },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: `published workbench ${value.scenario.workbenchId} (${value.scenario.preset}) with ${value.scenario.capabilityIds.length} capabilities` }],
+        presentationMeta: (_args, value) => ({ code: 'published', scenarioId: value.scenario.id, workbenchId: value.scenario.workbenchId }),
+      },
+      async execute(args, exec) {
+        const { actor } = boundCall(exec, resolveActor)
+        const scenario = shell().publishScenario(actor, {
+          id: scenarioIdOf(args.id),
+          name: args.name,
+          workbenchId: args.workbenchId,
+          roleId: RoleId(args.roleId),
+          preset: args.preset,
+          capabilityIds: args.capabilityIds.map(capabilityIdOf),
+        })
+        // The output schema's capabilityIds are plain JSON strings.
+        return { scenario: { ...scenario, capabilityIds: [...scenario.capabilityIds] } }
+      },
+    }),
+    defineTool({
+      name: 'list_scenarios',
+      description: 'List every scenario bundle (C-side workbench surface) in the market.',
+      parameters: {},
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            scenarios: { type: 'array', required: true, items: scenarioSchema },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: value.scenarios.map(s => `${s.workbenchId}: ${s.name} [${s.capabilityIds.length} capabilities]`).join(', ') || 'no scenarios' }],
+        presentationMeta: (_args, value) => ({ code: 'listed', count: value.scenarios.length }),
+      },
+      async execute(_args, exec) {
+        const { actor } = boundCall(exec, resolveActor)
+        return { scenarios: shell().listScenarios(actor).map(scenario => ({ ...scenario, capabilityIds: [...scenario.capabilityIds] })) }
+      },
+    }),
+    defineTool({
+      name: 'consume_capability',
+      description: 'Meter one capability consumption against a workspace account: debits credits at the capability\'s rate, records usage, and accrues the open settlement.',
+      parameters: {
+        workspaceId: { type: 'string', required: true, description: 'the workspace whose account is charged' },
+        capabilityId: { type: 'string', required: true, description: 'the capability to consume' },
+        qty: { type: 'number', description: 'quantity to consume; defaults to 1' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            usage: { ...usageSchema, required: true },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: `metered ${value.usage.qty} x ${value.usage.capabilityId} for ${value.usage.cost} credits` }],
+        presentationMeta: (_args, value) => ({ code: 'metered', usageId: value.usage.id, cost: value.usage.cost }),
+      },
+      async execute(args, exec) {
+        const { actor } = boundCall(exec, resolveActor)
+        const usage = shell().consumeCapability(actor, {
+          workspaceId: brandWorkspaceId(args.workspaceId),
+          capabilityId: capabilityIdOf(args.capabilityId),
+          ...(args.qty !== undefined ? { qty: args.qty } : {}),
+        })
+        return { usage }
+      },
+    }),
+    defineTool({
+      name: 'account_balance',
+      description: 'Read one workspace\'s billing account balance in credits.',
+      parameters: {
+        workspaceId: { type: 'string', required: true, description: 'the workspace whose account to read' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            found: { type: 'boolean', required: true },
+            account: {
+              type: 'object',
+              required: true,
+              additionalProperties: false,
+              properties: {
+                workspaceId: { type: 'string', required: true },
+                balance: { type: 'number', required: true },
+                createdAt: { type: 'number', required: true },
+              },
+            },
+          },
+        },
+        render: (args, value) => [{ type: 'text', text: value.found ? `workspace ${value.account.workspaceId} holds ${value.account.balance} credits` : `no account opened for ${args.workspaceId}` }],
+        presentationMeta: (_args, value) => ({ code: value.found ? 'read' : 'not-found' }),
+      },
+      async execute(args, exec) {
+        const { actor } = boundCall(exec, resolveActor)
+        const workspaceId = brandWorkspaceId(args.workspaceId)
+        const account = shell().accountBalance(actor, workspaceId)
+        return { found: account !== undefined, account: account ?? { workspaceId, balance: 0, createdAt: 0 } }
+      },
+    }),
+    defineTool({
+      name: 'settle_account',
+      description: 'Close one workspace\'s open settlement for a billing period, flipping it from open to settled.',
+      parameters: {
+        workspaceId: { type: 'string', required: true, description: 'the workspace whose period to settle' },
+        period: { type: 'string', required: true, description: 'the YYYY-MM billing period to close' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            settlement: { ...settlementSchema, required: true },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: `settlement ${value.settlement.id} closed ${value.settlement.period} at ${value.settlement.amount} credits (${value.settlement.status})` }],
+        presentationMeta: (_args, value) => ({ code: 'settled', settlementId: value.settlement.id, amount: value.settlement.amount }),
+      },
+      async execute(args, exec) {
+        const { actor, session } = boundCall(exec, resolveActor)
+        const settlement = shell().settleAccount(actor, brandWorkspaceId(args.workspaceId), args.period)
+        session.append('billing/settlement', {
+          settlementId: settlement.id,
+          workspaceId: settlement.workspaceId,
+          period: settlement.period,
+          status: settlement.status,
+        })
+        return { settlement }
+      },
+    }),
   ]
   for (const definition of definitions) ctx.tools.register(definition)
   return definitions.map(definition => definition.name)
@@ -460,6 +824,37 @@ function assetIdOf(id: string): AssetId {
  */
 function ticketIdOf(id: string): TicketId {
   return id as TicketId
+}
+
+/**
+ * Brand one tool-provided capability id string.
+ * @param id - validated capability identity string.
+ * @returns the id branded as a CapabilityId.
+ */
+function capabilityIdOf(id: string): CapabilityId {
+  return id as CapabilityId
+}
+
+/**
+ * Brand one tool-provided scenario id string.
+ * @param id - validated scenario identity string.
+ * @returns the id branded as a ScenarioId.
+ */
+function scenarioIdOf(id: string): ScenarioId {
+  return id as ScenarioId
+}
+
+/**
+ * Build one durable dependency edge from validated tool args.
+ * @param dependency - the validated dependency object.
+ * @returns the edge branded for the catalog, keeping the optional version range.
+ */
+function buildDependency(
+  dependency: { readonly id: string; readonly range?: string },
+): { readonly id: CapabilityId; readonly range?: string } {
+  return dependency.range === undefined
+    ? { id: capabilityIdOf(dependency.id) }
+    : { id: capabilityIdOf(dependency.id), range: dependency.range }
 }
 
 /**

@@ -23,3 +23,7 @@ demo 预设**纯人设**:每个角色预设只挂载区分该角色的 persona,�
 **由 demo 驱动脚本直接执行 release 边。** demo 的目的是证明 agent 驱动控制面,因此 release 必须经过角色 agent,而不是宿主侧的存储调用。
 
 **在本 demo 中重复 fs/shell 角色隔离。** 兄弟 demo 已用沙箱化工作区栅栏与工具集差异证明该表面;重复只会增加运行时成本与证据噪音,而控制面的访问边界是服务层的 RBAC,不是工具挂载。
+
+## Consequences
+
+控制面位于一个私有、仅源码、无发布包依赖的实验包中,因此其记录类型与事件不属于发布的 SDK。纯人设预设让 demo 免于重复兄弟 `platform-agent-demo` 已证明的 fs/shell 隔离;服务边界的 RBAC 是唯一被强制的访问墙。包不发布构建产物 `lib/`,因此消费方通过 tsx ESM hook 下的 `./src/*` 导出加载它。

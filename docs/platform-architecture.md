@@ -298,7 +298,7 @@ The following are the **load-bearing decisions** locked in this version. They de
 
 - Repo conventions: follow `AGENTS.md` and `docs/AGENTS.md`; non-trivial changes carry an Agent Note.
 - This document is the **single authority** for the product/platform architecture draft; a load-bearing-decision change requires updating this document and a review.
-- Follow-ups: preset-assembler design ([platform-preset-assembler.md](platform-preset-assembler.md)), asset-schema spec ([platform-asset-schema.md](platform-asset-schema.md)), lineage-bridge data model ([platform-lineage-bridge.md](platform-lineage-bridge.md)), approval-flow state machine ([platform-approval-state-machine.md](platform-approval-state-machine.md)), capability-market meta-model ([platform-capability-market.md](platform-capability-market.md)).
+- Follow-ups: preset-assembler design ([platform-preset-assembler.md](platform-preset-assembler.md)), asset-schema spec ([platform-asset-schema.md](platform-asset-schema.md)), lineage-bridge data model ([platform-lineage-bridge.md](platform-lineage-bridge.md)), approval-flow state machine ([platform-approval-state-machine.md](platform-approval-state-machine.md)), capability-market meta-model ([platform-capability-market.md](platform-capability-market.md)), billing ledger ([platform-billing-ledger.md](platform-billing-ledger.md)).
 
 ---
 

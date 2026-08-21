@@ -8,8 +8,9 @@ import type { Agent } from '@deepseek-ai/dsh-agent'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { PlatformShellService } from '../src/service.ts'
 import { registerPlatformShellTools } from '../src/tools.ts'
+import { periodOf } from '../src/capability-market.ts'
 import { PlatformShellError } from '../src/error.ts'
-import { RoleId, UserId } from '../src/types.ts'
+import { AssetId, RoleId, UserId } from '../src/types.ts'
 
 /**
  * Mount the tools topology: session store, tool runtime, the platform-shell
@@ -57,7 +58,7 @@ async function setup() {
       steer: () => {},
       inject: () => { throw new Error('unused in tool spec') },
       cancel() {},
-      runMaintenance: () => Promise.resolve(),
+      runMaintenance: task => task(new AbortController().signal),
       whenIdle: () => Promise.resolve(),
     }
     return ctx.tools.execute({
@@ -100,7 +101,7 @@ describe('platform-shell tools', () => {
       expect(registered[0]).toMatchObject({
         data: { assetId: 'requirement-1', kind: 'requirement', roleId: 'product', workspaceId: ws },
       })
-      expect(shell.assetExists('requirement-1')).toBe(true)
+      expect(shell.assetExists(AssetId('requirement-1'))).toBe(true)
       // The agent-loop persists `result.meta` into the `tool/result` event; the
       // keyless demo snapshots that integration end to end.
       void ctx
@@ -474,6 +475,237 @@ describe('platform-shell tools', () => {
       const reviewed = await run('session-a', 'approve_ticket', { ticketId: ticket.id, to: 'review', roles: ['product'] })
       expect(reviewed.isError).toBe(false)
       expect(reviewed.value).toMatchObject({ ticket: { status: 'review', reviewScope: null } })
+    } finally {
+      await dispose(ctx)
+    }
+  })
+})
+
+describe('platform-shell market tools', () => {
+  it('publish_capability and list_capabilities drive the catalog with reference events', async () => {
+    const { ctx, shell, bind, sessionOf, run } = await setup()
+    try {
+      const ws = shell.createWorkspace('Platform')
+      const admin = shell.registerUser('Admin')
+      shell.assignRole(ws, admin, RoleId('platform-admin'))
+      bind('session-a', admin)
+      const sessionA = sessionOf('session-a')
+
+      const empty = await run('session-a', 'list_capabilities', {})
+      expect(empty.isError).toBe(false)
+      expect(empty.value).toMatchObject({ capabilities: [] })
+
+      const base = await run('session-a', 'publish_capability', {
+        id: 'base-llm',
+        name: 'Base LLM',
+        roleId: 'product',
+        execution: 'managed',
+        version: '2.0.0',
+        rate: 3,
+      })
+      expect(base.isError).toBe(false)
+      expect(base.value).toMatchObject({ capability: { id: 'base-llm', version: '2.0.0', rate: 3 } })
+      expect(base.meta).toMatchObject({ code: 'published' })
+
+      const rag = await run('session-a', 'publish_capability', {
+        id: 'rag',
+        name: 'RAG',
+        roleId: 'product',
+        execution: 'sandboxed',
+        version: '1.0.0',
+        rate: 2,
+        dependencies: [{ id: 'base-llm', range: '>=2.0.0' }],
+      })
+      expect(rag.isError).toBe(false)
+      expect(rag.value).toMatchObject({ capability: { id: 'rag', execution: 'sandboxed' } })
+
+      const publishedEvents = sessionA.events.filter(e => e.type === 'capability/published')
+      expect(publishedEvents).toHaveLength(2)
+      expect(publishedEvents[0]).toMatchObject({ data: { capabilityId: 'base-llm', version: '2.0.0', roleId: 'product' } })
+
+      const listed = await run('session-a', 'list_capabilities', {})
+      expect(listed.isError).toBe(false)
+      expect(listed.meta).toMatchObject({ code: 'listed', count: 2 })
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('rejects publishing against unknown dependency referents', async () => {
+    const { ctx, shell, bind, run } = await setup()
+    try {
+      const ws = shell.createWorkspace('Platform')
+      const admin = shell.registerUser('Admin')
+      shell.assignRole(ws, admin, RoleId('platform-admin'))
+      bind('session-a', admin)
+
+      const result = await run('session-a', 'publish_capability', {
+        id: 'broken',
+        name: 'Broken',
+        roleId: 'product',
+        execution: 'managed',
+        version: '1.0.0',
+        rate: 1,
+        dependencies: [{ id: 'ghost-dep' }],
+      })
+      expect(result.isError).toBe(true)
+      expect(result.error?.info?.code).toBe('CAPABILITY_NOT_FOUND')
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('assemble_capabilities resolves transitive dependencies and appends capability/selected', async () => {
+    const { ctx, shell, bind, sessionOf, run } = await setup()
+    try {
+      const ws = shell.createWorkspace('Platform')
+      const admin = shell.registerUser('Admin')
+      const alice = shell.registerUser('Alice')
+      shell.assignRole(ws, admin, RoleId('platform-admin'))
+      shell.assignRole(ws, alice, RoleId('product'))
+      bind('session-a', admin)
+      bind('session-b', alice)
+      const sessionB = sessionOf('session-b')
+
+      await run('session-a', 'publish_capability', { id: 'base-llm', name: 'Base LLM', roleId: 'product', execution: 'managed', version: '2.0.0', rate: 3 })
+      await run('session-a', 'publish_capability', { id: 'rag', name: 'RAG', roleId: 'product', execution: 'managed', version: '1.0.0', rate: 2, dependencies: [{ id: 'base-llm', range: '>=2.0.0' }] })
+      await run('session-a', 'publish_scenario', {
+        id: 'product-engineering',
+        name: 'Product Engineering',
+        workbenchId: 'product-engineering',
+        roleId: 'product',
+        preset: 'product-engineering',
+        capabilityIds: ['base-llm', 'rag'],
+      })
+
+      const resolved = await run('session-b', 'assemble_capabilities', {
+        workspaceId: ws,
+        scenarioId: 'product-engineering',
+        selected: ['rag'],
+      })
+      expect(resolved.isError).toBe(false)
+      expect(resolved.value).toMatchObject({
+        requested: ['rag'],
+        resolved: [{ id: 'base-llm' }, { id: 'rag' }],
+        preset: 'product-engineering',
+      })
+      expect(resolved.meta).toMatchObject({ code: 'resolved', count: 2 })
+      const selected = sessionB.events.filter(e => e.type === 'capability/selected')
+      expect(selected).toHaveLength(1)
+      expect(selected[0]).toMatchObject({ data: { workspaceId: ws, capabilityIds: ['rag'], preset: 'product-engineering' } })
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('surfaces CAPABILITY_CONFLICT from assemble_capabilities', async () => {
+    const { ctx, shell, bind, run } = await setup()
+    try {
+      const ws = shell.createWorkspace('Platform')
+      const admin = shell.registerUser('Admin')
+      const alice = shell.registerUser('Alice')
+      shell.assignRole(ws, admin, RoleId('platform-admin'))
+      shell.assignRole(ws, alice, RoleId('product'))
+      bind('session-a', admin)
+      bind('session-b', alice)
+
+      await run('session-a', 'publish_capability', { id: 'sql-db', name: 'SQL', roleId: 'product', execution: 'managed', version: '1.0.0', rate: 1 })
+      await run('session-a', 'publish_capability', { id: 'vector-db', name: 'Vector', roleId: 'product', execution: 'managed', version: '1.0.0', rate: 1, conflictsWith: ['sql-db'] })
+      await run('session-a', 'publish_scenario', {
+        id: 'db-stack', name: 'DB Stack', workbenchId: 'db-stack', roleId: 'product', preset: 'db-stack',
+        capabilityIds: ['sql-db', 'vector-db'],
+      })
+
+      const result = await run('session-b', 'assemble_capabilities', {
+        workspaceId: ws,
+        scenarioId: 'db-stack',
+        selected: ['sql-db', 'vector-db'],
+      })
+      expect(result.isError).toBe(true)
+      expect(result.error?.info?.code).toBe('CAPABILITY_CONFLICT')
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('consume_capability, account_balance, and settle_account run the billing loop', async () => {
+    const { ctx, shell, bind, sessionOf, run } = await setup()
+    try {
+      const ws = shell.createWorkspace('Platform')
+      const admin = shell.registerUser('Admin')
+      const alice = shell.registerUser('Alice')
+      shell.assignRole(ws, admin, RoleId('platform-admin'))
+      shell.assignRole(ws, alice, RoleId('product'))
+      bind('session-a', admin)
+      bind('session-b', alice)
+      const sessionA = sessionOf('session-a')
+
+      await run('session-a', 'publish_capability', { id: 'code-gen', name: 'Code Gen', roleId: 'product', execution: 'managed', version: '1.0.0', rate: 4 })
+      // Funding is an operator service call; the model-facing surface only meters.
+      shell.creditAccount(admin, ws, 100)
+
+      const usage = await run('session-b', 'consume_capability', { workspaceId: ws, capabilityId: 'code-gen', qty: 2 })
+      expect(usage.isError).toBe(false)
+      expect(usage.value).toMatchObject({ usage: { cost: 8, qty: 2 } })
+      expect(usage.meta).toMatchObject({ code: 'metered', cost: 8 })
+
+      const balance = await run('session-a', 'account_balance', { workspaceId: ws })
+      expect(balance.isError).toBe(false)
+      expect(balance.value).toMatchObject({ found: true, account: { balance: 92 } })
+      expect(balance.meta).toMatchObject({ code: 'read' })
+
+      const settled = await run('session-a', 'settle_account', { workspaceId: ws, period: periodOf(Date.now()) })
+      expect(settled.isError).toBe(false)
+      expect(settled.value).toMatchObject({ settlement: { status: 'settled', amount: 8 } })
+      expect(settled.meta).toMatchObject({ code: 'settled' })
+      const settlementEvents = sessionA.events.filter(e => e.type === 'billing/settlement')
+      expect(settlementEvents).toHaveLength(1)
+      expect(settlementEvents[0]).toMatchObject({ data: { workspaceId: ws, period: periodOf(Date.now()), status: 'settled' } })
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('refuses a disabled capability and an overdraft with structured codes', async () => {
+    const { ctx, shell, bind, run } = await setup()
+    try {
+      const ws = shell.createWorkspace('Platform')
+      const admin = shell.registerUser('Admin')
+      const alice = shell.registerUser('Alice')
+      shell.assignRole(ws, admin, RoleId('platform-admin'))
+      shell.assignRole(ws, alice, RoleId('product'))
+      bind('session-a', admin)
+      bind('session-b', alice)
+
+      await run('session-a', 'publish_capability', { id: 'premium', name: 'Premium', roleId: 'product', execution: 'managed', version: '1.0.0', rate: 10 })
+      await run('session-a', 'set_capability_gate', { capabilityId: 'premium', enabled: false, rollout: 1 })
+      shell.creditAccount(admin, ws, 20)
+
+      const gated = await run('session-b', 'consume_capability', { workspaceId: ws, capabilityId: 'premium' })
+      expect(gated.isError).toBe(true)
+      expect(gated.error?.info?.code).toBe('CAPABILITY_DISABLED')
+
+      await run('session-a', 'set_capability_gate', { capabilityId: 'premium', enabled: true, rollout: 1 })
+      const overdraft = await run('session-b', 'consume_capability', { workspaceId: ws, capabilityId: 'premium', qty: 3 })
+      expect(overdraft.isError).toBe(true)
+      expect(overdraft.error?.info?.code).toBe('INSUFFICIENT_BALANCE')
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('reports account_balance as not-found before an account exists', async () => {
+    const { ctx, shell, bind, run } = await setup()
+    try {
+      const ws = shell.createWorkspace('Platform')
+      const admin = shell.registerUser('Admin')
+      shell.assignRole(ws, admin, RoleId('platform-admin'))
+      bind('session-a', admin)
+
+      const balance = await run('session-a', 'account_balance', { workspaceId: ws })
+      expect(balance.isError).toBe(false)
+      expect(balance.value).toMatchObject({ found: false, account: { balance: 0 } })
+      expect(balance.meta).toMatchObject({ code: 'not-found' })
     } finally {
       await dispose(ctx)
     }
