@@ -35,6 +35,11 @@
     },
     "examples": {
       "entry": [
+        "platform-agent-demo/src/demo.ts",
+        "platform-agent-demo/src/mock-approval.ts",
+        "platform-agent-demo/src/mock-llm.ts",
+        "platform-agent-demo/src/platform-agent-demo.ts",
+        "platform-agent-demo/src/platform-service.ts",
         "headless-agent/tests/fixtures/cli-mock-llm.ts",
         "headless-agent/tests/fixtures/semantic-checkpoint-agent.ts",
         "headless-agent/tests/fixtures/subagent-diagnostic-agent.ts",

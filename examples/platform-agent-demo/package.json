@@ -1,0 +1,7 @@
+{
+  "name": "platform-agent-demo-example",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Runnable demo: role-preset agent surfaces, cross-role asset lineage, and fully traced sessions (keyless)"
+}

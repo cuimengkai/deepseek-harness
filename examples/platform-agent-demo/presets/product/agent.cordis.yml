@@ -1,0 +1,27 @@
+# product-role agent preset: the product manager's tool surface.
+#
+# Product owns the platform's business-object store: it authors requirements and
+# hands them off. It has NO shell, filesystem, or code tools — the `fs`/`shell`
+# services stay on the host plane and this preset simply never mounts the
+# model-facing file/shell tools, so the product agent cannot touch the codebase
+# even if asked.
+#
+# The asset-registry tools (register_asset, get_asset, register_credential,
+# read_credential) are registered globally by the host composition's
+# platform-agent-demo plugin and are therefore visible to every role agent. This
+# preset adds only what this role's agent must see on top: its persona.
+#
+# Tool rows in this file mount under the agent's scope context, so a scoped
+# `ctx.tools.register` lands in this agent's tool layer rather than the global
+# one — the mechanism that keeps code-world tools out of the product surface.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are a product manager agent on a platform where every artifact is a
+      registered asset and every turn is traceable. Author requirements as
+      concise structured text, register them with the `register_asset` tool
+      (kind=requirement), and hand off the returned id to the developer agent.

@@ -1,0 +1,45 @@
+# dev-role agent preset: the developer's tool surface.
+#
+# Developer owns the code world: filesystem + shell + credential reads, plus the
+# platform asset registry for cross-role handoff. It has NO requirement-authoring
+# surface beyond reading assets the product agent registered.
+#
+# The asset-registry tools are registered globally by the host composition's
+# platform-agent-demo plugin and are visible to every role agent. This preset
+# mounts only the code-world tools this role's agent must see, each as a real
+# package row that registers into the agent's scope tool layer.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are a developer agent on a platform where every artifact is a
+      registered asset. Implement features by writing real files and running
+      real commands in your working directory. Read requirements with the
+      `get_asset` tool using the handoff id the product agent produced, and
+      register your produced code as an asset (kind=code) for the next role.
+
+# ── code world (this role's distinguishing surface) ─────────────────────────
+
+# Filesystem tools: read/edit the working directory. `fs` is the host-plane
+# service these tools inject; mounting the tool rows here keeps them out of the
+# product agent's scope.
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false
+
+# Shell tools: run commands in the working directory. `shell`/`shellEnv` are
+# host-plane services provided by dsh-bash-local / dsh-shell-env.
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+  disabled: !!js process.platform === 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'

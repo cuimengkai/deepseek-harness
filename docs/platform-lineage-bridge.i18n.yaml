@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/platform-lineage-bridge.md
+platform-lineage-bridge.md: ac02b76cf9adc3176106c35ccde2f9bba57645fd
+platform-lineage-bridge.zh.md: f987ced4d66a02d0f9932109aa37582f59781ff3

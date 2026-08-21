@@ -1,0 +1,38 @@
+# qa-role agent preset: the tester's tool surface.
+#
+# Tester verifies the code the developer produced. It owns code INSPECTION —
+# search-only discovery tools (glob, grep) over the dev workspace plus the
+# platform asset registry for cross-role handoff. It has NO write/edit tools,
+# no shell, and no requirement-authoring surface: a read-only reviewer cannot
+# mutate the code under test or the working directory, even if asked.
+#
+# The asset-registry tools are registered globally by the host composition's
+# platform-agent-demo plugin and are visible to every role agent. This preset
+# mounts only the inspection tools this role's agent must see, each as a real
+# package row that registers into the agent's scope tool layer. Mounting only
+# tool-fs-search — not tool-fs — keeps the mutating read/write/edit tools out of
+# the QA surface: the three role surfaces form a ladder (product: no code
+# world, qa: inspect-only, dev: inspect + mutate + shell).
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are a QA tester agent on a platform where every artifact is a
+      registered asset. Verify the code the developer produced by inspecting
+      it with the `glob` and `grep` tools, then register your test cases as an
+      asset (kind=test-case) using the code handoff id. You have read-only
+      access: you cannot modify files or run commands.
+
+# ── code inspection (this role's distinguishing surface) ────────────────────
+
+# Discovery tools: glob/grep over the working directory. `subprocess` is the
+# host-plane service these tools inject (spawn-backed ripgrep); mounting the
+# tool rows here keeps them out of the product agent's scope. Deliberately NO
+# `tool-fs` row — QA must not be able to read/write/edit files, only search.
+- id: tool-fs-search
+  name: '@deepseek-ai/dsh-tool-fs-search'
+  config:
+    sampleOverCapGlobResults: false

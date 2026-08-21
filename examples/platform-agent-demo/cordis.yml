@@ -1,0 +1,143 @@
+# platform-agent-demo host composition.
+#
+# Demonstrates the platform concept from docs/platform-architecture.md:
+# role-preset agent surfaces + a shared asset registry + fully traceable
+# sessions. Runs entirely keyless — the `platform-demo` provider is a scripted
+# in-process adapter, so this boots in a sandbox with no DEEPSEEK_API_KEY and no
+# network.
+#
+# Layering: the HOST plane owns the shared capability services (subprocess,
+# shell, fs, credentials, session persistence, the model route, and the
+# business-object registry). The ROLE PRESETS mounted per agent add only the
+# model-facing tools that distinguish one role from another — the product role
+# gets none of the code-world tools, the dev role gets fs + shell. Preset rows
+# register under the agent's scope, so `tools.schemas(agent.ctx)` shows exactly
+# that role's surface.
+
+# ── identity / credentials ──────────────────────────────────────────────────
+
+# The file-backed credential provider (ctx.credentials, layered over the
+# inherited environment and $DSH_HOME/.credentials.yaml). The platform's
+# register_credential/read_credential tools expose its surface to role agents.
+- id: credentials
+  name: '@deepseek-ai/dsh-credentials-local'
+
+# ── approval: AI-execution approval as a protected seam ────────────────────
+
+# `dsh-user-approval` provides `ctx.approval` (the AI-execution approval
+# service). `mock-approval` is the keyless scripted answerer: it approves the
+# sandbox-escalation the mock dev agent issues, standing in for the real UI
+# answerer. Together they prove the T6 seam — a sandbox-denied write escalates
+# through user approval before it executes, and the audit pair lands in the
+# session log.
+- id: user-approval
+  name: '@deepseek-ai/dsh-user-approval'
+
+- id: mock-approval
+  name: './src/mock-approval.ts'
+
+# ── preset roster: the capability-market catalog ───────────────────────────
+
+# `dsh-agent-presets` provides `ctx.agentPresets` — the roster that scans the
+# presets dir as the capability catalog, lets a caller assemble an agent by id,
+# and recomposes a live agent onto another preset. The demo proves T7 by
+# recomposing the dev agent onto the product preset and watching its tool
+# surface narrow.
+- id: agent-presets
+  name: '@deepseek-ai/dsh-agent-presets'
+  config:
+    default: product
+    roots:
+      - path: ./presets
+        trust: user
+    includeUserRoot: false
+
+# ── keyless model route ─────────────────────────────────────────────────────
+
+# `platform-demo-mock-llm` registers the `platform-demo` provider in-process.
+# Swap the agent provider for `deepseek-official` and mount `dsh-llm-deepseek`
+# (un-disable below) with your key to run the same composition against the real
+# model.
+- id: mock-llm
+  name: './src/mock-llm.ts'
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  disabled: true
+
+# ── host capability plane (shared services) ────────────────────────────────
+
+# Managed child-process groups: the subprocess capability both the shell
+# executor and the fs-search grep/glob tools run over.
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+# The local bash executor provides `ctx.shell`; the dev preset's tool-bash and
+# tool-pwsh rows inject it. The product preset never mounts those tools.
+- id: bash
+  name: '@deepseek-ai/dsh-bash-local'
+  config:
+    timeoutMs: 60000
+
+# Model-friendly shell environment (env overrides, $DSH_HOME) for the dev role's
+# bash tool.
+- id: shell-env
+  name: '@deepseek-ai/dsh-shell-env'
+
+# The in-process filesystem fence: dsh-fs-sandbox replaces dsh-fs-local behind
+# ctx.fs and fences every write/edit by the session's effective sandbox mode
+# (read-only denies, workspace-write contains to the workspace + temp roots,
+# danger-full-access passes through). The workspace root is each session's own
+# cwd, so a role agent can only mutate ITS workspace. fs-observation-policy
+# (read-before-write) composes orthogonally on top. The model-facing read/
+# write/edit tools stay in the dev preset (T2 role isolation); these rows are
+# the shared capability services only.
+- id: sandbox-policy
+  name: '@deepseek-ai/dsh-sandbox-policy'
+  config:
+    mode: workspace-write
+
+- id: fs-sandbox
+  name: '@deepseek-ai/dsh-fs-sandbox'
+  config:
+    cwd: !!js process.cwd()
+
+- id: fs-observation-policy
+  name: '@deepseek-ai/dsh-fs-observation-policy'
+
+# ── agent spine: core services for both role agents ─────────────────────────
+
+# `dsh-agent-spine-demo` mounts the shared core once: Timer, LlmRuntime,
+# SessionStore (provides `ctx.sessions`), SessionTitleService, SystemPrompt,
+# ToolRuntime (provides `ctx.tools`), SkillRegistry, AgentRegistry (provides
+# `ctx.agents`), AgentLoop, plus the bash/env host plane. `toolBash: false`
+# because the model-facing `bash` name must belong to the dev preset's scope,
+# not every agent. `agents: []` because the role agents are created by the demo
+# driver through `createAgent`, each mounting its own preset.
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents: []
+    persona: ''
+    workspaceContext: false
+    toolBash: false
+
+# ── session persistence: the traceability surface ───────────────────────────
+
+# Every turn of both role agents appends to the durable JSONL session log. The
+# demo driver overrides `root` at boot time with a fresh temp directory and
+# reads it back to show "different role, different tool surface, fully
+# traceable."
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: './.platform-demo-sessions'
+    compression: none
+
+# ── platform capability service (the business-object store) ────────────────
+
+# Mounts `ctx.platformService` and registers the asset/credential tools
+# globally; every role agent inherits them, while role-distinguishing tools
+# live in the per-role presets.
+- id: platform-agent-demo
+  name: './src/platform-agent-demo.ts'

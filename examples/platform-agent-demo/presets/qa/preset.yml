@@ -1,0 +1,2 @@
+name: qa-role
+description: QA tester role — read-only code inspection (glob/grep) and asset handoff. No write/edit, no shell, no requirement authoring.
