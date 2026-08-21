@@ -27,3 +27,7 @@
 - id: command-session-delete
   name: '@deepseek-ai/dsh-command-session-delete'
 ```
+
+## 已知限制与待办
+
+- **无确认、无批量选择** —— 命令从一个 id 参数一次性删除整棵子代理后代树;没有逐成员确认,也无法一次选择多个根。

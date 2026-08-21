@@ -27,3 +27,7 @@ The producer injects `commands` and `sessionDeletion`. Mount the command registr
 - id: command-session-delete
   name: '@deepseek-ai/dsh-command-session-delete'
 ```
+
+## Known Limitations and Deferred Work
+
+- **No confirmation and no bulk selection** — the command deletes the whole subagent descendant tree in one shot from a single id argument; there is no per-member confirmation and no way to select several roots at once.

@@ -39,3 +39,8 @@ Pair it with [`@deepseek-ai/dsh-command-session-delete`](../command-session-dele
 | `SessionDeletionError` (`code: 'live'`) | A scope member is live; the whole operation refused. |
 
 Absence is not an error: an unknown root id returns `{ deleted: [], notFound: [id] }` and writes no ledger record.
+
+## Known Limitations and Deferred Work
+
+- **The ledger is per-id, not per-history** — a recreated session id's later deletion overwrites its earlier record, so the ledger keeps the latest deletion per id rather than the full deletion history.
+- **Consumer cleanup runs only at delete time** — a projection cache or workspace registry not mounted when the delete executes keeps its per-session state; deletion cannot reach back and clean it later.
