@@ -276,7 +276,7 @@ listDeletions(): DeletionRecord[]
 
 Types: [SessionId](core.zh.md)
 
-Source: [`packages/session/session-deletion/src/index.ts:64`](../../packages/session/session-deletion/src/index.ts)
+Source: [`packages/session/session-deletion/src/index.ts`](../../packages/session/session-deletion/src/index.ts)
 
 <a id="ctxsessionpersistence--sessionpersistence-abstract-seam"></a>
 

@@ -160,6 +160,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-sandbox-windows-acl': ['lib/runner.js', 'lib/types-*.js'],
   // SQLite loads every statement from immutable package resources at runtime.
   '@deepseek-ai/dsh-session-persistence-sqlite': ['resources/sql/**/*.sql'],
+  // The platform control-plane store reads its SQL statements from package
+  // resources; the package is source-only (no built lib ships to consumers).
+  '@deepseek-ai/dsh-experimental-platform-shell': ['resources/sql/**/*.sql'],
   '@deepseek-ai/dsh-skill-badge': ['assets'],
   '@deepseek-ai/dsh-subprocess-local': ['scripts/ensure-spawn-helper.mjs'],
 }

@@ -1134,6 +1134,147 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'platformShell',
+    summary: 'The platform control-plane service.',
+    description: 'The platform control-plane service. Register via `ctx.plugin(PlatformShellService, config)`; the service is injected as `ctx.platformShell`.',
+    methods: [
+      {
+        signature: 'registerUser(name: string): UserId',
+        description: 'Register one platform user.',
+        parameters: [{ name: 'name', description: 'the user\'s display name.' }],
+        returns: 'the registered platform user identity.',
+      },
+      {
+        signature: 'createWorkspace(name: string): WorkspaceId',
+        description: 'Create one workspace.',
+        parameters: [{ name: 'name', description: 'the workspace\'s display name.' }],
+        returns: 'the created workspace identity.',
+      },
+      {
+        signature: 'registerRole(roleId: RoleId, displayName: string, permissions: readonly Permission[]): void',
+        description: 'Register or merge one role with its permission set (idempotent).',
+        parameters: [{ name: 'roleId', description: 'the role identity to register or overwrite.' }, { name: 'displayName', description: 'the role\'s display name.' }, { name: 'permissions', description: 'the permission set the role holds within a workspace.' }],
+      },
+      {
+        signature: 'assignRole(workspaceId: WorkspaceId, userId: UserId, roleId: RoleId): void',
+        description: 'Assign one role to a user within one workspace.',
+        parameters: [{ name: 'workspaceId', description: 'the workspace the membership belongs to.' }, { name: 'userId', description: 'the user being assigned.' }, { name: 'roleId', description: 'the role to assign.' }],
+      },
+      {
+        signature: 'membership(userId: UserId, workspaceId: WorkspaceId): Membership | undefined',
+        description: 'Resolve one user\'s membership in one workspace.',
+        parameters: [{ name: 'userId', description: 'the platform user.' }, { name: 'workspaceId', description: 'the workspace to resolve against.' }],
+        returns: 'the membership, or `undefined` when the user is not a member.',
+      },
+      {
+        signature: 'canAccessWorkspace(userId: UserId, workspaceId: WorkspaceId): boolean',
+        description: 'Whether one user may access one workspace.',
+        parameters: [{ name: 'userId', description: 'the platform user.' }, { name: 'workspaceId', description: 'the workspace to test.' }],
+        returns: 'whether the user holds any membership in the workspace.',
+      },
+      {
+        signature: 'deleteUser(userId: UserId): void',
+        description: 'Remove one user.',
+        parameters: [{ name: 'userId', description: 'the platform user to remove.' }],
+      },
+      {
+        signature: 'registerAsset(actor: UserId, request: RegisterAssetRequest): AssetRecord',
+        description: 'Register one asset under the caller\'s produce role, in one workspace.',
+        parameters: [{ name: 'actor', description: 'the platform user producing the asset.' }, { name: 'request', description: 'workspace, kind, content, and the caller\'s producing role.' }],
+        returns: 'the committed asset record.',
+      },
+      {
+        signature: 'getAsset(actor: UserId, assetId: AssetId): AssetRecord | undefined',
+        description: 'Read one asset, workspace-scoped to the caller.',
+        parameters: [{ name: 'actor', description: 'the platform user reading the asset.' }, { name: 'assetId', description: 'the asset to read.' }],
+        returns: 'the asset record, or `undefined` when absent.',
+      },
+      {
+        signature: 'listAssets(actor: UserId, workspaceId: WorkspaceId): AssetRecord[]',
+        description: 'List assets in one workspace visible to the caller.',
+        parameters: [{ name: 'actor', description: 'the platform user listing the workspace.' }, { name: 'workspaceId', description: 'the workspace to list.' }],
+        returns: 'the workspace\'s asset records.',
+      },
+      {
+        signature: 'linkAsset(actor: UserId, assetId: AssetId, parentId: AssetId): void',
+        description: 'Record that one asset derives from another.',
+        parameters: [{ name: 'actor', description: 'the platform user linking the assets.' }, { name: 'assetId', description: 'the derived asset.' }, { name: 'parentId', description: 'the asset it derives from.' }],
+      },
+      {
+        signature: 'ancestors(actor: UserId, assetId: AssetId): LineageEdge[]',
+        description: 'All transitive ancestors toward the derivation source.',
+        parameters: [{ name: 'actor', description: 'the platform user tracing the lineage.' }, { name: 'assetId', description: 'the asset to trace.' }],
+        returns: 'ancestor edges in derivation order.',
+      },
+      {
+        signature: 'descendants(actor: UserId, assetId: AssetId): LineageEdge[]',
+        description: 'All transitive descendants.',
+        parameters: [{ name: 'actor', description: 'the platform user tracing the lineage.' }, { name: 'assetId', description: 'the asset to trace.' }],
+        returns: 'descendant edges in derivation order.',
+      },
+      {
+        signature: 'parents(actor: UserId, assetId: AssetId): LineageEdge[]',
+        description: 'One asset\'s direct derivation parents.',
+        parameters: [{ name: 'actor', description: 'the platform user tracing the lineage.' }, { name: 'assetId', description: 'the asset to trace.' }],
+        returns: 'direct parent edges.',
+      },
+      {
+        signature: 'children(actor: UserId, assetId: AssetId): LineageEdge[]',
+        description: 'One asset\'s direct derivation children.',
+        parameters: [{ name: 'actor', description: 'the platform user tracing the lineage.' }, { name: 'assetId', description: 'the asset to trace.' }],
+        returns: 'direct child edges.',
+      },
+      {
+        signature: 'submitTicket(actor: UserId, workspaceId: WorkspaceId, subjectAssetId: AssetId): ApprovalTicket',
+        description: 'Submit one ticket for a subject asset, starting in `draft`.',
+        parameters: [{ name: 'actor', description: 'the platform user submitting the ticket.' }, { name: 'workspaceId', description: 'the workspace the subject asset belongs to.' }, { name: 'subjectAssetId', description: 'the asset the ticket reviews.' }],
+        returns: 'the committed draft ticket.',
+      },
+      {
+        signature: 'transition(actor: UserId, ticketId: TicketId, to: BusinessApprovalStatus, scope?: ReviewScope): ApprovalTicket',
+        description: 'Move one ticket across an allowed edge.',
+        parameters: [{ name: 'actor', description: 'the platform user authorizing the transition.' }, { name: 'ticketId', description: 'the ticket to move.' }, { name: 'to', description: 'the target status.' }, { name: 'scope', description: 'review scope the `approved` edge requires, else omitted.' }],
+        returns: 'the committed ticket.',
+      },
+      {
+        signature: 'getTicket(actor: UserId, ticketId: TicketId): ApprovalTicket | undefined',
+        description: 'Read one ticket.',
+        parameters: [{ name: 'actor', description: 'the platform user reading the ticket.' }, { name: 'ticketId', description: 'the ticket to read.' }],
+        returns: 'the ticket, or `undefined` when absent.',
+      },
+      {
+        signature: 'listTickets(actor: UserId, workspaceId: WorkspaceId): ApprovalTicket[]',
+        description: 'List tickets in one workspace.',
+        parameters: [{ name: 'actor', description: 'the platform user listing the workspace.' }, { name: 'workspaceId', description: 'the workspace to list.' }],
+        returns: 'the workspace\'s tickets.',
+      },
+      {
+        signature: 'transitions(actor: UserId, ticketId: TicketId): ApprovalTransition[]',
+        description: 'One ticket\'s recorded transition log.',
+        parameters: [{ name: 'actor', description: 'the platform user reading the log.' }, { name: 'ticketId', description: 'the ticket to trace.' }],
+        returns: 'the ticket\'s transition records.',
+      },
+      {
+        signature: 'assetExists(assetId: AssetId): boolean',
+        description: 'Whether one asset exists in the control-plane store.',
+        parameters: [{ name: 'assetId', description: 'the asset to test.' }],
+        returns: 'whether a stored asset carries the identity.',
+      },
+      {
+        signature: 'ticketStatus(ticketId: TicketId): BusinessApprovalStatus | undefined',
+        description: 'One ticket\'s committed status, or `undefined` when absent.',
+        parameters: [{ name: 'ticketId', description: 'the ticket to inspect.' }],
+        returns: 'the committed status, or `undefined` for an unknown ticket.',
+      },
+      {
+        signature: 'listAudit(actor: UserId, filter: { readonly workspaceId?: WorkspaceId; readonly action?: string } = {}): AuditEvent[]',
+        description: 'List audit rows, filtered by workspace and action.',
+        parameters: [{ name: 'actor', description: 'the platform user reading the audit log.' }, { name: 'filter', description: 'optional workspace and action filters; a workspace-less actor resolves to its single membership.' }],
+        returns: 'the matching audit events.',
+      },
+    ],
+  },
+  {
     key: 'sandbox',
     summary: 'Abstract process-sandbox service.',
     description: 'Abstract process-sandbox service. confine must return enforcing argv or fail closed at wrap or runner-execution time; silent unconfined passthrough is forbidden. Functional probes arbitrate multi-runner chains and may be skipped for a sole candidate, whose own refusal remains the fail-closed end.',
@@ -2937,6 +3078,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export class ApprovalService extends Service {\n    static Config: z<Config>;\n    constructor(ctx: Context, public config: Config);\n    setPolicy(agent: Agent, policy: ApprovalPolicy): void;\n    async request(req: ApprovalRequest): Promise<ApprovalOutcome>;\n    overrideOf(session: Session): ApprovalPolicy | undefined;\n}',
   },
   {
+    name: 'ApprovalTicket',
+    declaration: 'export interface ApprovalTicket {\n    readonly id: TicketId;\n    readonly workspaceId: WorkspaceId;\n    readonly subjectKind: AssetKind;\n    readonly subjectId: AssetId;\n    readonly status: BusinessApprovalStatus;\n    readonly actorUserId: UserId;\n    readonly reviewScope: ReviewScope | null;\n    readonly createdAt: number;\n    readonly updatedAt: number;\n}',
+  },
+  {
+    name: 'ApprovalTransition',
+    declaration: 'export interface ApprovalTransition {\n    readonly ticketId: TicketId;\n    readonly from: BusinessApprovalStatus | null;\n    readonly to: BusinessApprovalStatus;\n    readonly actorUserId: UserId;\n    readonly createdAt: number;\n}',
+  },
+  {
     name: 'AskUserQuestionAnswer',
     declaration: 'export interface AskUserQuestionAnswer {\n    answers: AskUserQuestionAnswerItem[];\n}',
   },
@@ -2973,6 +3122,18 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n}',
   },
   {
+    name: 'AssetId',
+    declaration: 'export type AssetId = Branded<\'AssetId\'>;',
+  },
+  {
+    name: 'AssetKind',
+    declaration: 'export type AssetKind = \'requirement\' | \'design\' | \'code\' | \'test-case\' | \'handoff\';',
+  },
+  {
+    name: 'AssetRecord',
+    declaration: 'export interface AssetRecord {\n    readonly id: AssetId;\n    readonly kind: AssetKind;\n    readonly content: string;\n    readonly roleId: RoleId;\n    readonly workspaceId: WorkspaceId;\n    readonly createdAt: number;\n}',
+  },
+  {
     name: 'AssistantMessage',
     declaration: 'export interface AssistantMessage extends Message {\n    readonly role: \'assistant\';\n    readonly source: ModelMessageSource;\n}',
   },
@@ -2983,6 +3144,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'AttachmentId',
     declaration: 'export type AttachmentId = Branded<\'AttachmentId\'>;',
+  },
+  {
+    name: 'AuditEvent',
+    declaration: 'export interface AuditEvent {\n    readonly id: AuditEventId;\n    readonly actorUserId: UserId;\n    readonly workspaceId: WorkspaceId | null;\n    readonly action: string;\n    readonly targetKind: string | null;\n    readonly targetId: string | null;\n    readonly detail: string | null;\n    readonly createdAt: number;\n}',
+  },
+  {
+    name: 'AuditEventId',
+    declaration: 'export type AuditEventId = Branded<\'AuditEventId\'>;',
   },
   {
     name: 'AuthorizationEntry',
@@ -3051,6 +3220,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'Branded',
     declaration: 'export type Branded<B extends string> = string & {\n    readonly [BRAND]: B;\n};',
+  },
+  {
+    name: 'BusinessApprovalStatus',
+    declaration: 'export type BusinessApprovalStatus = \'draft\' | \'review\' | \'approved\' | \'rejected\' | \'released\';',
   },
   {
     name: 'CancelOptions',
@@ -3633,6 +3806,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface KvUnitDescriptor {\n    readonly name: string;\n    readonly version: number;\n    readonly tables: readonly string[];\n    readonly hasGlobal: boolean;\n}',
   },
   {
+    name: 'LineageEdge',
+    declaration: 'export interface LineageEdge {\n    readonly assetId: AssetId;\n    readonly parentId: AssetId;\n    readonly roleId: RoleId;\n    readonly createdAt: number;\n}',
+  },
+  {
     name: 'LlmAdapter',
     declaration: 'export abstract class LlmAdapter {\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
@@ -3731,6 +3908,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ManualCompactAgentContext',
     declaration: 'export interface ManualCompactAgentContext extends CompactionAgentContext {\n    runMaintenance<T>(task: (signal: AbortSignal) => Promise<T>): Promise<T>;\n}',
+  },
+  {
+    name: 'Membership',
+    declaration: 'export interface Membership {\n    readonly roleId: RoleId;\n    readonly permissions: readonly Permission[];\n}',
   },
   {
     name: 'Message',
@@ -3845,6 +4026,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface OneShotSubagentDescriptorData extends SubagentDescriptorBase {\n    readonly mode: \'one-shot\';\n    readonly label?: string;\n}',
   },
   {
+    name: 'Permission',
+    declaration: 'export type Permission = \'asset.read\' | \'asset.register\' | \'approval.review\' | \'approval.release\' | \'audit.read\';',
+  },
+  {
     name: 'PermissionSelect',
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
@@ -3949,6 +4134,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RedactedSecret {\n    path: string[];\n    set: boolean;\n}',
   },
   {
+    name: 'RegisterAssetRequest',
+    declaration: 'export interface RegisterAssetRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly kind: AssetKind;\n    readonly content: string;\n    readonly roleId: RoleId;\n}',
+  },
+  {
     name: 'ReplayEnvelope',
     declaration: 'export interface ReplayEnvelope {\n    response: unknown;\n    blocks?: readonly unknown[];\n}',
   },
@@ -3999,6 +4188,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ResumeAgentOptions',
     declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
+  },
+  {
+    name: 'ReviewScope',
+    declaration: 'export interface ReviewScope {\n    readonly roles: readonly RoleId[];\n    readonly workspace: WorkspaceId;\n    readonly expiresAt: number;\n}',
+  },
+  {
+    name: 'RoleId',
+    declaration: 'export type RoleId = Branded<\'RoleId\'>;',
   },
   {
     name: 'RpcError',
@@ -4757,6 +4954,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type TerminalWaitReason = \'stdin_read\' | \'inferred_idle\' | \'timeout\' | \'session_exit\';',
   },
   {
+    name: 'TicketId',
+    declaration: 'export type TicketId = Branded<\'TicketId\'>;',
+  },
+  {
     name: 'TodoItem',
     declaration: 'export interface TodoItem {\n    content: string;\n    status: \'pending\' | \'in_progress\' | \'completed\';\n}',
   },
@@ -4959,6 +5160,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'UpdateTeamTaskRequest',
     declaration: 'export interface UpdateTeamTaskRequest {\n    readonly taskId: TeamTaskId;\n    readonly expectedRevision: number;\n    readonly action: TeamTaskAction;\n    readonly subject?: string;\n    readonly description?: string;\n    readonly blockedBy?: readonly TeamTaskId[];\n    readonly writeScopes?: readonly string[];\n    readonly owner?: string;\n}',
+  },
+  {
+    name: 'UserId',
+    declaration: 'export type UserId = Branded<\'UserId\'>;',
   },
   {
     name: 'UserMessage',

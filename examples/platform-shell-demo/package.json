@@ -1,0 +1,7 @@
+{
+  "name": "platform-shell-demo-example",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Runnable demo: tenant/RBAC, asset lineage, business approval, and audit over one SQLite control-plane database (keyless)"
+}

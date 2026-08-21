@@ -1,0 +1,92 @@
+# platform-shell-demo host composition.
+#
+# Demonstrates the platform control plane from docs/platform-architecture.md:
+# tenant/RBAC, a business-object asset store with lineage, a business-approval
+# flow, and an audit log — all over ONE file-backed SQLite database, driven
+# entirely by role agents. Runs keyless: the `platform-demo` provider is a
+# scripted in-process adapter, so this boots in a sandbox with no
+# DEEPSEEK_API_KEY and no network.
+#
+# Layering: the HOST plane owns the control-plane services (the
+# platform-shell service, its model-facing tools, and the package invariant)
+# plus the shared agent spine. The ROLE PRESETS mounted per agent add only the
+# persona that distinguishes one role from another — persona-only, because the
+# fs/shell isolation is already proven by the sibling platform-agent-demo.
+
+# ── preset roster: the capability-market catalog ───────────────────────────
+
+# Scans the presets dir as the catalog; the demo driver overrides `roots` with
+# the absolute demo presets dir at boot time (same pattern as persistence).
+- id: agent-presets
+  name: '@deepseek-ai/dsh-agent-presets'
+  config:
+    default: product
+    roots:
+      - path: ./presets
+        trust: user
+    includeUserRoot: false
+
+# ── keyless model route ─────────────────────────────────────────────────────
+
+# `platform-shell-demo-mock-llm` registers the `platform-demo` provider
+# in-process. Swap the agent provider for `deepseek-official` and mount
+# `dsh-llm-deepseek` (un-disable below) with your key to run the same
+# composition against the real model.
+- id: mock-llm
+  name: './src/mock-llm.ts'
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  disabled: true
+
+# ── agent spine: core services for every role agent ─────────────────────────
+
+# `dsh-agent-spine-demo` mounts the shared core once: Timer, LlmRuntime,
+# SessionStore, SessionTitleService, SystemPrompt, ToolRuntime, SkillRegistry,
+# AgentRegistry, AgentLoop, and the invariant registry. `toolBash: false` and
+# `workspaceContext: false` keep the composition hermetic — the control plane
+# needs no code-world or filesystem surface. `agents: []` because the role
+# agents are created by the demo driver through `createAgent`.
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents: []
+    persona: ''
+    workspaceContext: false
+    toolBash: false
+
+# ── session persistence: the traceability surface ───────────────────────────
+
+# Every turn of every role agent appends to the durable JSONL session log. The
+# demo driver overrides `root` at boot time with a fresh scratch directory and
+# reads the logs back to prove the model-visible ⟺ logged invariant.
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: './.platform-shell-demo-sessions'
+    compression: none
+
+# ── platform control plane ──────────────────────────────────────────────────
+
+# Mounts `ctx.platformShell`: the self-built control-plane service over one
+# SQLite database (tenant/RBAC + asset store + lineage + business approval +
+# audit). The demo driver overrides `path` with a scratch file so the store is
+# durable across the run and removed afterward. The experimental package ships
+# source only (no built lib), so the row loads the source entry through the
+# package's `./src/*` export under the tsx ESM hook.
+- id: platform-shell
+  name: '@deepseek-ai/dsh-experimental-platform-shell/src/index.ts'
+  config:
+    path: './.platform-shell.sqlite'
+
+# The package invariant companion: validates every committed lineage-bridge
+# reference event against the control-plane store (asset events must name a
+# stored asset; approval events must name the committed status). Needs the
+# invariant registry agent-spine mounts, so this row must follow agent-spine.
+- id: platform-shell-invariant
+  name: '@deepseek-ai/dsh-experimental-platform-shell/src/invariant.ts'
+
+# Registers the model-facing platform tools with the demo's session→user
+# binding; the demo driver populates the binding before each agent runs.
+- id: platform-shell-demo
+  name: './src/platform-shell-demo.ts'

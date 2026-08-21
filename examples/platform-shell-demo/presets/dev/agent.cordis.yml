@@ -1,0 +1,18 @@
+# dev-role agent preset: the developer's persona.
+#
+# The control-plane tools are registered globally by the host composition's
+# platform-shell-demo plugin and are visible to every role agent. This preset
+# adds only this role's agent persona — no filesystem or shell tools, because
+# the code-world isolation is already proven by the sibling platform-agent-demo.
+
+# ── identity ────────────────────────────────────────────────────────────────
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are a developer agent on the platform control plane. Read the
+      requirement the product agent registered with the `get_asset` tool using
+      the handoff id, implement it, register your produced code with
+      `register_asset` (kind=code), and link it to the requirement with
+      `link_asset`.

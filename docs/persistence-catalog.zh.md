@@ -204,6 +204,40 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 
 来源：[`packages/interaction/user-approval/src/index.ts:67`](../packages/interaction/user-approval/src/index.ts)
 
+### `asset/*`
+
+<a id="assetread--log-only"></a>
+
+#### `asset/read` — log-only
+
+```ts persistence-catalog
+/** The agent read a platform asset — the reference event of the lineage bridge. */
+'asset/read': {
+  assetId: AssetId
+  kind: AssetKind
+  roleId: RoleId
+  workspaceId: WorkspaceId
+}
+```
+
+来源：[`packages/experimental/platform-shell/src/types.ts:184`](../packages/experimental/platform-shell/src/types.ts)
+
+<a id="assetregister--log-only"></a>
+
+#### `asset/register` — log-only
+
+```ts persistence-catalog
+/** The agent produced a platform asset — the reference event of the lineage bridge. */
+'asset/register': {
+  assetId: AssetId
+  kind: AssetKind
+  roleId: RoleId
+  workspaceId: WorkspaceId
+}
+```
+
+来源：[`packages/experimental/platform-shell/src/types.ts:191`](../packages/experimental/platform-shell/src/types.ts)
+
 ### `assistant/*`
 
 <a id="assistantchunk--log-only"></a>
@@ -537,6 +571,25 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 ```
 
 来源：[`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/src/index.ts)
+
+### `platform/*`
+
+<a id="platformapprovaltransition--log-only"></a>
+
+#### `platform/approval/transition` — log-only
+
+```ts persistence-catalog
+/** A business approval ticket crossed a state-machine edge. */
+'platform/approval/transition': {
+  ticketId: TicketId
+  from: BusinessApprovalStatus
+  to: BusinessApprovalStatus
+  actorUserId: UserId
+  workspaceId: WorkspaceId
+}
+```
+
+来源：[`packages/experimental/platform-shell/src/types.ts:198`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `request/*`
 

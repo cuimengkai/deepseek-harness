@@ -322,6 +322,41 @@
       "source": "packages/experimental/agent-team/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/platform-shell.md",
+      "symbol": "Membership",
+      "source": "packages/experimental/platform-shell/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/platform-shell.md",
+      "symbol": "AssetRecord",
+      "source": "packages/experimental/platform-shell/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/platform-shell.md",
+      "symbol": "LineageEdge",
+      "source": "packages/experimental/platform-shell/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/platform-shell.md",
+      "symbol": "ReviewScope",
+      "source": "packages/experimental/platform-shell/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/platform-shell.md",
+      "symbol": "ApprovalTicket",
+      "source": "packages/experimental/platform-shell/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/platform-shell.md",
+      "symbol": "ApprovalTransition",
+      "source": "packages/experimental/platform-shell/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/platform-shell.md",
+      "symbol": "AuditEvent",
+      "source": "packages/experimental/platform-shell/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/commands.md",
       "symbol": "CommandInputDescriptor",
       "source": "packages/interaction/commands/src/types.ts"
