@@ -2,7 +2,7 @@
 
 [English](platform-preset-assembler.md) | 中文
 
-> [platform-architecture.zh.md](platform-architecture.zh.md)(D5、D2、T7)的配套文档:装配器把"角色 + 一组已选能力"变成可运行的 agent 装配。这是 §9 列出的后续细化设计规格,以 `examples/platform-agent-demo/` 的无密钥原型为依托。
+> [platform-architecture.zh.md](platform-architecture.zh.md)(D5、D2、T7)的配套文档:装配器把"角色 + 一组已选能力"变成可运行的 agent 装配。这是 §9 列出的后续细化设计规格,以 `examples/platform-agent-demo/` 的无密钥原型为依托。渲染与「校验后提交」步骤(§3、§4)已在 `@deepseek-ai/dsh-experimental-platform-shell` 的 `preset-assembler` 模块中实现,并由 capability-market demo 的引导式构建无密钥证明。
 
 ## 1. 问题
 
@@ -41,4 +41,4 @@ roster 在空白会话上的 `recompose` 就是同一算法的实时形态:原�
 
 ## 6. 验证
 
-原型无密钥端到端证明了该机制:`roster.mount` 按 id 装配,`roster.recompose` 把空白 agent 换到另一预设,结果工具面恰好是预设的行(`roleIsolation`、`marketAssembly`,见 demo JSON)。本规格的增量价值是"先校验后提交"这一步与目录级依赖检查,二者都列为 T7 后续。
+原型无密钥端到端证明了该机制:`roster.mount` 按 id 装配,`roster.recompose` 把空白 agent 换到另一预设,结果工具面恰好是预设的行(`roleIsolation`、`marketAssembly`,见 demo JSON)。实现补上了「校验后提交」这一步:`assemble_preset` 通过 `renderPresetTree` 渲染「基底 + 能力」树——确定性的,同样的请求渲染出深度相等的行——报告当前平台被禁用的行,并在任何树到达 roster 之前,以 `ROW_ID_CONFLICT` 拒绝重复的行 id、以 `TOOL_NAME_CONFLICT` 拒绝被遮蔽的工具名。capability-market demo 的引导式构建通过 `AgentPresets.write` 提交渲染出的行,挂载它们,并断言组合后的系统提示词按目录顺序携带基础 persona 与每个能力 persona,减去平台禁用行。

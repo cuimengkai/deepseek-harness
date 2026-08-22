@@ -2,7 +2,7 @@
 
 English | [中文](platform-preset-assembler.zh.md)
 
-> Companion to [platform-architecture.md](platform-architecture.md) (D5, D2, T7): the assembler turns a role plus a chosen set of capabilities into a runnable agent composition. This is a design spec for the follow-up listed in §9, grounded in the keyless prototype at `examples/platform-agent-demo/`.
+> Companion to [platform-architecture.md](platform-architecture.md) (D5, D2, T7): the assembler turns a role plus a chosen set of capabilities into a runnable agent composition. This is a design spec for the follow-up listed in §9, grounded in the keyless prototype at `examples/platform-agent-demo/`. The render + validate-before-commit step (§3, §4) is implemented in the `preset-assembler` module of `@deepseek-ai/dsh-experimental-platform-shell` and proven keyless by the capability-market demo's guided build.
 
 ## 1. Problem
 
@@ -41,4 +41,4 @@ Rendering is deterministic: same role, same capability set, same context — sam
 
 ## 6. Verification
 
-The prototype proves the mechanism end to end keyless: `roster.mount` assembles by id, `roster.recompose` swaps a blank agent onto another preset, and the resulting tool surface is exactly the preset's rows (`roleIsolation`, `marketAssembly` in the demo JSON). This spec's added value is the validate-before-commit step and the catalog-level dependency checks, both listed as T7 follow-ups.
+The prototype proves the mechanism end to end keyless: `roster.mount` assembles by id, `roster.recompose` swaps a blank agent onto another preset, and the resulting tool surface is exactly the preset's rows (`roleIsolation`, `marketAssembly` in the demo JSON). The implementation adds the validate-before-commit step: `assemble_preset` renders the base-plus-capabilities tree through `renderPresetTree` — deterministic, so the same request renders deep-equal rows — reports rows disabled for the current platform, and refuses a duplicate row id (`ROW_ID_CONFLICT`) or a shadowed tool name (`TOOL_NAME_CONFLICT`) before any tree can reach the roster. The capability-market demo's guided build commits the rendered rows through `AgentPresets.write`, mounts them, and asserts the composed system prompt carries the base persona plus each capability persona in catalog order, minus the platform-disabled row.

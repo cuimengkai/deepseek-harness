@@ -44,6 +44,8 @@
 
 市场让能力可发布、可组合、可计费。`publishCapability` 校验 id 唯一、依赖存在与依赖 semver 范围,并记录能力管辖的工具名;`publishScenario` 注册一个工作台捆绑——每个客户群一份能力集加一个预设绑定。`assemble_capabilities` 依依赖优先顺序解析请求的能力集,校验版本范围与冲突对,并应用执行门禁:禁用能力拒绝任何到达它的装配,灰度 0 的能力拒绝每个工作区。注册 `registerCapabilityExecutionGate` 把同一个门禁变成运行期拦截:每次 `tools/execute` 调用都按工作区重新检查归属能力的实时门禁状态,门禁关闭即拒绝 `CAPABILITY_DISABLED`。市场工具挂载在消费该 seam 的每个 agent 上。见 [能力市场元模型](../../../docs/platform-capability-market.zh.md)。
 
+每个能力的发布请求还携带一个 `rows` 片段——能力贡献给工作台的预设树行。`assemble_preset` 闭合装配路径:它按目录顺序把每个已选能力的行追加到角色预设的基底行之后,应用覆盖补丁,并在提交前校验——重复的行 id 以 `ROW_ID_CONFLICT` 拒绝,被两个能力共有的工具名以 `TOOL_NAME_CONFLICT` 拒绝,当前平台被禁用的行被报告而不被拒绝。工具通过消费方提供的 `resolveBaseRows` 绑定读取基底,并把携带渲染行的持久化 `preset/assembled` 会话事件追加进日志;宿主提交返回的行(capability-market demo 通过 agent-presets 的 `write` 原语写入)。见 [预设装配器设计](../../../docs/platform-preset-assembler.zh.md)。
+
 ## 计费账本
 
 一个模拟的整数信用点账本。`creditAccount` 开户或充值工作区账户;`consume_capability` 按能力费率计量用量(`cost = rate × qty`),余额不足时以 `INSUFFICIENT_BALANCE` 拒绝并回滚扣款;`settle_account` 把工作区某个 `YYYY-MM` 账期的 `open` 结算关闭为 `settled`。见 [计费账本规范](../../../docs/platform-billing-ledger.zh.md)。
@@ -62,7 +64,7 @@
 
 #### 模型看到什么
 
-十九个工具(十个控制面工具 `register_asset`、`get_asset`、`link_asset`、`asset_ancestors`、`asset_descendants`、`submit_ticket`、`get_ticket`、`list_tickets`、`approve_ticket`、`audit_query`,加九个市场工具 `publish_capability`、`list_capabilities`、`assemble_capabilities`、`set_capability_gate`、`publish_scenario`、`list_scenarios`、`consume_capability`、`account_balance`、`settle_account`)把控制面记录——资产、血缘边、工单、审计事件、能力、场景、用量记录与结算——作为结果内容返回。这些就是存储已提交的记录;模型读到的是权威持久形态,而非派生视图。被 RBAC 拒绝的读取返回 `PERMISSION_DENIED` 工具错误而非记录。
+二十个工具(十个控制面工具 `register_asset`、`get_asset`、`link_asset`、`asset_ancestors`、`asset_descendants`、`submit_ticket`、`get_ticket`、`list_tickets`、`approve_ticket`、`audit_query`,加十个市场工具 `publish_capability`、`list_capabilities`、`assemble_capabilities`、`assemble_preset`、`set_capability_gate`、`publish_scenario`、`list_scenarios`、`consume_capability`、`account_balance`、`settle_account`)把控制面记录——资产、血缘边、工单、审计事件、能力、场景、用量记录、结算与装配出的预设树——作为结果内容返回。这些就是存储已提交的记录;模型读到的是权威持久形态,而非派生视图。被 RBAC 拒绝的读取返回 `PERMISSION_DENIED` 工具错误而非记录。
 
 #### Token 影响
 
@@ -77,6 +79,8 @@
 - **单进程单文件存储** —— 一个进程内一个 SQLite 文件;包不提供网络或多进程控制面,因此多个 harness 进程共享一个存储不受支持。
 - **隔离是按工作区的记录,不是强制墙** —— 控制面记录并据此路由物理隔离,但记录路由到的进程外引擎是进程级委托(见 [engine-isolation 包](../../../packages/experimental/engine-isolation/README.zh.md)),不是安全边界;容器或虚拟机隔离暂缓到该接缝的 e2b 家族后端。
 - **actor 解析是消费方义务** —— 工具需要消费方提供 session→平台用户映射(`ResolveActor`);缺失时工具以 `UNKNOWN_ACTOR` 响亮失败。包提供解析器类型,而非内置绑定。
+- **装配器只渲染与校验,不提交** —— `assemble_preset` 返回已校验的树,绝不触碰 roster;宿主提交这些行(capability-market demo 通过 agent-presets 的 `write` 原语写入),inactive rows、leaked services 等 loader 级检查仍在 roster 挂载时进行。
+- **`resolveBaseRows` 是消费方义务** —— `assemble_preset` 需要宿主从 roster 解析角色预设的基底行(`ResolveBaseRows`);缺失绑定时工具以 `INVALID_ARGUMENT` 响亮失败。
 - **审批是记录型状态机,不是执行闸** —— 服务强制允许的迁移边,但不阻止持有直接存储访问的调用者行动;服务边界是唯一被强制的那道墙。
 - **审计不可防篡改** —— 审计行与存储提交在同一事务,但文件没有签名或只追加式强制来对抗外部写入方。
 - **计费是模拟账本** —— 整数信用点加每能力费率卡;没有真实支付、货币或存储之外的结算。

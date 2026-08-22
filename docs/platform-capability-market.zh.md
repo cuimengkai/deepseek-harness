@@ -27,6 +27,7 @@
 | `conflicts` | 不能共存的能力 |
 | `execution` | `managed \| sandboxed \| none`(D4) |
 | `tools` | 能力管辖的工具名;注册运行时门禁后,门禁关闭时其执行会被拦截 |
+| `rows` | 能力贡献给工作台的预设树行——按目录顺序追加在角色基底行之后,并在树提交前由装配器校验 |
 | `version` | 打包的 semver 版本 |
 | `rate` | 每单位信用点成本(见 [platform-billing-ledger.zh.md](platform-billing-ledger.zh.md)) |
 | `enabled` / `rollout` | 执行门禁:禁用或灰度排除的能力会响亮地拒绝装配;注册运行时门禁后,还会在调用时拒绝其工具 |
@@ -44,10 +45,12 @@
 
 ## 5. 落地的市场
 
-市场的目录、解析、门禁与计费位于 `@deepseek-ai/dsh-experimental-platform-shell` 的 `capability-market` 模块,通过 `publish_capability`、`publish_scenario`、`assemble_capabilities`、`set_capability_gate`、`consume_capability`、`account_balance` 与 `settle_account` 工具提供给 agent。工作台是一个场景捆绑——每个客户群一份能力集加一个预设绑定——通过 harness 插件机制注册;页面渲染属于 Web 应用层。计费是 [platform-billing-ledger.zh.md](platform-billing-ledger.zh.md) 规定的模拟整数信用点账本。
+市场的目录、解析、门禁与计费位于 `@deepseek-ai/dsh-experimental-platform-shell` 的 `capability-market` 模块,通过 `publish_capability`、`list_capabilities`、`publish_scenario`、`list_scenarios`、`assemble_capabilities`、`assemble_preset`、`set_capability_gate`、`consume_capability`、`account_balance` 与 `settle_account` 工具提供给 agent。工作台是一个场景捆绑——每个客户群一份能力集加一个预设绑定——通过 harness 插件机制注册;页面渲染属于 Web 应用层。计费是 [platform-billing-ledger.zh.md](platform-billing-ledger.zh.md) 规定的模拟整数信用点账本。
+
+`assemble_preset` 闭合装配路径:它按目录顺序把每个已选能力的 `rows` 片段追加到角色预设的基底行之后,应用覆盖补丁,并在提交前校验——重复的行 id 以 `ROW_ID_CONFLICT` 拒绝,被两个能力共有的工具名以 `TOOL_NAME_CONFLICT` 拒绝,当前平台被禁用的行被报告而不被拒绝(见 [platform-preset-assembler.zh.md](platform-preset-assembler.zh.md))。
 
 目录条目还记录每个能力管辖的工具名(`capability_tools`),`runtimeCapabilityOwningTool(toolName)` 按单个工具反查实时目录行。`registerCapabilityExecutionGate(ctx, { resolveWorkspace })` 挂一个 `tools/execute` 瀑布:每次调用重新按调用会话所属工作区检查被门禁工具的归属能力,门禁关闭即抛 `CAPABILITY_DISABLED`——装配期门禁由此变成运行时拦截。该读取连接实时门禁行,所以操作者的门禁翻转在下次调用即生效。
 
 ## 6. 验证
 
-`examples/capability-market-demo/` 无密钥证明市场:操作者发布目录,两个客户群工作台提供互不相交的能力集,产品装配响亮地拒绝一次冲突与一次版本范围不匹配,禁用依赖与灰度 0 能力被拒绝,计费账本计量用量并结算两个账期——全部可从持久化会话日志重建。同一个驱动还证明运行时门禁:同一个 `analyze_code` 调用在 `code-analysis` 启用时被放行,操作者在回合之间禁用它后,该调用在调用时被以 `CAPABILITY_DISABLED` 拒绝。
+`examples/capability-market-demo/` 无密钥证明市场:操作者发布目录,两个客户群工作台提供互不相交的能力集,产品装配响亮地拒绝一次冲突与一次版本范围不匹配,禁用依赖与灰度 0 能力被拒绝,计费账本计量用量并结算两个账期——全部可从持久化会话日志重建。同一个驱动还证明运行时门禁:同一个 `analyze_code` 调用在 `code-analysis` 启用时被放行,操作者在回合之间禁用它后,该调用在调用时被以 `CAPABILITY_DISABLED` 拒绝。引导式构建一节还证明装配器:创建者 agent 从声明的能力渲染出一棵已校验的预设树,宿主把行提交到 roster,新 agent 挂载它们,组合后的系统提示词按目录顺序携带基础 persona 与每个能力 persona。

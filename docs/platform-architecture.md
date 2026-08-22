@@ -278,8 +278,8 @@ The following are the **load-bearing decisions** locked in this version. They de
 - On-demand physical isolation (large accounts/compliance): a workspace's `isolated` record routes its agent drive to a dedicated child engine process; container/VM isolation remains a backend swap on the same seam ([spec](platform-engine-isolation.md), [package](../packages/experimental/engine-isolation/README.md)).
 - Engine process-out: the `EngineDriver` seam (`drive`/`listSessions`/`readLog`) with an in-process runner and a process-out child engine; session persistence is file-backed and process-agnostic, so the parent reads the child's durable logs ([keyless demo](../examples/engine-isolation-demo/README.md)).
 
-### Phase 4 (evaluate low-code)
-- After the composable-preset market is validated, evaluate the low-code direction where "users build for users".
+### Phase 4 (evaluate low-code) — evaluation recorded
+- The composable-preset market is validated; the low-code direction where "users build for users" is assessed in [platform-low-code-evaluation.md](platform-low-code-evaluation.md). The chosen mechanism is a declarative workbench descriptor rendered through the preset assembler, with model-guided assembly as the headless build workflow; the assembler's render and validate-before-commit step is implemented, and the remaining low-code follow-ups are the per-capability options surface and the user-side workbench lifecycle ([platform-preset-assembler.md](platform-preset-assembler.md)).
 
 ---
 

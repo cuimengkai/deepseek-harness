@@ -278,8 +278,8 @@
 - 按需物理隔离(大客户/合规):工作区的 `isolated` 记录把它的 agent 驱动路由到专用子引擎进程;容器/虚拟机隔离仍是同一接缝上的后端替换([规格](platform-engine-isolation.zh.md)、[包](../packages/experimental/engine-isolation/README.zh.md))。
 - 引擎进程外化:`EngineDriver` 缝(`drive`/`listSessions`/`readLog`)带进程内 runner 与进程外子引擎;会话持久化基于文件、与进程无关,所以父进程直接读子进程的持久日志([无密钥 demo](../examples/engine-isolation-demo/README.zh.md))。
 
-### 四期(评估低代码)
-- 组合式 preset 市场验证通过后,评估"用户搭给用户用"的低代码方向。
+### 四期(评估低代码)— 评估已记录
+- 组合式 preset 市场已验证;对"用户搭给用户用"的低代码方向的评估见 [platform-low-code-evaluation.md](platform-low-code-evaluation.zh.md)。所选机制是经预设装配器渲染的声明式工作台描述符,以模型引导装配作为无头构建工作流;装配器的渲染与「校验后提交」步骤已实现,剩余低代码后续是各能力选项表面与用户侧工作台生命周期([platform-preset-assembler.md](platform-preset-assembler.zh.md))。
 
 ---
 
