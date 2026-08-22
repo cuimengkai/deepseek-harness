@@ -24,6 +24,7 @@ type PlatformReferenceEvent =
   | SessionEvent<'platform/approval/transition'>
   | SessionEvent<'capability/published'>
   | SessionEvent<'capability/selected'>
+  | SessionEvent<'preset/assembled'>
   | SessionEvent<'billing/settlement'>
 
 /**
@@ -38,6 +39,7 @@ export function isPlatformReferenceEvent(event: SessionEvent): event is Platform
     || event.type === 'platform/approval/transition'
     || event.type === 'capability/published'
     || event.type === 'capability/selected'
+    || event.type === 'preset/assembled'
     || event.type === 'billing/settlement'
 }
 
@@ -73,7 +75,7 @@ export function validateReferenceEvent(ctx: Context, event: PlatformReferenceEve
     }
     return
   }
-  if (event.type === 'capability/selected') {
+  if (event.type === 'capability/selected' || event.type === 'preset/assembled') {
     for (const capabilityId of event.data.capabilityIds) {
       if (!ctx.platformShell.capabilityExists(capabilityId)) {
         throw new Error(

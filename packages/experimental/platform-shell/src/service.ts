@@ -18,6 +18,8 @@ import {
   type ApprovalTransition,
   type AssetId,
   type AssetRecord,
+  type AssemblePresetRequest,
+  type AssembledPreset,
   type AuditEvent,
   type BusinessApprovalStatus,
   type CapabilityGate,
@@ -31,6 +33,7 @@ import {
   type PublishCapabilityRequest,
   type PublishScenarioRequest,
   type RegisterAssetRequest,
+  type PresetValidationReport,
   type ResolveCapabilitiesRequest,
   type ResolvedCapabilitySet,
   type ReviewScope,
@@ -121,6 +124,11 @@ import {
   validateCapabilityRequest,
   validateScenarioRequest,
 } from './capability-market.ts'
+import {
+  assertNoToolShadowing,
+  renderPresetTree,
+  validatePresetTree,
+} from './preset-assembler.ts'
 import { sql } from './sql.ts'
 
 /** One seed entry in {@link DEFAULT_ROLES}. */
@@ -791,6 +799,66 @@ export class PlatformShellService extends Service {
       detail: JSON.stringify({ requested: request.selected, resolved: resolved.map(c => c.id) }),
     }, Date.now())
     return { requested: request.selected, resolved, preset: scenario.preset }
+  }
+
+  /**
+   * Render and statically validate one workbench preset tree before commit.
+   * Mirrors `resolveCapabilities`' gating — permission, scenario membership,
+   * and a dependency-first resolution — then appends each resolved capability's
+   * preset rows to the host-supplied base, overlays the optional patches, and
+   * validates the rendered tree. Duplicate row ids and shadowed tool names are
+   * rejected (`ROW_ID_CONFLICT` / `TOOL_NAME_CONFLICT`); rows disabled for the
+   * current platform are reported, not rejected. The commit itself is a host
+   * action: the seam never reads or writes the roster (platform-preset-assembler
+   * §3).
+   * @param actor - the platform user assembling the workbench.
+   * @param request - the workspace, scenario, role, base rows, selection, and patches.
+   * @returns the resolved capability set plus the rendered, validated tree.
+   */
+  assemblePreset(actor: UserId, request: AssemblePresetRequest): AssembledPreset {
+    const db = this.requireDb()
+    requirePermission(db, actor, request.workspaceId, 'capability.consume')
+    const scenario = requireScenario(db, request.scenarioId)
+    for (const id of request.selected) {
+      if (!scenario.capabilityIds.includes(id)) {
+        throw new PlatformShellError('INVALID_ARGUMENT', `capability ${id} is not part of workbench ${scenario.workbenchId}`)
+      }
+    }
+    const resolved = resolveSelection(loadCatalog(db), request.workspaceId, request.selected)
+    const toolNameConflicts = assertNoToolShadowing(resolved)
+    if (toolNameConflicts.length > 0) {
+      throw new PlatformShellError('TOOL_NAME_CONFLICT', `tools ${toolNameConflicts.join(', ')} are owned by multiple capabilities`)
+    }
+    const rows = renderPresetTree(request.base, resolved, request.patches, (message, ...args) => {
+      this.ctx.root.logger('platform-shell').warn(message, ...args)
+    })
+    const rowReport = validatePresetTree(rows, process.platform)
+    if (rowReport.rowIdConflicts.length > 0) {
+      throw new PlatformShellError('ROW_ID_CONFLICT', `rendered preset rows repeat id ${rowReport.rowIdConflicts.join(', ')}`)
+    }
+    const report: PresetValidationReport = { ...rowReport, toolNameConflicts }
+    writeAudit(db, {
+      actorUserId: actor,
+      workspaceId: request.workspaceId,
+      action: 'market.preset.assemble',
+      targetKind: 'scenario',
+      targetId: request.scenarioId,
+      detail: JSON.stringify({
+        rolePreset: request.rolePreset,
+        preset: request.preset,
+        selected: request.selected,
+        resolved: resolved.map(c => c.id),
+        disabledOnPlatform: rowReport.disabledOnPlatform,
+      }),
+    }, Date.now())
+    return {
+      roleId: request.roleId,
+      scenarioId: request.scenarioId,
+      preset: request.preset,
+      resolved,
+      rows,
+      report,
+    }
   }
 
   // --- billing ---

@@ -1,9 +1,11 @@
 /**
  * Authoring a preset copies an existing one's directory into the deployment's
- * `user` root — copy is the only authoring write, so no caller ever supplies
- * composition text. The id is a directory name, so its pattern is a
- * containment boundary rather than a style rule; the shipped `.system` set
- * stays read-only.
+ * `user` root, or writes a validated tree through the rows-based `write`
+ * primitive the platform preset assembler uses. Neither lets a caller supply
+ * freeform composition text: a copy reuses an existing preset verbatim, and
+ * `write` owns id validation, occupancy refusal, mode tightening, and atomic
+ * writes. The id is a directory name, so its pattern is a containment boundary
+ * rather than a style rule; the shipped `.system` set stays read-only.
  */
 
 import { chmod, mkdtemp, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
@@ -13,7 +15,9 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
-import Include from '@deepseek-ai/cordis-plugin-include'
+import Include, { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import * as yaml from 'js-yaml'
 import { beforeEach, describe, expect, it } from 'vitest'
 import AgentPresets, {
   COMPOSITION_FILE, copyComposition, METADATA_FILE,
@@ -299,5 +303,68 @@ describe('a ghost directory under the user root', () => {
     expect(existsSync(join(userRoot, 'ghost'))).toBe(false)
     await ctx.agentPresets.copy('standard', 'ghost')
     expect((await ctx.agentPresets.list()).find(preset => preset.id === 'ghost')?.broken).toBeUndefined()
+  })
+})
+
+describe('writing a preset from rows', () => {
+  it('writes a composition the roster reads back unchanged', async () => {
+    const rows: EntryOptions[] = [
+      { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'base persona' } },
+      { id: 'content-planning', name: 'persona-row', config: { section: 'capability:content-planning', order: 10, text: 'plan' } },
+    ]
+
+    await ctx.agentPresets.write('assembled', rows)
+
+    const parsed = yaml.load(await ctx.agentPresets.read('assembled'), { schema: entryListSchema }) as EntryOptions[]
+    expect(parsed).toEqual(rows)
+    expect((await ctx.agentPresets.list()).find(preset => preset.id === 'assembled')?.trust).toBe('user')
+  })
+
+  it('round-trips a `!!js` disabled node through the written composition', async () => {
+    const rows: EntryOptions[] = [
+      {
+        id: 'content-analytics-desktop', name: 'persona-row',
+        disabled: { __jsExpr: "process.platform === 'darwin'" } as unknown as boolean,
+        config: {},
+      },
+    ]
+
+    await ctx.agentPresets.write('assembled-disabled', rows)
+
+    // The entry-list YAML dialect dumps the plain `{ __jsExpr }` node back to
+    // the evaluable `!!js` scalar — the loader-level disabled gate is intact.
+    const text = await ctx.agentPresets.read('assembled-disabled')
+    expect(text).toContain("!!js process.platform === 'darwin'")
+    const parsed = yaml.load(text, { schema: entryListSchema }) as EntryOptions[]
+    expect(parsed[0]?.disabled).toEqual({ __jsExpr: "process.platform === 'darwin'" })
+  })
+
+  it('publishes the metadata the author supplied and tightens POSIX modes', async () => {
+    await ctx.agentPresets.write('assembled-meta', [{ id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'base' } }], {
+      name: 'Assembled',
+      description: 'assembled from the capability market',
+    })
+
+    const metadata = await readFile(join(userRoot, 'assembled-meta', METADATA_FILE), 'utf8')
+    expect(metadata).toContain('name: Assembled')
+    expect(metadata).toContain('description: assembled from the capability market')
+    expect((await ctx.agentPresets.list()).find(preset => preset.id === 'assembled-meta'))
+      .toMatchObject({ name: 'Assembled', description: 'assembled from the capability market' })
+    if (process.platform !== 'win32') {
+      expect((await stat(join(userRoot, 'assembled-meta', COMPOSITION_FILE))).mode & 0o777).toBe(0o600)
+      expect((await stat(join(userRoot, 'assembled-meta'))).mode & 0o777).toBe(0o700)
+    }
+  })
+
+  it('refuses an id that could escape the preset root and one the roster already supplies', async () => {
+    for (const id of ['../escape', 'a/b', '/abs', '..', 'Upper']) {
+      await expect(ctx.agentPresets.write(id, [{ id: 'p', name: 'x' }])).rejects.toThrow(/must match/)
+    }
+    expect(existsSync(join(userRoot, 'escape'))).toBe(false)
+
+    await ctx.agentPresets.write('assembled', [{ id: 'p', name: 'x' }])
+    await expect(ctx.agentPresets.write('assembled', [{ id: 'q', name: 'y' }])).rejects.toThrow(/already exists/)
+    // A shipped preset id is refused by the roster check, like copy.
+    await expect(ctx.agentPresets.write('standard', [{ id: 'p', name: 'x' }])).rejects.toThrow(/already exists/)
   })
 })

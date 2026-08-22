@@ -1,0 +1,132 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`capability-market-demo assembler section > renders the guided-build proofs deterministically (keyless) 1`] = `
+{
+  "assembly": {
+    "audit": 2,
+    "report": {
+      "disabledOnPlatform": [
+        "content-analytics-desktop",
+      ],
+      "rowIdConflicts": [],
+      "toolNameConflicts": [],
+    },
+    "request": {
+      "preset": "assembled-content-marketing",
+      "roleId": "product",
+      "rolePreset": "product-engineering",
+      "scenarioId": "content-marketing",
+      "selected": [
+        "content-planning",
+        "content-publishing",
+        "content-analytics",
+      ],
+      "workspaceId": "ws-N",
+    },
+    "rows": [
+      {
+        "disabled": null,
+        "id": "persona",
+        "name": "@deepseek-ai/dsh-persona",
+        "section": null,
+      },
+      {
+        "disabled": null,
+        "id": "content-planning",
+        "name": "persona-row (demo plugin)",
+        "section": "capability:content-planning",
+      },
+      {
+        "disabled": null,
+        "id": "content-publishing",
+        "name": "persona-row (demo plugin)",
+        "section": "capability:content-publishing",
+      },
+      {
+        "disabled": null,
+        "id": "content-analytics",
+        "name": "persona-row (demo plugin)",
+        "section": "capability:content-analytics",
+      },
+      {
+        "disabled": "platform-conditional",
+        "id": "content-analytics-desktop",
+        "name": "persona-row (demo plugin)",
+        "section": "capability:content-analytics-desktop",
+      },
+    ],
+  },
+  "determinism": {
+    "deepEqual": true,
+    "note": "rendering the same request twice yields deep-equal rows — the assembler is a pure function of (base, resolved, patches)",
+  },
+  "mounted": {
+    "composedPrompt": {
+      "containsAnalytics": true,
+      "containsBase": true,
+      "containsPlanning": true,
+      "containsPublishing": true,
+      "excludesDisabled": true,
+      "inCatalogOrder": true,
+    },
+    "note": "the committed preset mounts and the composed system prompt carries the base persona plus each capability persona in catalog order, minus the platform-disabled row",
+    "preset": "assembled-content-marketing",
+  },
+  "note": "a non-operator agent rendered + validated a workbench preset tree from a declared capability set; the host committed the rows and the roster mounted them",
+  "published": {
+    "ids": [
+      "content-planning",
+      "content-publishing",
+      "content-analytics",
+      "content-review",
+    ],
+    "rows": [
+      {
+        "disabled": null,
+        "id": "content-planning",
+        "name": "persona-row (demo plugin)",
+        "section": "capability:content-planning",
+      },
+      {
+        "disabled": null,
+        "id": "content-publishing",
+        "name": "persona-row (demo plugin)",
+        "section": "capability:content-publishing",
+      },
+      {
+        "disabled": null,
+        "id": "content-analytics",
+        "name": "persona-row (demo plugin)",
+        "section": "capability:content-analytics",
+      },
+      {
+        "disabled": "platform-conditional",
+        "id": "content-analytics-desktop",
+        "name": "persona-row (demo plugin)",
+        "section": "capability:content-analytics-desktop",
+      },
+      {
+        "disabled": null,
+        "id": "content-review",
+        "name": "persona-row (demo plugin)",
+        "section": "capability:content-review",
+      },
+    ],
+  },
+  "rejections": {
+    "note": "a host-supplied base with a duplicate row id and a selection that shadows one tool name across two capabilities both refuse loudly, so neither tree can reach the roster",
+    "rowIdConflict": "ROW_ID_CONFLICT",
+    "toolNameConflict": "TOOL_NAME_CONFLICT",
+  },
+  "scenario": {
+    "capabilities": [
+      "content-planning",
+      "content-publishing",
+      "content-analytics",
+      "content-review",
+    ],
+    "id": "content-marketing",
+    "preset": "assembled-content-marketing",
+  },
+}
+`;

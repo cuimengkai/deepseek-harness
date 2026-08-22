@@ -13,18 +13,22 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { Session } from '@deepseek-ai/dsh-session'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import * as yaml from 'js-yaml'
 import {
   PlatformShellError,
   registerCapabilityExecutionGate,
   registerPlatformShellTools,
   type ResolveActor,
+  type ResolveBaseRows,
   type ResolveWorkspace,
   type UserId,
   type WorkspaceId,
 } from '@deepseek-ai/dsh-experimental-platform-shell/src/index.ts'
 
 export const name = 'capability-market-demo'
-export const inject = ['tools', 'platformShell']
+export const inject = ['tools', 'platformShell', 'agentPresets']
 
 /** The demo's session→platform-user binding, populated by the demo driver. */
 const actors = new Map<string, UserId>()
@@ -93,7 +97,15 @@ const analyzeCodeTool = defineTool({
 })
 
 export const apply = (ctx: Context): void => {
-  registerPlatformShellTools(ctx, { resolveActor })
+  // The assembler's base rows come from the roster: read the role preset the
+  // workbench mounts and parse its composition with the same entry-list YAML
+  // dialect the Loader mounts. The host owns this read — the platform-shell
+  // seam renders + validates but never reaches the roster.
+  const resolveBaseRows: ResolveBaseRows = async (rolePreset) => {
+    const text = await ctx.agentPresets.read(rolePreset)
+    return yaml.load(text, { schema: entryListSchema }) as EntryOptions[]
+  }
+  registerPlatformShellTools(ctx, { resolveActor, resolveBaseRows })
   ctx.tools.register(analyzeCodeTool)
   registerCapabilityExecutionGate(ctx, { resolveWorkspace })
 }

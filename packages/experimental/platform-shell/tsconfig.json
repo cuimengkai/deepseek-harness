@@ -8,6 +8,8 @@
   "references": [
     { "path": "../../../vendor/schemastery" },
     { "path": "../../../vendor/cordis" },
+    { "path": "../../../vendor/include" },
+    { "path": "../../../vendor/loader" },
     { "path": "../../util/brand" },
     { "path": "../../llm/llm" },
     { "path": "../../core/session" },

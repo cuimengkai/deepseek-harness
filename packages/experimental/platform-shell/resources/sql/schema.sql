@@ -1,4 +1,4 @@
--- Platform control-plane schema (version 3).
+-- Platform control-plane schema (version 5).
 --
 -- This is a NEW business-object database, independent of the dsh session
 -- database (application id 0x504C5348 'PLSH', not the session store's
@@ -97,6 +97,9 @@ CREATE TABLE capabilities (
   rollout       REAL NOT NULL CHECK (rollout >= 0 AND rollout <= 1),
   rate          INTEGER NOT NULL CHECK (rate >= 0),
   description   TEXT NOT NULL,
+  -- The D5 preset fragment: the JSON-serialized EntryOptions[] this capability
+  -- contributes to a workbench tree the preset assembler renders.
+  rows          TEXT NOT NULL DEFAULT '[]',
   created_at    INTEGER NOT NULL
 ) STRICT;
 

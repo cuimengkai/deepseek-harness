@@ -7,6 +7,7 @@
   "dependencies": {
     "@deepseek-ai/cordis-plugin-hmr": "workspace:*",
     "@deepseek-ai/cordis-plugin-include": "workspace:*",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:*",
     "@deepseek-ai/cordis-plugin-logger-console": "workspace:*",
     "@deepseek-ai/cordis-plugin-timer": "workspace:*",
     "@deepseek-ai/dsh-acp-demo": "workspace:*",
@@ -119,6 +120,7 @@
     "@deepseek-ai/dsh-web": "workspace:*",
     "@deepseek-ai/dsh-web-fetch-http": "workspace:*",
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:*",
-    "@deepseek-ai/dsh-agent-instructions": "workspace:*"
+    "@deepseek-ai/dsh-agent-instructions": "workspace:*",
+    "js-yaml": "^4.1.0"
   }
 }

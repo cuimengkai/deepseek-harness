@@ -66,6 +66,19 @@ describe('openDatabase ownership', () => {
     await expect(openDatabase(DatabaseSync, path, 'wal', 1000)).rejects.toThrow(/schema version/)
   })
 
+  it('rejects the previous v4 on-disk format', async () => {
+    // The v4 format (pre-`capabilities.rows`) has no migration path per the
+    // pre-release stance: opening it refuses at the version gate before any
+    // schema-object check can run.
+    const path = await freshDbPath()
+    const db = await openDatabase(DatabaseSync, path, 'wal', 1000)
+    db.exec(sql('begin-immediate'))
+    db.exec(testSql('set-user-version-4'))
+    db.exec(sql('commit'))
+    db.close()
+    await expect(openDatabase(DatabaseSync, path, 'wal', 1000)).rejects.toThrow(/schema version/)
+  })
+
   it('rejects a database missing required schema objects', async () => {
     const path = await freshDbPath()
     const db = await openDatabase(DatabaseSync, path, 'wal', 1000)

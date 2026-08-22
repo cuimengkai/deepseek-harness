@@ -10,10 +10,11 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import { defineTool, type ToolRunContext, type ValueSchemaSpec } from '@deepseek-ai/dsh-tools'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import type { JsonValue, Session } from '@deepseek-ai/dsh-session'
 import { PlatformShellError } from './error.ts'
 import type { PlatformShellService } from './service.ts'
-import type { ApprovalTicket, AssetId, AuditEvent, CapabilityId, CapabilityRecord, ReviewScope, ScenarioId, TicketId, UserId, WorkspaceId } from './types.ts'
+import type { ApprovalTicket, AssetId, AuditEvent, CapabilityId, CapabilityRecord, PresetValidationReport, ReviewScope, ScenarioId, TicketId, UserId, WorkspaceId } from './types.ts'
 import { RoleId, WorkspaceId as brandWorkspaceId } from './types.ts'
 
 /** The closed role set the seeded platform ships (identity seed roles). */
@@ -30,6 +31,13 @@ const EXECUTION_MODES = ['managed', 'sandboxed', 'none'] as const
 
 /** Resolve the platform user acting on behalf of one session. */
 export type ResolveActor = (session: Session) => UserId
+
+/**
+ * Resolve a role preset's base rows from the roster. The host reads the roster
+ * preset (never the platform-shell seam) and parses it with the entry-list
+ * schema; the assembler then appends the selected capabilities' rows.
+ */
+export type ResolveBaseRows = (rolePreset: string, session: Session) => Promise<EntryOptions[]>
 
 /** Model-facing ticket record; the review scope projects into lossless JSON. */
 const ticketSchema = {
@@ -75,6 +83,7 @@ const capabilitySchema = {
     rate: { type: 'number', required: true },
     description: { type: 'string', required: true },
     tools: { type: 'array', required: true, items: { type: 'string' } },
+    rows: { type: 'array', required: true, items: { type: 'json' } },
     createdAt: { type: 'number', required: true },
   },
 } satisfies ValueSchemaSpec
@@ -91,9 +100,39 @@ function toCapabilityJson(capability: CapabilityRecord): {
   rate: number
   description: string
   tools: string[]
+  rows: JsonValue[]
   createdAt: number
 } {
-  return { ...capability, tools: [...capability.tools] }
+  return { ...capability, tools: [...capability.tools], rows: rowsToJson(capability.rows) }
+}
+
+/**
+ * Project one preset-tree row list into the model-facing JSON items. Rows are
+ * plain JSON (id/name/config/disabled), so the projection is type-only — the
+ * JSON-schema `items: { type: 'json' }` items cannot name the EntryOptions type.
+ * @param rows - the preset-tree rows to project.
+ * @returns the same values typed as JSON items.
+ */
+function rowsToJson(rows: readonly EntryOptions[]): JsonValue[] {
+  return rows as unknown as JsonValue[]
+}
+
+/**
+ * Project one validation report into the model-facing shape: the readonly
+ * conflict lists become mutable JSON arrays for the output schema.
+ * @param report - the assembler's validation report.
+ * @returns the model-visible report.
+ */
+function projectReport(report: PresetValidationReport): {
+  rowIdConflicts: string[]
+  toolNameConflicts: string[]
+  disabledOnPlatform: string[]
+} {
+  return {
+    rowIdConflicts: [...report.rowIdConflicts],
+    toolNameConflicts: [...report.toolNameConflicts],
+    disabledOnPlatform: [...report.disabledOnPlatform],
+  }
 }
 
 /** Model-facing scenario bundle (one pluggable C-side workbench surface). */
@@ -165,11 +204,16 @@ function boundCall(exec: ToolRunContext, resolveActor: ResolveActor): { actor: U
  * `tool/result.meta` records the platform outcome — the model-visible ⟺ logged
  * proof — alongside the appended reference events.
  * @param ctx - context with the mounted `platformShell` service and `tools` registry.
- * @param options - actor binding for the deployment's sessions.
+ * @param options - actor binding for the deployment's sessions, plus the optional
+ * roster base-row resolver the `assemble_preset` tool requires (calling that
+ * tool without it fails loudly).
  * @returns the registered tool names.
  */
-export function registerPlatformShellTools(ctx: Context, options: { readonly resolveActor: ResolveActor }): readonly string[] {
-  const { resolveActor } = options
+export function registerPlatformShellTools(
+  ctx: Context,
+  options: { readonly resolveActor: ResolveActor; readonly resolveBaseRows?: ResolveBaseRows },
+): readonly string[] {
+  const { resolveActor, resolveBaseRows } = options
   const shell = (): PlatformShellService => ctx.platformShell
 
   const definitions = [
@@ -643,6 +687,78 @@ export function registerPlatformShellTools(ctx: Context, options: { readonly res
         // The output schema's items are plain JSON, so the durable readonly
         // sets project into mutable arrays.
         return { requested: [...resolved.requested], resolved: resolved.resolved.map(toCapabilityJson), preset: resolved.preset }
+      },
+    }),
+    defineTool({
+      name: 'assemble_preset',
+      description: 'Render and validate one workbench preset tree for commit: appends each selected capability\'s preset rows to the role preset\'s base rows in catalog order and statically validates the result. Rejects duplicate row ids and shadowed tool names; reports rows disabled for the current platform. The host commits the returned rows to the roster.',
+      parameters: {
+        workspaceId: { type: 'string', required: true, description: 'the workspace assembling the workbench' },
+        scenarioId: { type: 'string', required: true, description: 'the scenario bundle (workbench) to assemble against' },
+        roleId: { type: 'string', required: true, enum: [...KNOWN_ROLES], description: 'the role the workbench serves' },
+        rolePreset: { type: 'string', required: true, description: 'the roster preset id whose base rows seed the tree' },
+        preset: { type: 'string', required: true, description: 'the roster preset id the rendered tree is destined for' },
+        selected: { type: 'array', required: true, items: { type: 'string' }, description: 'the capability ids the user picked from the workbench' },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            preset: { type: 'string', required: true },
+            roleId: { type: 'string', required: true },
+            scenarioId: { type: 'string', required: true },
+            resolved: { type: 'array', required: true, items: capabilitySchema },
+            rows: { type: 'array', required: true, items: { type: 'json' } },
+            report: {
+              type: 'object',
+              required: true,
+              additionalProperties: false,
+              properties: {
+                rowIdConflicts: { type: 'array', required: true, items: { type: 'string' } },
+                toolNameConflicts: { type: 'array', required: true, items: { type: 'string' } },
+                disabledOnPlatform: { type: 'array', required: true, items: { type: 'string' } },
+              },
+            },
+          },
+        },
+        render: (_args, value) => [{ type: 'text', text: `assembled preset ${value.preset} with ${value.rows.length} rows across ${value.resolved.length} capabilities (${value.report.disabledOnPlatform.length} disabled on this platform)` }],
+        presentationMeta: (_args, value) => ({ code: 'assembled', preset: value.preset, rows: value.rows.length, disabled: value.report.disabledOnPlatform.length }),
+      },
+      async execute(args, exec) {
+        const { actor, session } = boundCall(exec, resolveActor)
+        if (resolveBaseRows === undefined) {
+          throw new PlatformShellError('INVALID_ARGUMENT', 'assemble_preset requires a resolveBaseRows binding')
+        }
+        const workspaceId = brandWorkspaceId(args.workspaceId)
+        const scenarioId = scenarioIdOf(args.scenarioId)
+        const roleId = RoleId(args.roleId)
+        const base = await resolveBaseRows(args.rolePreset, session)
+        const assembled = shell().assemblePreset(actor, {
+          workspaceId,
+          scenarioId,
+          roleId,
+          rolePreset: args.rolePreset,
+          base,
+          selected: args.selected.map(capabilityIdOf),
+          preset: args.preset,
+        })
+        session.append('preset/assembled', {
+          workspaceId,
+          scenarioId,
+          roleId,
+          preset: assembled.preset,
+          capabilityIds: assembled.resolved.map(c => c.id),
+          rows: assembled.rows,
+        })
+        return {
+          preset: assembled.preset,
+          roleId,
+          scenarioId,
+          resolved: assembled.resolved.map(toCapabilityJson),
+          rows: rowsToJson(assembled.rows),
+          report: projectReport(assembled.report),
+        }
       },
     }),
     defineTool({

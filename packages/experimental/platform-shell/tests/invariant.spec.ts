@@ -233,6 +233,48 @@ describe('platform-shell market reference invariant', () => {
     }
   })
 
+  it('accepts a preset/assembled event naming existing capabilities', async () => {
+    const { ctx, ws, capability } = await setupMarket()
+    try {
+      const session = ctx.sessions.create(SessionId('market-invariant-assembled'))
+      expect(() => {
+        session.append('preset/assembled', {
+          workspaceId: ws,
+          scenarioId: ScenarioId('product-engineering'),
+          roleId: RoleId('product'),
+          preset: 'assembled-product-engineering',
+          capabilityIds: [capability.id],
+          rows: [],
+        })
+      }).not.toThrow()
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
+  it('rejects a preset/assembled event naming a missing capability', async () => {
+    const { ctx, ws } = await setupMarket()
+    try {
+      const session = ctx.sessions.create(SessionId('market-invariant-assembled-missing'))
+      expect(() => {
+        session.append('preset/assembled', {
+          workspaceId: ws,
+          scenarioId: ScenarioId('product-engineering'),
+          roleId: RoleId('product'),
+          preset: 'assembled-product-engineering',
+          capabilityIds: [CapabilityId('ghost-cap')],
+          rows: [],
+        })
+      }).toThrow(expect.objectContaining<Partial<InvariantError>>({
+        code: 'INVARIANT',
+        packageName: '@deepseek-ai/dsh-experimental-platform-shell',
+      }))
+      expect(session.events).toEqual([])
+    } finally {
+      await ctx.fiber.dispose()
+    }
+  })
+
   it('accepts a billing/settlement event matching the committed status', async () => {
     const { ctx, ws, settlement } = await setupMarket()
     try {

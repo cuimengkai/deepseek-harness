@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { openDatabase } from '../src/schema.ts'
 import { sql } from '../src/sql.ts'
 import { insertWorkspace } from '../src/identity.ts'
@@ -122,6 +123,32 @@ describe('capability catalog', () => {
       setCapabilityGate(db, CapabilityId('code-analysis'), false, 1)
       expect(capabilityOwningTool(db, 'analyze_code')?.enabled).toBe(false)
       expect(capabilityOwningTool(db, 'unowned_tool')).toBeUndefined()
+    } finally {
+      db.close()
+    }
+  })
+
+  it('round-trips the D5 preset rows through the store, keeping `!!js` nodes evaluable', async () => {
+    const db = await freshDb()
+    try {
+      seedWorkspace(db)
+      const rows: EntryOptions[] = [
+        { id: 'content-analytics', name: 'persona-row', config: { section: 'capability:content-analytics', order: 12, text: 'analyze' } },
+        {
+          id: 'content-analytics-desktop', name: 'persona-row',
+          disabled: { __jsExpr: "process.platform === 'darwin'" } as unknown as boolean,
+          config: {},
+        },
+      ]
+      const published = publish(db, 'content-analytics', { rows })
+      expect(published.rows).toEqual(rows)
+      expect(getCapability(db, CapabilityId('content-analytics'))?.rows).toEqual(rows)
+      expect(listCapabilities(db)[0]?.rows).toEqual(rows)
+      const loaded = loadCatalog(db).capabilities.get(CapabilityId('content-analytics'))
+      // The `!!js` disabled node survives the JSON column as a plain
+      // `{ __jsExpr }` object — exactly the node the assembler's
+      // `disabledOnPlatform` report reads after a load.
+      expect(loaded?.rows[1]?.disabled).toEqual({ __jsExpr: "process.platform === 'darwin'" })
     } finally {
       db.close()
     }

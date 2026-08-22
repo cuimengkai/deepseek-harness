@@ -20,6 +20,8 @@ export type PlatformShellErrorCode =
   | 'INSUFFICIENT_BALANCE'
   | 'DUPLICATE_CAPABILITY'
   | 'DUPLICATE_SCENARIO'
+  | 'ROW_ID_CONFLICT'
+  | 'TOOL_NAME_CONFLICT'
 
 /**
  * A structured platform-shell failure with a stable code and context message.

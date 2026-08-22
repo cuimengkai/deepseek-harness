@@ -8,11 +8,22 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { boot, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import { isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import * as yaml from 'js-yaml'
+import { renderPrompt } from '@deepseek-ai/dsh-system-prompt'
+import { PlatformShellError } from '@deepseek-ai/dsh-experimental-platform-shell/src/index.ts'
 import { CapabilityId, RoleId, ScenarioId } from '@deepseek-ai/dsh-experimental-platform-shell/src/types.ts'
 import { bindActor, bindWorkspace } from './capability-market-demo.ts'
 
 const COMPOSE_PATH = fileURLToPath(new URL('../cordis.yml', import.meta.url))
 const PRESETS_ROOT = fileURLToPath(new URL('../presets', import.meta.url))
+
+// The demo-owned persona-row plugin the assembled preset's capability rows name
+// by absolute path. A preset row resolves a relative specifier against its own
+// composition directory, so the checked-in demo plugin is reached through the
+// absolute filesystem path (the load is a scratch artifact of this run).
+const PERSONA_ROW = fileURLToPath(new URL('./persona-row.ts', import.meta.url))
 
 /** Wait until an agent reaches the given status, then resolve. */
 function waitForStatus(ctx: Context, agent: Agent, target: string): Promise<void> {
@@ -98,10 +109,8 @@ function toolErrorTexts(events: SessionEvent[]): string[] {
 function analyzeCodeOutcomes(events: SessionEvent[]): { callId: string; error: string | null; text: string }[] {
   return events.flatMap((event) => {
     if (event.type !== 'tool/result') return []
-    const toolCallId = event.data.message.content[0]?.toolCallId
-    if (toolCallId === undefined) return []
     return [{
-      callId: String(toolCallId),
+      callId: event.data.message.content[0].toolCallId,
       error: event.data.error?.code ?? null,
       text: renderedText(event.data.message),
     }]
@@ -111,7 +120,56 @@ function analyzeCodeOutcomes(events: SessionEvent[]): { callId: string; error: s
 /** The market tools registered by the platform-shell consumer. */
 const marketTools = ['publish_capability', 'list_capabilities', 'assemble_capabilities',
   'set_capability_gate', 'publish_scenario', 'list_scenarios',
-  'consume_capability', 'account_balance', 'settle_account'].sort()
+  'consume_capability', 'account_balance', 'settle_account', 'assemble_preset'].sort()
+
+/**
+ * A `!!js` disabled node gating one preset row to the CURRENT platform. The
+ * `EntryOptions.disabled` field is typed `boolean | null`, but the entry-list
+ * YAML dialect round-trips a plain `{ __jsExpr }` node as a `!!js` scalar the
+ * Loader evaluates — this is the platform-conditional disabled pattern the
+ * assembler reports (never rejects) as `disabledOnPlatform`.
+ */
+function platformDisabledExpr(platform: string): boolean {
+  return { __jsExpr: `process.platform === '${platform}'` } as unknown as boolean
+}
+
+/**
+ * One demo persona row for an assembly capability: a `persona-row` plugin
+ * instance contributing a distinct prompt section. The section name and render
+ * order are the catalog-level contract of the row; distinct sections let a
+ * mounted workbench compose the base persona plus one persona per capability.
+ * @param id - the row id (the composable slot the roster owns).
+ * @param section - the prompt section name this row registers.
+ * @param order - render order, after the base persona's `deployment:persona`.
+ * @param text - the persona prose.
+ * @returns the composition row.
+ */
+function personaRow(id: string, section: string, order: number, text: string): EntryOptions {
+  return { id, name: PERSONA_ROW, config: { section, order, text } }
+}
+
+/**
+ * The stable, machine-independent projection of one preset-tree row for the
+ * demo output. The raw row names an absolute plugin path on the demo host, so
+ * the projection collapses that to a label; a `!!js` disabled node becomes the
+ * platform-conditional marker instead of the host platform name.
+ * @param row - the composition row to project.
+ * @returns the stable projection.
+ */
+function rowProjection(row: EntryOptions): {
+  id: string
+  name: string
+  section: string | null
+  disabled: string | null
+} {
+  const config = row.config as Record<string, unknown> | undefined
+  return {
+    id: row.id,
+    name: row.name.startsWith('@deepseek-ai/dsh-') ? row.name : 'persona-row (demo plugin)',
+    section: config !== undefined && typeof config.section === 'string' ? config.section : null,
+    disabled: isJsExpr(row.disabled) ? 'platform-conditional' : null,
+  }
+}
 
 async function main() {
   loadEnv('capability-market-demo')
@@ -121,10 +179,13 @@ async function main() {
   // any prior run's leftover (a crashed run must not collide with a new one).
   const workdir = join(import.meta.dirname, '..', '..', '..', '.storages', 'capability-market-demo')
   const persistenceRoot = join(workdir, '.sessions')
-  const roleWorkspaces = ['operator', 'product', 'video'].map(role => join(workdir, role))
+  const roleWorkspaces = ['operator', 'product', 'video', 'creator', 'content'].map(role => join(workdir, role))
   await rm(workdir, { recursive: true, force: true })
   await mkdir(workdir, { recursive: true })
   await mkdir(persistenceRoot, { recursive: true })
+  // The scratch writable preset root the committed assembled workbench lands in
+  // (first user root, so `writableRoot` targets it — never the checked-in dir).
+  await mkdir(join(workdir, 'presets'), { recursive: true })
   await Promise.all(roleWorkspaces.map(dir => mkdir(dir, { recursive: true })))
 
   const ctx = await boot(
@@ -139,7 +200,10 @@ async function main() {
       name: '@deepseek-ai/dsh-agent-presets',
       config: {
         default: 'product-engineering',
-        roots: [{ path: PRESETS_ROOT, trust: 'user' }],
+        roots: [
+          { path: join(workdir, 'presets'), trust: 'user' },
+          { path: PRESETS_ROOT, trust: 'user' },
+        ],
         includeUserRoot: false,
       },
     }, {
@@ -185,9 +249,11 @@ async function main() {
   bindActor('market-operator', admin)
   bindActor('market-product', alice)
   bindActor('market-video', bob)
+  bindActor('market-creator', alice)
   bindWorkspace('market-operator', wsProduct)
   bindWorkspace('market-product', wsProduct)
   bindWorkspace('market-video', wsVideo)
+  bindWorkspace('market-creator', wsProduct)
 
   // Open the simulated billing accounts before any consumption is metered.
   shell.creditAccount(admin, wsProduct, 100)
@@ -268,7 +334,161 @@ async function main() {
   await driveTurn(ctx, video,
     `Assemble the short-video-creation workbench in workspace ${wsVideo} and produce a clip.`)
 
-  // ── 7. Operator closes both billing periods ───────────────────────────────
+  // ── 7. Guided build: a creator agent assembles a workbench preset tree ─────
+  // The operator publishes four assembly capabilities whose preset rows each
+  // contribute one persona section (distinct `persona-row` sections, because the
+  // shipped `dsh-persona` row registers a FIXED `deployment:persona` section and
+  // duplicates within one layer throw), plus a content-marketing scenario binding
+  // them. A non-operator creator agent then renders + validates the workbench
+  // preset tree with `assemble_preset`; the host commits the validated rows to
+  // the roster and mounts a fresh agent on the assembled preset.
+  const contentAnalyticsRows: EntryOptions[] = [
+    personaRow('content-analytics', 'capability:content-analytics', 12,
+      'You analyze content performance against the campaign goals.'),
+    {
+      id: 'content-analytics-desktop',
+      name: PERSONA_ROW,
+      disabled: platformDisabledExpr(process.platform),
+      config: {
+        section: 'capability:content-analytics-desktop',
+        order: 14,
+        text: 'desktop-only analytics: performance deep-dives require a desktop workspace.',
+      },
+    },
+  ]
+  const contentCapabilities: {
+    id: string
+    name: string
+    description: string
+    rate: number
+    tools: readonly string[]
+    rows: readonly EntryOptions[]
+  }[] = [
+    { id: 'content-planning', name: 'Content Planning', description: 'plans the content calendar', rate: 2, tools: [],
+      rows: [personaRow('content-planning', 'capability:content-planning', 10, 'You plan the content calendar for the marketing channel.')] },
+    { id: 'content-publishing', name: 'Content Publishing', description: 'publishes finished content', rate: 3, tools: ['content_export'],
+      rows: [personaRow('content-publishing', 'capability:content-publishing', 11, 'You publish finished content to the marketing channel.')] },
+    { id: 'content-analytics', name: 'Content Analytics', description: 'analyzes content performance', rate: 4, tools: [], rows: contentAnalyticsRows },
+    // content-review shares `content_export` with content-publishing on purpose:
+    // the assembler refuses a selection that shadows one tool name across two
+    // capabilities (the gate's owner read is non-deterministic), proved below.
+    { id: 'content-review', name: 'Content Review', description: 'reviews content before publishing', rate: 2, tools: ['content_export'],
+      rows: [personaRow('content-review', 'capability:content-review', 13, 'You review content before publishing.')] },
+  ]
+  for (const spec of contentCapabilities) {
+    shell.publishCapability(admin, {
+      id: CapabilityId(spec.id),
+      name: spec.name,
+      roleId: RoleId('product'),
+      execution: 'managed',
+      version: '1.0.0',
+      rate: spec.rate,
+      description: spec.description,
+      tools: [...spec.tools],
+      rows: spec.rows,
+    })
+  }
+  shell.publishScenario(admin, {
+    id: ScenarioId('content-marketing'),
+    name: 'Content Marketing',
+    workbenchId: 'content-marketing',
+    roleId: RoleId('product'),
+    preset: 'assembled-content-marketing',
+    capabilityIds: [
+      CapabilityId('content-planning'),
+      CapabilityId('content-publishing'),
+      CapabilityId('content-analytics'),
+      CapabilityId('content-review'),
+    ],
+  })
+
+  const creator = await createAgent(ctx, 'market-creator', 'product-engineering', join(workdir, 'creator'))
+  await driveTurn(ctx, creator, `Assemble the content-marketing workbench preset for workspace ${wsProduct}.`)
+
+  const creatorEvents = [...creator.session.events]
+  const assembledEvent = creatorEvents.find(
+    (e): e is Extract<SessionEvent, { type: 'preset/assembled' }> => e.type === 'preset/assembled',
+  )
+  if (assembledEvent === undefined) {
+    throw new Error('the market-creator session never emitted a preset/assembled event')
+  }
+  const assembledRows = assembledEvent.data.rows
+
+  // The assembler is a pure function of (base, resolved, patches): the SAME
+  // request re-rendered through the service yields deep-equal rows. The base is
+  // re-read from the roster exactly as the tool's binding resolved it.
+  const rolePresetText = await ctx.agentPresets.read('product-engineering')
+  const baseRows = yaml.load(rolePresetText, { schema: entryListSchema }) as EntryOptions[]
+  const reRendered = shell.assemblePreset(admin, {
+    workspaceId: wsProduct,
+    scenarioId: ScenarioId('content-marketing'),
+    roleId: RoleId('product'),
+    rolePreset: 'product-engineering',
+    base: baseRows,
+    selected: [CapabilityId('content-planning'), CapabilityId('content-publishing'), CapabilityId('content-analytics')],
+    preset: 'assembled-content-marketing',
+  })
+  const deterministic = JSON.stringify(reRendered.rows) === JSON.stringify(assembledRows)
+
+  // A host-supplied base with a duplicate row id and a selection that shadows
+  // one tool name across two capabilities must both refuse loudly, so neither
+  // tree can reach the roster.
+  let rowIdConflict: string | null = null
+  try {
+    shell.assemblePreset(admin, {
+      workspaceId: wsProduct,
+      scenarioId: ScenarioId('content-marketing'),
+      roleId: RoleId('product'),
+      rolePreset: 'product-engineering',
+      base: [...baseRows, { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'a duplicate persona row' } }],
+      selected: [CapabilityId('content-planning')],
+      preset: 'assembled-conflict',
+    })
+  } catch (error: unknown) {
+    rowIdConflict = error instanceof PlatformShellError ? error.code : null
+  }
+  let toolNameConflict: string | null = null
+  try {
+    shell.assemblePreset(admin, {
+      workspaceId: wsProduct,
+      scenarioId: ScenarioId('content-marketing'),
+      roleId: RoleId('product'),
+      rolePreset: 'product-engineering',
+      base: baseRows,
+      selected: [CapabilityId('content-publishing'), CapabilityId('content-review')],
+      preset: 'assembled-conflict',
+    })
+  } catch (error: unknown) {
+    toolNameConflict = error instanceof PlatformShellError ? error.code : null
+  }
+
+  // Commit the validated rows to the roster, then mount a fresh agent on the
+  // assembled preset and assert the composed system prompt carries the base
+  // persona + the capability personas in catalog order, minus the row disabled
+  // for this platform.
+  await ctx.agentPresets.write('assembled-content-marketing', assembledRows, {
+    name: 'Assembled Content Marketing',
+    description: 'content-marketing workbench preset assembled from the capability market by the market-creator agent',
+  })
+  const content = await createAgent(ctx, 'market-content', 'assembled-content-marketing', join(workdir, 'content'))
+  // The loop scopes every agent's ctx, but `scopeOf` types the unscoped arm as
+  // `undefined`; the assembled preset's persona sections only participate in an
+  // assembly that names the agent's scope, so a missing scope would fake the
+  // mounted-surface proof and must fail loud.
+  const contentScope = scopeOf(content.ctx)
+  if (contentScope === undefined) throw new Error('market-content agent ctx is unscoped')
+  const composedPrompt = renderPrompt(await ctx.systemPrompt.assemble({ scope: contentScope }))
+  const containsBase = composedPrompt.includes('product engineer on the product-engineering workbench')
+  const containsPlanning = composedPrompt.includes('plan the content calendar')
+  const containsPublishing = composedPrompt.includes('publish finished content')
+  const containsAnalytics = composedPrompt.includes('analyze content performance')
+  const excludesDisabled = !composedPrompt.includes('desktop-only analytics')
+  const planAt = composedPrompt.indexOf('plan the content calendar')
+  const publishAt = composedPrompt.indexOf('publish finished content')
+  const analyticsAt = composedPrompt.indexOf('analyze content performance')
+  const inCatalogOrder = planAt >= 0 && planAt < publishAt && publishAt < analyticsAt
+
+  // ── 8. Operator closes both billing periods ───────────────────────────────
   await driveTurn(ctx, operator, `operator:settle ${wsProduct} ${wsVideo} for period ${period}`)
 
   // ── Durable evidence: flush, then read the persisted logs back ────────────
@@ -365,6 +585,9 @@ async function main() {
     capabilitySelected: [...productEvents, ...videoEvents]
       .filter((e): e is Extract<SessionEvent, { type: 'capability/selected' }> => e.type === 'capability/selected')
       .map(e => ({ preset: e.data.preset, requested: [...e.data.capabilityIds] })),
+    presetAssembled: creatorEvents
+      .filter((e): e is Extract<SessionEvent, { type: 'preset/assembled' }> => e.type === 'preset/assembled')
+      .map(e => ({ preset: e.data.preset, capabilityIds: [...e.data.capabilityIds], rows: e.data.rows.length })),
     billingSettlement: operatorEvents
       .filter((e): e is Extract<SessionEvent, { type: 'billing/settlement' }> => e.type === 'billing/settlement')
       .map(e => ({ settlementId: e.data.settlementId, period: e.data.period, status: e.data.status })),
@@ -398,11 +621,14 @@ async function main() {
         id: c.id, version: c.version, rate: c.rate, execution: c.execution,
       })),
       shortVideo: videoCapabilities.map(c => ({ id: c.id, rate: c.rate })),
+      contentMarketing: capabilities
+        .filter(c => ['content-planning', 'content-publishing', 'content-analytics', 'content-review'].includes(c.id))
+        .map(c => ({ id: c.id, rate: c.rate, rows: c.rows.map(rowProjection) })),
       versionBombRange: versionErrorText,
       canNotOrphan: orphanRefusal !== null,
       orphanRefusal,
-      note: capabilities.length === 8
-        ? 'one SQLite catalog holds the graded product-engineering and short-video capability sets'
+      note: capabilities.length === 12
+        ? 'one SQLite catalog holds the graded product-engineering and short-video sets plus the content-marketing assembly set (each carrying preset rows)'
         : 'catalog publish did NOT complete',
     },
     workbenches: {
@@ -417,16 +643,23 @@ async function main() {
         capabilities: scenarios.find(s => s.id === 'short-video-creation')?.capabilityIds,
         preset: scenarios.find(s => s.id === 'short-video-creation')?.preset,
       },
-      heterogeneous: scenarios.length === 2
+      contentMarketing: {
+        workbenchId: scenarios.find(s => s.id === 'content-marketing')?.workbenchId,
+        capabilities: scenarios.find(s => s.id === 'content-marketing')?.capabilityIds,
+        preset: scenarios.find(s => s.id === 'content-marketing')?.preset,
+      },
+      heterogeneous: scenarios.length === 3
         && scenarios.find(s => s.id === 'product-engineering')?.workbenchId === 'product-engineering'
-        && scenarios.find(s => s.id === 'short-video-creation')?.workbenchId === 'short-video-creation',
+        && scenarios.find(s => s.id === 'short-video-creation')?.workbenchId === 'short-video-creation'
+        && scenarios.find(s => s.id === 'content-marketing')?.workbenchId === 'content-marketing',
       rosterMount: {
         operator: rosterMount(operator),
         product: rosterMount(product),
         video: rosterMount(video),
+        content: rosterMount(content),
       },
-      note: scenarios.length === 2
-        ? 'each customer group\'s workbench exposes its own capability set and preset binding; roster.mount binds the agent\'s scope chain to the workbench preset (composedPreset), which decides the tool schemas the model sees'
+      note: scenarios.length === 3
+        ? 'each customer group\'s workbench exposes its own capability set and preset binding; the content-marketing workbench binds the ASSEMBLED preset, and roster.mount decides the tool schemas the model sees'
         : 'workbench registration did NOT complete',
     },
     assembly: {
@@ -448,6 +681,60 @@ async function main() {
       note: conflictRejected && versionMismatchRejected && disabledDependencyRejected && rolloutRejected
         ? 'every assembly check rejected loudly and the catalog fixes restored resolution'
         : 'an assembly rejection did NOT fire as expected',
+    },
+    assembler: {
+      published: {
+        ids: contentCapabilities.map(c => c.id),
+        rows: contentCapabilities.flatMap(c => c.rows).map(rowProjection),
+      },
+      scenario: {
+        id: 'content-marketing',
+        capabilities: ['content-planning', 'content-publishing', 'content-analytics', 'content-review'],
+        preset: 'assembled-content-marketing',
+      },
+      assembly: {
+        request: {
+          workspaceId: String(wsProduct),
+          scenarioId: 'content-marketing',
+          roleId: 'product',
+          rolePreset: 'product-engineering',
+          preset: 'assembled-content-marketing',
+          selected: ['content-planning', 'content-publishing', 'content-analytics'],
+        },
+        rows: assembledRows.map(rowProjection),
+        report: {
+          rowIdConflicts: [...reRendered.report.rowIdConflicts],
+          toolNameConflicts: [...reRendered.report.toolNameConflicts],
+          disabledOnPlatform: [...reRendered.report.disabledOnPlatform],
+        },
+        audit: auditByAction['market.preset.assemble'] ?? 0,
+      },
+      determinism: {
+        deepEqual: deterministic,
+        note: 'rendering the same request twice yields deep-equal rows — the assembler is a pure function of (base, resolved, patches)',
+      },
+      rejections: {
+        rowIdConflict,
+        toolNameConflict,
+        note: 'a host-supplied base with a duplicate row id and a selection that shadows one tool name across two capabilities both refuse loudly, so neither tree can reach the roster',
+      },
+      mounted: {
+        preset: 'assembled-content-marketing',
+        composedPrompt: {
+          containsBase,
+          containsPlanning,
+          containsPublishing,
+          containsAnalytics,
+          excludesDisabled,
+          inCatalogOrder,
+        },
+        note: containsBase && containsPlanning && containsPublishing && containsAnalytics && excludesDisabled && inCatalogOrder
+          ? 'the committed preset mounts and the composed system prompt carries the base persona plus each capability persona in catalog order, minus the platform-disabled row'
+          : 'the mounted-surface proof did NOT hold',
+      },
+      note: rowIdConflict === 'ROW_ID_CONFLICT' && toolNameConflict === 'TOOL_NAME_CONFLICT' && deterministic && inCatalogOrder
+        ? 'a non-operator agent rendered + validated a workbench preset tree from a declared capability set; the host committed the rows and the roster mounted them'
+        : 'the guided preset assembly did NOT complete as specified',
     },
     gating: {
       disabledCapabilityRefused: disabledDependencyRejected,
@@ -503,9 +790,11 @@ async function main() {
       operator: { preset: 'platform-admin', finalText: finalText(operatorEvents) },
       product: { preset: 'product-engineering', finalText: finalText(productEvents) },
       video: { preset: 'short-video-creation', finalText: finalText(videoEvents) },
+      creator: { preset: 'product-engineering', finalText: finalText(creatorEvents) },
+      content: { preset: 'assembled-content-marketing', finalText: finalText([...content.session.events]) },
     },
     notes: {
-      surface: 'persona-only workbench presets — the fs/shell isolation is already proven by the sibling platform-agent-demo',
+      surface: 'persona-only workbench presets — the fs/shell isolation is already proven by the sibling platform-agent-demo; the content-marketing workbench additionally runs the assembled preset',
       scripted: 'keyless mock adapter drove all turns; swap provider to deepseek-official + DEEPSEEK_API_KEY to run live',
     },
   }, null, 2))

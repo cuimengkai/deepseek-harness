@@ -29,10 +29,12 @@ import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type 
 import type {} from '@deepseek-ai/dsh-agent'
 import { settingsNamespace, type SettingsScope, type default as SettingsService } from '@deepseek-ai/dsh-settings'
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { discoverPresets, USER_PRESET_DIR } from './discovery.ts'
-import { copyComposition, deleteComposition, readComposition } from './authoring.ts'
+import { copyComposition, deleteComposition, readComposition, writableRoot, writeComposition } from './authoring.ts'
 import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
 import { PresetExistsError } from './authoring.ts'
+import type { PresetMetadata } from './metadata.ts'
 import { PresetMountError, UnknownPresetError, type AgentPreset, type Config, type PresetRoot } from './preset.ts'
 import type {} from './types.ts'
 
@@ -389,6 +391,32 @@ export class AgentPresets extends Service {
     // A settled mount under this id can only be stale (its preset was deleted
     // from disk outside `remove`); the new preset must not inherit it. Every
     // session already joined keeps the generation it runs on regardless.
+    this.standing.delete(id)
+  }
+
+  /**
+   * Write a locally authored preset from composition rows.
+   *
+   * The sanctioned exception to "no caller supplies composition text": the
+   * platform preset assembler renders a validated tree and commits it through
+   * this primitive. The caller owns render + static validation — this method
+   * accepts the rows as given and refuses only a wrong id or an occupied slot.
+   * The write is NOT mounted to validate; loader-level checks (`inactiveRows`
+   * / `leakedServices`) run at mount.
+   * @param id - the new preset's id, which becomes its directory name.
+   * @param rows - the composition rows to persist.
+   * @param meta - display metadata to publish beside the composition.
+   * @throws when the id is unusable or already taken, or the deployment
+   * configures no writable root.
+   */
+  async write(id: string, rows: readonly EntryOptions[], meta?: PresetMetadata): Promise<void> {
+    // The roster check refuses ids any root supplies, mirroring `copy`.
+    if ((await this.list()).some(preset => preset.id === id)) {
+      throw new PresetExistsError(id)
+    }
+    await writeComposition(writableRoot(this.resolvedRoots), id, rows, meta)
+    // A settled mount under this id can only be stale; the fresh preset must
+    // not inherit it. Every session already joined keeps its generation.
     this.standing.delete(id)
   }
 

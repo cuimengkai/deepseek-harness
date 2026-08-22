@@ -5,18 +5,26 @@
  * the deployment, and letting a browser rewrite it would turn "reset to a known
  * preset" into something the same caller could have broken first.
  *
- * The only authoring write is a whole-directory copy of an existing preset.
- * No caller supplies composition text: the inputs are ids the host resolves
- * against its own roots plus an optional display name, so authoring grants no
- * capability the copied preset did not already carry.
+ * The only authoring writes are a whole-directory copy of an existing preset
+ * and a rows-based write. A copy's inputs are ids the host resolves against its
+ * own roots plus an optional display name, so copying grants no capability the
+ * copied preset did not already carry. `writeComposition` is the one sanctioned
+ * exception to "no caller supplies composition text": the platform preset
+ * assembler renders a validated tree and commits it through this primitive,
+ * which owns id validation, occupancy refusal, mode tightening, and atomic
+ * writes.
  * @module @deepseek-ai/dsh-agent-presets/authoring
  */
 
-import { chmod, cp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { chmod, cp, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { expandHomePath } from '@deepseek-ai/dsh-home-paths'
-import { METADATA_FILE, renderPresetMetadata } from './metadata.ts'
+import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import * as yaml from 'js-yaml'
+import { COMPOSITION_FILE } from './discovery.ts'
+import { METADATA_FILE, renderPresetMetadata, type PresetMetadata } from './metadata.ts'
 import { PRESET_ID, type AgentPreset, type PresetRoot } from './preset.ts'
 
 /** A preset id that cannot be used as a directory name under a root. */
@@ -163,6 +171,54 @@ export async function copyComposition(
   } catch (error) {
     // A half-copied directory would be invisible to discovery at best and a
     // mountable-but-incomplete preset at worst; a failed copy leaves nothing.
+    await rm(dir, { recursive: true, force: true })
+    throw error
+  }
+  return dir
+}
+
+/**
+ * Write one preset's composition and display metadata from rows.
+ *
+ * This is the sanctioned relaxation of the "no caller supplies composition
+ * text" boundary: the platform preset assembler renders a validated tree and
+ * commits it through this primitive, which owns id validation, occupancy
+ * refusal, mode tightening, and atomic writes exactly as a copy does. The
+ * composition is dumped with the entry-list YAML dialect, so a `!!js` row
+ * (e.g. a platform-conditional `disabled`) round-trips as the expression the
+ * Loader evaluates. Absent metadata publishes no file, mirroring a copy that
+ * has nothing to say.
+ * @param root - the writable root's resolved path.
+ * @param id - the new preset's id, which becomes its directory name.
+ * @param rows - the composition rows to persist.
+ * @param meta - display metadata to publish beside the composition.
+ * @returns the absolute path of the new preset directory.
+ * @throws when the id is unusable or already occupied on disk.
+ */
+export async function writeComposition(
+  root: string,
+  id: string,
+  rows: readonly EntryOptions[],
+  meta?: PresetMetadata,
+): Promise<string> {
+  if (!PRESET_ID.test(id)) throw new InvalidPresetIdError(id)
+  const dir = join(root, id)
+  if (await occupied(dir)) throw new PresetExistsError(id)
+  try {
+    await mkdir(dir, { mode: 0o700 })
+    await writeFileAtomic(
+      join(dir, COMPOSITION_FILE),
+      yaml.dump([...rows], { schema: entryListSchema, lineWidth: -1 }),
+      { mode: 0o600, dirMode: 0o700 },
+    )
+    const rendered = renderPresetMetadata(meta ?? {})
+    if (rendered !== undefined) {
+      await writeFileAtomic(join(dir, METADATA_FILE), rendered, { mode: 0o600, dirMode: 0o700 })
+    }
+    await tightenModes(dir)
+  } catch (error) {
+    // A half-written directory would be invisible to discovery at best and a
+    // mountable-but-incomplete preset at worst; a failed write leaves nothing.
     await rm(dir, { recursive: true, force: true })
     throw error
   }

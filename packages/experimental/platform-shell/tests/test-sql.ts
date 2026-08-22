@@ -7,6 +7,7 @@ export type TestSqlName =
   | 'add-unrelated-table'
   | 'corrupt-row-with-wrong-app-id'
   | 'create-unrelated-table'
+  | 'set-user-version-4'
   | 'set-user-version-99'
   | 'truncate-roles'
 

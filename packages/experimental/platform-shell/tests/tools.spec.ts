@@ -7,17 +7,18 @@ import type { Session } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { CallId } from '@deepseek-ai/dsh-llm'
 import { PlatformShellService } from '../src/service.ts'
-import { registerPlatformShellTools } from '../src/tools.ts'
+import { registerPlatformShellTools, type ResolveBaseRows } from '../src/tools.ts'
 import { periodOf } from '../src/capability-market.ts'
 import { PlatformShellError } from '../src/error.ts'
-import { AssetId, RoleId, UserId } from '../src/types.ts'
+import { AssetId, CapabilityId, RoleId, UserId } from '../src/types.ts'
 
 /**
  * Mount the tools topology: session store, tool runtime, the platform-shell
  * service, and the shell tools with an in-memory session→actor binding.
+ * @param options - optional bindings, `resolveBaseRows` for the assembler tool.
  * @returns the context, service, and a helper executing tools on a named session.
  */
-async function setup() {
+async function setup(options: { resolveBaseRows?: ResolveBaseRows } = {}) {
   const ctx = new Context()
   await ctx.plugin(SessionStore)
   await ctx.plugin(SystemPrompt)
@@ -34,6 +35,7 @@ async function setup() {
       }
       return user
     },
+    ...(options.resolveBaseRows !== undefined ? { resolveBaseRows: options.resolveBaseRows } : {}),
   })
 
   const bind = (sessionId: string, user: UserId): void => {
@@ -623,6 +625,99 @@ describe('platform-shell market tools', () => {
       })
       expect(result.isError).toBe(true)
       expect(result.error?.info?.code).toBe('CAPABILITY_CONFLICT')
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('assemble_preset renders and validates a preset tree and appends preset/assembled', async () => {
+    const { ctx, shell, bind, sessionOf, run } = await setup({
+      resolveBaseRows: async () => [
+        { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'base persona' } },
+      ],
+    })
+    try {
+      const ws = shell.createWorkspace('Platform')
+      const admin = shell.registerUser('Admin')
+      const alice = shell.registerUser('Alice')
+      shell.assignRole(ws, admin, RoleId('platform-admin'))
+      shell.assignRole(ws, alice, RoleId('product'))
+      bind('session-a', admin)
+      bind('session-b', alice)
+      const sessionB = sessionOf('session-b')
+
+      // Rows are an operator-authored fragment of the publish request; the
+      // publish tool's model surface omits them, so seed through the service.
+      shell.publishCapability(admin, {
+        id: CapabilityId('content-planning'),
+        name: 'Content Planning', roleId: RoleId('product'), execution: 'managed', version: '1.0.0', rate: 1,
+        tools: ['plan_content'],
+        rows: [
+          { id: 'content-planning', name: 'persona-row', config: { section: 'capability:content-planning', order: 10, text: 'plan' } },
+        ],
+      })
+      shell.publishCapability(admin, {
+        id: CapabilityId('content-publishing'),
+        name: 'Content Publishing', roleId: RoleId('product'), execution: 'managed', version: '1.0.0', rate: 1,
+        tools: ['publish_content'],
+        rows: [
+          { id: 'content-publishing', name: 'persona-row', config: { section: 'capability:content-publishing', order: 20, text: 'publish' } },
+        ],
+      })
+      await run('session-a', 'publish_scenario', {
+        id: 'content-marketing', name: 'Content Marketing', workbenchId: 'content-marketing',
+        roleId: 'product', preset: 'content-marketing',
+        capabilityIds: ['content-planning', 'content-publishing'],
+      })
+
+      const assembled = await run('session-b', 'assemble_preset', {
+        workspaceId: ws,
+        scenarioId: 'content-marketing',
+        roleId: 'product',
+        rolePreset: 'content-marketing',
+        preset: 'assembled-content-marketing',
+        selected: ['content-planning', 'content-publishing'],
+      })
+      expect(assembled.isError).toBe(false)
+      expect(assembled.value).toMatchObject({
+        preset: 'assembled-content-marketing',
+        resolved: [{ id: 'content-planning' }, { id: 'content-publishing' }],
+        report: { rowIdConflicts: [], toolNameConflicts: [], disabledOnPlatform: [] },
+      })
+      // Base rows first, capability rows appended in catalog order.
+      const value = assembled.value as { rows: Array<{ id: string }> } | undefined
+      const rows = value?.rows ?? []
+      expect(rows.map(row => row.id)).toEqual(['persona', 'content-planning', 'content-publishing'])
+      expect(assembled.meta).toMatchObject({ code: 'assembled', rows: 3 })
+
+      const presetEvents = sessionB.events.filter(e => e.type === 'preset/assembled')
+      expect(presetEvents).toHaveLength(1)
+      expect(presetEvents[0]).toMatchObject({
+        data: { workspaceId: ws, scenarioId: 'content-marketing', preset: 'assembled-content-marketing', capabilityIds: ['content-planning', 'content-publishing'], rows: [{ id: 'persona' }, { id: 'content-planning' }, { id: 'content-publishing' }] },
+      })
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('refuses assemble_preset without a resolveBaseRows binding', async () => {
+    const { ctx, shell, bind, run } = await setup()
+    try {
+      const ws = shell.createWorkspace('Platform')
+      const admin = shell.registerUser('Admin')
+      shell.assignRole(ws, admin, RoleId('platform-admin'))
+      bind('session-a', admin)
+
+      const result = await run('session-a', 'assemble_preset', {
+        workspaceId: ws,
+        scenarioId: 'content-marketing',
+        roleId: 'product',
+        rolePreset: 'content-marketing',
+        preset: 'assembled-content-marketing',
+        selected: [],
+      })
+      expect(result.isError).toBe(true)
+      expect(result.error?.info?.code).toBe('INVALID_ARGUMENT')
     } finally {
       await dispose(ctx)
     }

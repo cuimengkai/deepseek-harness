@@ -6,6 +6,7 @@
 import { performance } from 'node:perf_hooks'
 import type { DatabaseSync } from 'node:sqlite'
 import { setTimeout as delay } from 'node:timers/promises'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import {
   AuditEventId,
   AssetId,
@@ -37,7 +38,7 @@ import { sql } from './sql.ts'
 import { PlatformShellError } from './error.ts'
 
 /** Current physical schema version of the platform control-plane database. */
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 /** Application id reserved for DeepSeek Harness platform control-plane databases. */
 export const PLATFORM_SHELL_SQLITE_APPLICATION_ID = 0x504c5348
 
@@ -130,6 +131,8 @@ export interface CapabilityRow {
   readonly rollout: number
   readonly rate: number
   readonly description: string
+  /** The JSON-serialized preset rows the assembler appends to a workbench tree. */
+  readonly rows: string | null
   readonly created_at: number
 }
 
@@ -337,7 +340,7 @@ function journalResource(mode: JournalMode):
 function initializeDatabase(db: DatabaseSync): void {
   db.exec(sql('schema'))
   db.exec(sql('set-application-id'))
-  db.exec(sql('set-user-version-4'))
+  db.exec(sql('set-user-version-5'))
 }
 
 let canonicalSchema: readonly SchemaObjectRow[] | undefined
@@ -514,8 +517,23 @@ export function decodeCapabilityRow(value: unknown, tools: readonly string[] = [
     rate: nonnegativeIntegerField(row, 'rate'),
     description: stringField(row, 'description'),
     tools,
+    rows: decodePresetRows(row['rows']),
     createdAt: nonnegativeSafeIntegerField(row, 'created_at'),
   }
+}
+
+/** Decode the JSON preset-rows column into EntryOptions[] (absent → empty). */
+function decodePresetRows(value: unknown): EntryOptions[] {
+  if (value === undefined || value === null || value === '') return []
+  if (typeof value !== 'string') throw new Error('stored capability rows must be a JSON string')
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error('stored capability rows must be valid JSON')
+  }
+  if (!Array.isArray(parsed)) throw new Error('stored capability rows must be a JSON array')
+  return parsed as EntryOptions[]
 }
 
 /**

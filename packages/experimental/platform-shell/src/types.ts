@@ -4,6 +4,8 @@
  */
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 /* Tie the SessionEventMap merge below to the session package's program file so
  * the augmented module resolves against a built source in composite builds. */
 import type {} from '@deepseek-ai/dsh-session'
@@ -242,6 +244,9 @@ export interface CapabilityRecord {
   readonly description: string
   /** The tool surface whose execution this capability's gate governs. */
   readonly tools: readonly string[]
+  /** The D5 preset fragment: the preset rows this capability contributes to a
+   * workbench tree, appended in catalog order by the preset assembler. */
+  readonly rows: readonly EntryOptions[]
   readonly createdAt: number
 }
 
@@ -304,6 +309,8 @@ export interface PublishCapabilityRequest {
   readonly rate: number
   /** The tool names whose execution this capability's gate governs. */
   readonly tools?: readonly string[]
+  /** The preset rows this capability contributes to a workbench tree. */
+  readonly rows?: readonly EntryOptions[]
   readonly dependencies?: readonly { readonly id: CapabilityId; readonly range?: string }[]
   readonly conflictsWith?: readonly CapabilityId[]
   readonly enabled?: boolean
@@ -346,6 +353,44 @@ export interface ResolveCapabilitiesRequest {
   readonly workspaceId: WorkspaceId
   readonly scenarioId: ScenarioId
   readonly selected: readonly CapabilityId[]
+}
+
+/** Input for assembling one workbench preset tree (platform-preset-assembler §3). */
+export interface AssemblePresetRequest {
+  readonly workspaceId: WorkspaceId
+  readonly scenarioId: ScenarioId
+  readonly roleId: RoleId
+  /** The roster preset id whose rows the host resolved into `base` (audit label). */
+  readonly rolePreset: string
+  /** The base role rows, supplied by the host (never read from the roster here). */
+  readonly base: readonly EntryOptions[]
+  readonly selected: readonly CapabilityId[]
+  /** The roster preset id the rendered tree is destined for (not store-validated). */
+  readonly preset: string
+  /** Optional per-capability options/context overrides applied after append. */
+  readonly patches?: readonly PatchOptions[]
+}
+
+/** Static validation results for one rendered preset tree. */
+export interface PresetValidationReport {
+  /** Duplicate row ids across the rendered tree — the assembler rejects these. */
+  readonly rowIdConflicts: readonly string[]
+  /** Tool names owned by ≥2 resolved capabilities — the assembler rejects these. */
+  readonly toolNameConflicts: readonly string[]
+  /** Rows disabled for the current platform — reported, not rejected. */
+  readonly disabledOnPlatform: readonly string[]
+}
+
+/** The render + validate-before-commit outcome for one workbench preset. */
+export interface AssembledPreset {
+  readonly roleId: RoleId
+  readonly scenarioId: ScenarioId
+  readonly preset: string
+  /** The capability records resolved for the selection, in catalog order. */
+  readonly resolved: readonly CapabilityRecord[]
+  /** The rendered preset tree: base rows then capability rows, overlaid. */
+  readonly rows: readonly EntryOptions[]
+  readonly report: PresetValidationReport
 }
 
 /** Platform-shell deployment configuration. */
@@ -404,6 +449,19 @@ declare module '@deepseek-ai/dsh-session/types' {
       workspaceId: WorkspaceId
       capabilityIds: readonly CapabilityId[]
       preset: string
+    }
+    /**
+     * The assembler rendered and statically validated one workbench preset tree.
+     * The rendered rows are model-visible through the tool result, so the event
+     * carries them for durable reconstruction (model-visible ⟺ logged).
+     */
+    'preset/assembled': {
+      workspaceId: WorkspaceId
+      scenarioId: ScenarioId
+      roleId: RoleId
+      preset: string
+      capabilityIds: readonly CapabilityId[]
+      rows: readonly EntryOptions[]
     }
     /** One billing settlement closed for a workspace account. */
     'billing/settlement': {

@@ -3,11 +3,11 @@
  * route resolves to this adapter, whose stream emits the tool calls each agent's
  * scripted turn needs, one per generation step, finishing with a text reply. The
  * script is keyed by the session the loop stamps on the request and by the user
- * turn count, so the market operator, the product-engineering customer, and the
- * short-video-creation customer each run their own multi-turn chain against the
- * real control-plane store — proving the catalog publish, the assembly
- * rejections and fixes, the workbench serving, and the billing ledger without
- * any network.
+ * turn count, so the market operator, the product-engineering customer, the
+ * short-video-creation customer, and the content-marketing creator each run
+ * their own multi-turn chain against the real control-plane store — proving the
+ * catalog publish, the assembly rejections and fixes, the workbench serving, the
+ * guided preset assembly, and the billing ledger without any network.
  * @module capability-market-demo-mock-llm
  */
 
@@ -387,6 +387,22 @@ class CapabilityMarketAdapter extends LlmAdapter {
     yield* this.textReply('The short-video workbench refused the conflicting editor+recorder pair and resolved recorder+publisher.')
   }
 
+  /** The content-marketing creator: render + validate one workbench preset tree. */
+  private * creatorChain(options: GenerateOptions): Generator<StreamChunk> {
+    const last = options.messages.at(-1)?.content.find(block => block.type === 'tool-result')
+    const ws = firstWorkspaceId(options)
+
+    if (last === undefined) {
+      yield* this.toolCall('cr-assemble', 'assemble_preset', {
+        workspaceId: ws, scenarioId: 'content-marketing', roleId: 'product',
+        rolePreset: 'product-engineering', preset: 'assembled-content-marketing',
+        selected: ['content-planning', 'content-publishing', 'content-analytics'],
+      })
+      return
+    }
+    yield* this.textReply('Rendered and validated the content-marketing workbench preset tree; the host will commit it to the roster.')
+  }
+
   async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
     const session = String(options.sessionId ?? '')
     switch (session) {
@@ -398,6 +414,9 @@ class CapabilityMarketAdapter extends LlmAdapter {
         return
       case 'market-video':
         yield* this.videoChain(options)
+        return
+      case 'market-creator':
+        yield* this.creatorChain(options)
         return
       default:
         yield* this.textReply(`No scripted behavior for session ${session}.`)

@@ -73,6 +73,19 @@ export function validateCapabilityRequest(request: PublishCapabilityRequest): vo
       throw new PlatformShellError('INVALID_ARGUMENT', 'capability tool names must not be empty')
     }
   }
+  const rowIds = new Set<string>()
+  for (const row of request.rows ?? []) {
+    if (row.id.length === 0) {
+      throw new PlatformShellError('INVALID_ARGUMENT', 'capability rows must carry a non-empty id')
+    }
+    if (row.name.length === 0) {
+      throw new PlatformShellError('INVALID_ARGUMENT', `capability row ${row.id} must carry a non-empty plugin name`)
+    }
+    if (rowIds.has(row.id)) {
+      throw new PlatformShellError('INVALID_ARGUMENT', `capability rows must not repeat id ${row.id}`)
+    }
+    rowIds.add(row.id)
+  }
 }
 
 /**
@@ -106,6 +119,7 @@ export function insertCapability(db: DatabaseSync, request: PublishCapabilityReq
   const rollout = request.rollout ?? 1
   const description = request.description ?? ''
   const tools = request.tools ?? []
+  const rows = request.rows ?? []
   db.prepare(sql('insert-capability')).run(
     request.id,
     request.name,
@@ -116,6 +130,7 @@ export function insertCapability(db: DatabaseSync, request: PublishCapabilityReq
     rollout,
     request.rate,
     description,
+    JSON.stringify(rows),
     now,
   )
   insertCapabilityTools(db, request.id, tools)
@@ -130,6 +145,7 @@ export function insertCapability(db: DatabaseSync, request: PublishCapabilityReq
     rate: request.rate,
     description,
     tools,
+    rows,
     createdAt: now,
   }
 }

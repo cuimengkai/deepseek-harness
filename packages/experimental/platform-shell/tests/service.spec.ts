@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import SessionStore from '@deepseek-ai/dsh-session'
 import { PlatformShellService } from '../src/service.ts'
 import { periodOf } from '../src/capability-market.ts'
@@ -395,6 +396,113 @@ describe('PlatformShellService capability market', () => {
       expect(rows).toHaveLength(1)
       expect(rows[0]?.detail).toBe(JSON.stringify({ isolated: true }))
       expectPlatformError(() => shell.setWorkspaceIsolation(admin, WorkspaceId('ghost'), true), 'UNKNOWN_WORKSPACE')
+    } finally {
+      await dispose(ctx)
+    }
+  })
+})
+
+describe('PlatformShellService preset assembler', () => {
+  it('renders and validates a workbench tree from base rows and a declared capability set', async () => {
+    const ctx = new Context()
+    try {
+      const shell = await start(ctx)
+      const { ws, admin } = seedMarket(shell)
+      const base: EntryOptions[] = [{ id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'base persona' } }]
+      shell.publishCapability(admin, {
+        id: CapabilityId('content-planning'), name: 'Content Planning', roleId: RoleId('product'),
+        execution: 'managed', version: '1.0.0', rate: 2,
+        rows: [{
+          id: 'content-planning', name: 'persona-row',
+          config: { section: 'capability:content-planning', order: 10, text: 'plan the content calendar' },
+        }],
+      })
+      shell.publishScenario(admin, {
+        id: ScenarioId('content-marketing'), name: 'Content Marketing', workbenchId: 'content-marketing',
+        roleId: RoleId('product'), preset: 'assembled-content-marketing',
+        capabilityIds: [CapabilityId('content-planning')],
+      })
+      const assembled = shell.assemblePreset(admin, {
+        workspaceId: ws, scenarioId: ScenarioId('content-marketing'), roleId: RoleId('product'),
+        rolePreset: 'product-engineering', base, selected: [CapabilityId('content-planning')],
+        preset: 'assembled-content-marketing',
+      })
+      expect(assembled.rows.map(row => row.id)).toEqual(['persona', 'content-planning'])
+      expect(assembled.report).toEqual({ rowIdConflicts: [], toolNameConflicts: [], disabledOnPlatform: [] })
+      const audit = shell.listAudit(admin, { workspaceId: ws, action: 'market.preset.assemble' })
+      expect(audit).toHaveLength(1)
+      expect(JSON.parse(audit[0]!.detail ?? '{}')).toMatchObject({
+        rolePreset: 'product-engineering',
+        preset: 'assembled-content-marketing',
+        selected: ['content-planning'],
+      })
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('denies a user outside the workspace and a selection outside the workbench', async () => {
+    const ctx = new Context()
+    try {
+      const shell = await start(ctx)
+      const { ws, admin } = seedMarket(shell)
+      const outsider = shell.registerUser('Outsider')
+      shell.publishCapability(admin, {
+        id: CapabilityId('c'), name: 'C', roleId: RoleId('product'),
+        execution: 'managed', version: '1.0.0', rate: 1,
+        rows: [{ id: 'c', name: 'persona-row', config: {} }],
+      })
+      shell.publishScenario(admin, {
+        id: ScenarioId('wb'), name: 'WB', workbenchId: 'wb', roleId: RoleId('product'),
+        preset: 'p', capabilityIds: [CapabilityId('c')],
+      })
+      const request = {
+        workspaceId: ws, scenarioId: ScenarioId('wb'), roleId: RoleId('product'),
+        rolePreset: 'p', base: [] as EntryOptions[], selected: [CapabilityId('c')], preset: 'p',
+      }
+      expectPlatformError(() => shell.assemblePreset(outsider, request), 'PERMISSION_DENIED')
+      expectPlatformError(
+        () => shell.assemblePreset(admin, { ...request, selected: [CapabilityId('ghost')] }),
+        'INVALID_ARGUMENT',
+      )
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('rejects a shadowed tool name and a duplicate row id before the tree is committed', async () => {
+    const ctx = new Context()
+    try {
+      const shell = await start(ctx)
+      const { ws, admin } = seedMarket(shell)
+      shell.publishCapability(admin, {
+        id: CapabilityId('publishing'), name: 'Publishing', roleId: RoleId('product'),
+        execution: 'managed', version: '1.0.0', rate: 1,
+        tools: ['content_export'], rows: [{ id: 'persona', name: 'persona-row', config: {} }],
+      })
+      shell.publishCapability(admin, {
+        id: CapabilityId('review'), name: 'Review', roleId: RoleId('product'),
+        execution: 'managed', version: '1.0.0', rate: 1,
+        tools: ['content_export'], rows: [],
+      })
+      shell.publishScenario(admin, {
+        id: ScenarioId('wb'), name: 'WB', workbenchId: 'wb', roleId: RoleId('product'),
+        preset: 'p', capabilityIds: [CapabilityId('publishing'), CapabilityId('review')],
+      })
+      const base: EntryOptions[] = [{ id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'base persona' } }]
+      const request = {
+        workspaceId: ws, scenarioId: ScenarioId('wb'), roleId: RoleId('product'), rolePreset: 'p', base,
+        selected: [CapabilityId('publishing'), CapabilityId('review')], preset: 'p',
+      }
+      // content_export is owned by publishing AND review → the gate's owner read
+      // is non-deterministic, so the assembler refuses the shadow before render.
+      expectPlatformError(() => shell.assemblePreset(admin, request), 'TOOL_NAME_CONFLICT')
+      // Selecting only publishing keeps the shadow out, but its persona row
+      // reuses the base's `persona` id → ROW_ID_CONFLICT on the rendered tree.
+      expectPlatformError(
+        () => shell.assemblePreset(admin, { ...request, selected: [CapabilityId('publishing')] }),
+        'ROW_ID_CONFLICT',
+      )
     } finally {
       await dispose(ctx)
     }

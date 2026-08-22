@@ -90,6 +90,7 @@ const SQL_RESOURCES = [
   'set-user-version-2',
   'set-user-version-3',
   'set-user-version-4',
+  'set-user-version-5',
   'synchronous-full',
   'trusted-schema-off',
   'update-account-balance',
