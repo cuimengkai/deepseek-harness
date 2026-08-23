@@ -248,6 +248,14 @@ export class FakeApiClient implements IApiClient {
       this.record('agentPreset.remove', payload, Promise.resolve(ok({}))),
     compose: (payload: { agentPreset: string }) =>
       this.record('agentPreset.compose', payload, Promise.resolve(ok({ agentPreset: payload.agentPreset }))),
+    readGraph: (payload: { agentPreset: string }) =>
+      this.record('agentPreset.readGraph', payload, Promise.resolve(ok({
+        agentPreset: payload.agentPreset,
+        trust: 'user' as const,
+        graph: { id: payload.agentPreset, name: payload.agentPreset, nodes: [], edges: [] },
+      }))),
+    saveGraph: (payload: { agentPreset: string }) =>
+      this.record('agentPreset.saveGraph', payload, Promise.resolve(ok({ agentPreset: payload.agentPreset }))),
   }
 
   onProjectInsightRead: IApiClient['projectInsight']['read'] =
