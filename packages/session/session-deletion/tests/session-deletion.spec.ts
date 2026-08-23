@@ -11,7 +11,7 @@ import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import { MemoryMediaPool, MemoryStorageBackend } from '../../../storage/storage-domain/tests/helpers/memory-backend.ts'
 import { meta, oneTurnLog } from '../../session-persistence/tests/contract.ts'
-import SessionDeletion, { SessionDeletionError, cascadeScope } from '../src/index.ts'
+import SessionDeletion, { cascadeScope } from '../src/index.ts'
 
 const dirs: string[] = []
 afterEach(async () => {
@@ -137,7 +137,7 @@ describe('SessionDeletion.deleteSession', () => {
     }
   })
 
-  it('refuses the whole tree when any member is live, deleting nothing', async () => {
+  it('disposes a live member, then deletes the whole tree (stop-then-delete)', async () => {
     const h = await harness()
     try {
       const root = meta('live-root', '/work')
@@ -145,14 +145,19 @@ describe('SessionDeletion.deleteSession', () => {
       await persist(h, root)
       await persist(h, child)
 
-      // Make the child live.
+      // Make the child live. This harness mounts no `agents` service, so
+      // deletion's agent-owned arm is skipped and the bare live session is
+      // detached directly before both durable logs are removed.
       const live = h.ctx.sessions.create(child.id, { seed: oneTurnLog(), meta: child })
       await h.ctx.sessions.flush(live)
 
-      await expect(h.deletion.deleteSession(root.id)).rejects.toBeInstanceOf(SessionDeletionError)
-      // Both logs survive the refusal.
-      expect(await h.persistence.list()).toHaveLength(2)
-      expect(h.deletion.listDeletions()).toEqual([])
+      const result = await h.deletion.deleteSession(root.id)
+      expect(result).toEqual({ deleted: [root.id, child.id], notFound: [] })
+      // The live member left the store; both logs are gone.
+      expect(h.ctx.sessions.get(child.id)).toBeUndefined()
+      expect(await h.persistence.list()).toEqual([])
+      const [record] = h.deletion.listDeletions()
+      expect(record).toMatchObject({ id: root.id, deleted: [root.id, child.id] })
     } finally {
       await h.dispose()
     }

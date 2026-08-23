@@ -22,7 +22,13 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { expandHomePath } from '@deepseek-ai/dsh-home-paths'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
 import * as yaml from 'js-yaml'
+import {
+  graphRowsMatch, PRESET_GRAPH_FILE, PRESET_GRAPH_FORMAT_VERSION, PRESET_GRAPH_MAX_BYTES,
+  type PresetGraphDocument,
+} from './conversion.ts'
+import type { ComposeRow } from './index.ts'
 import { COMPOSITION_FILE } from './discovery.ts'
 import { METADATA_FILE, renderPresetMetadata, type PresetMetadata } from './metadata.ts'
 import { PRESET_ID, type AgentPreset, type PresetRoot } from './preset.ts'
@@ -207,11 +213,14 @@ export async function copyComposition(
  * composition is dumped with the entry-list YAML dialect, so a `!!js` row
  * (e.g. a platform-conditional `disabled`) round-trips as the expression the
  * Loader evaluates. Absent metadata publishes no file, mirroring a copy that
- * has nothing to say.
+ * has nothing to say. When a companion graph is given, one write commits both
+ * files — the composition and the `agent.flow.json` beside it — so the layout
+ * never lags the rows that derive from it.
  * @param root - the writable root's resolved path.
  * @param id - the new preset's id, which becomes its directory name.
  * @param rows - the composition rows to persist.
  * @param meta - display metadata to publish beside the composition.
+ * @param graph - the preset composition graph to persist beside the rows.
  * @returns the absolute path of the new preset directory.
  * @throws when the id is unusable or already occupied on disk.
  */
@@ -220,6 +229,7 @@ export async function writeComposition(
   id: string,
   rows: readonly EntryOptions[],
   meta?: PresetMetadata,
+  graph?: FlowGraph,
 ): Promise<string> {
   if (!PRESET_ID.test(id)) throw new InvalidPresetIdError(id)
   const dir = join(root, id)
@@ -231,6 +241,7 @@ export async function writeComposition(
       yaml.dump([...rows], { schema: entryListSchema, lineWidth: -1 }),
       { mode: 0o600, dirMode: 0o700 },
     )
+    if (graph !== undefined) await writePresetGraph(dir, graph)
     const rendered = renderPresetMetadata(meta ?? {})
     if (rendered !== undefined) {
       await writeFileAtomic(join(dir, METADATA_FILE), rendered, { mode: 0o600, dirMode: 0o700 })
@@ -251,15 +262,17 @@ export async function writeComposition(
  * The overwrite half of the rows authoring boundary. `writeComposition`
  * creates a preset and refuses an occupied id; this primitive re-renders an
  * existing preset's files atomically, skipping the `occupied` refusal so an
- * existing directory is updated rather than refused. Only the composition and
- * display metadata are rewritten — the directory's other contents (skills,
- * assets) are left alone, and a failed atomic write leaves the prior file
- * intact rather than a half-preset. The caller (the service's `compose`) owns
- * the trust and existence checks that decide overwrite vs create.
+ * existing directory is updated rather than refused. Only the composition,
+ * companion graph, and display metadata are rewritten — the directory's other
+ * contents (skills, assets) are left alone, and a failed atomic write leaves
+ * the prior file intact rather than a half-preset. The caller (the service's
+ * `compose`) owns the trust and existence checks that decide overwrite vs
+ * create.
  * @param root - the writable root's resolved path.
  * @param id - the preset id, whose directory already exists.
  * @param rows - the composition rows to persist.
  * @param meta - display metadata to publish beside the composition.
+ * @param graph - the preset composition graph to persist beside the rows.
  * @returns the absolute path of the preset directory.
  * @throws when the id is unusable.
  */
@@ -268,6 +281,7 @@ export async function replaceComposition(
   id: string,
   rows: readonly EntryOptions[],
   meta?: PresetMetadata,
+  graph?: FlowGraph,
 ): Promise<string> {
   if (!PRESET_ID.test(id)) throw new InvalidPresetIdError(id)
   const dir = join(root, id)
@@ -277,6 +291,7 @@ export async function replaceComposition(
     yaml.dump([...rows], { schema: entryListSchema, lineWidth: -1 }),
     { mode: 0o600, dirMode: 0o700 },
   )
+  if (graph !== undefined) await writePresetGraph(dir, graph)
   const rendered = renderPresetMetadata(meta ?? {})
   const metadataPath = join(dir, METADATA_FILE)
   if (rendered === undefined) {
@@ -286,6 +301,64 @@ export async function replaceComposition(
   }
   await tightenModes(dir)
   return dir
+}
+
+/**
+ * Write one preset's companion graph document atomically, mode-matched to the
+ * composition. The size cap is enforced here, where the complete rendered
+ * document is known; a graph beyond it is refused rather than persisted.
+ */
+async function writePresetGraph(dir: string, graph: FlowGraph): Promise<void> {
+  const rendered = JSON.stringify(
+    { formatVersion: PRESET_GRAPH_FORMAT_VERSION, graph } satisfies PresetGraphDocument,
+    null, 2,
+  ) + '\n'
+  if (Buffer.byteLength(rendered, 'utf8') > PRESET_GRAPH_MAX_BYTES) {
+    throw new Error(
+      `agent-presets: preset graph exceeds the ${PRESET_GRAPH_MAX_BYTES}-byte cap; `
+      + 'trim nodes or edges and save again',
+    )
+  }
+  await writeFileAtomic(
+    join(dir, PRESET_GRAPH_FILE),
+    rendered,
+    { mode: 0o600, dirMode: 0o700 },
+  )
+}
+
+/**
+ * Read one preset's stored graph, or undefined when it must be regenerated.
+ *
+ * The companion `agent.flow.json` is a LAYOUT CACHE, not a second truth: the
+ * composition file is the mount source, so the stored graph serves only while
+ * it still projects exactly the rows parsed from that file (a hand edit or a
+ * legacy rows-composer write wins and the layout is rebuilt), and an absent,
+ * oversized, unparsable, or version-mismatched document is likewise
+ * regenerated. This is also the safety net for a partial dual-file write.
+ * @param preset - the resolved preset.
+ * @param rows - the composition rows parsed from the preset's composition file.
+ * @returns the stored graph, or undefined when it is stale or unreadable.
+ */
+export async function readCompositionGraph(
+  preset: AgentPreset,
+  rows: readonly ComposeRow[],
+): Promise<FlowGraph | undefined> {
+  const path = join(dirname(preset.path), PRESET_GRAPH_FILE)
+  let content: string
+  try {
+    content = await readFile(path, 'utf8')
+  } catch {
+    return undefined
+  }
+  if (Buffer.byteLength(content, 'utf8') > PRESET_GRAPH_MAX_BYTES) return undefined
+  // The parse boundary is the sanctioned cast point: the document was written
+  // by our own writer, and a shape mismatch is a stale-layout signal, not a
+  // failure the caller can act on.
+  const document = JSON.parse(content) as { formatVersion?: unknown; graph?: FlowGraph }
+  if (document.formatVersion !== PRESET_GRAPH_FORMAT_VERSION) return undefined
+  if (document.graph === undefined) return undefined
+  if (!graphRowsMatch(document.graph, rows)) return undefined
+  return document.graph
 }
 
 /**

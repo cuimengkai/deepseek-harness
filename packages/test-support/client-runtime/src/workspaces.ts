@@ -62,6 +62,25 @@ export class TestWorkspaces implements IWorkspaces {
   }
 
   /**
+   * Record the staged preset for the next connect (recorded; default no-op —
+   * the double always echoes the picked id back as the session, so no preset
+   * needs carrying).
+   * @param agentPreset - the staged preset id.
+   */
+  notePendingAgentPreset(agentPreset: string): void {
+    this.calls.push({ method: 'notePendingAgentPreset', args: [agentPreset] })
+    this.stubs.get('notePendingAgentPreset')?.(agentPreset)
+  }
+
+  /**
+   * Drop the staged preset without a connect (recorded; default no-op).
+   */
+  clearPendingAgentPreset(): void {
+    this.calls.push({ method: 'clearPendingAgentPreset', args: [] })
+    this.stubs.get('clearPendingAgentPreset')?.()
+  }
+
+  /**
    * New-session flow (recorded; stubbed behavior runs when installed).
    * @param workspaceId - optional explicit workspace target.
    */

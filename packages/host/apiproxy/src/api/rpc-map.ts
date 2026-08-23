@@ -9,6 +9,7 @@ import type { HostApi } from './host.ts'
 import type { WorkspaceApi } from './workspace.ts'
 import type { AgentPresetsApi } from './agent-presets.ts'
 import type { ProjectInsightApi } from './project-insight.ts'
+import type { FlowApi } from './flow.ts'
 import type { SkillsApi } from './skills.ts'
 import type { GoalsApi } from './goals.ts'
 import type { SettingsApi } from './settings.ts'
@@ -60,7 +61,17 @@ export interface RpcMethodMap {
   'agentPreset.openDocument': AgentPresetsApi['openDocument']
   'agentPreset.remove': AgentPresetsApi['remove']
   'agentPreset.compose': AgentPresetsApi['compose']
+  'agentPreset.readGraph': AgentPresetsApi['readGraph']
+  'agentPreset.saveGraph': AgentPresetsApi['saveGraph']
   'projectInsight.read': ProjectInsightApi['read']
+  'flow.list': FlowApi['list']
+  'flow.get': FlowApi['get']
+  'flow.save': FlowApi['save']
+  'flow.delete': FlowApi['delete']
+  'flow.run': FlowApi['run']
+  'flow.getRun': FlowApi['getRun']
+  'flow.listRuns': FlowApi['listRuns']
+  'flow.stop': FlowApi['stop']
   'goal.create': GoalsApi['create']
   'goal.edit': GoalsApi['edit']
   'goal.pause': GoalsApi['pause']

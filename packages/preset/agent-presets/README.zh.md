@@ -23,6 +23,8 @@
 - `ctx.agentPresets.read(id): Promise<string>` 某个 preset 的组装文本，与存储内容逐字一致。
 - `ctx.agentPresets.readRows(id): Promise<ComposeRow[]>` 某个 preset 的组装被解析为行结构，供需要渲染或编辑行、而非编辑 YAML 文本的调用方使用。
 - `ctx.agentPresets.compose(id, rows, meta?, { overwrite, assertResolvable }): Promise<void>` 从行结构写入组装，创建它或就地替换一个本地创作的 preset——面向浏览器的创作写入。它强制 preset 域自身的行不变量（行非空、每行一个插件模块、id 唯一），并通过必传的 `assertResolvable` 证明拒绝点名了未安装模块的行；由 wire 层提供基于 inventory 的检查，因此任何调用方都无法绕过。就地替换要求目标为 `user`——随部署提供的 preset 会被拒绝。
+- `ctx.agentPresets.composeGraph(id, graph, meta?, { overwrite, assertResolvable }): Promise<void>` 从 preset 组合图写入组装，创建它或就地替换一个本地创作的 preset——面向画布的创作写入。图是创作源头：每个 agent 节点的 `composition` 字段携带它所投射的行（`module` 加上可选的 `id`/`group`/`config`/`disabled`/`inject`），这里推导出要挂载的行、并按与 `compose()` 完全相同的方式校验，一次创作原语同时写出两个文件——由推导出的行生成 `agent.cordis.yml`、由按创作时的图生成其旁的 `agent.flow.json`。带 condition 或 loop 节点、带没有 `composition` 模块的 agent 节点、或带环的图，都会在任何写入之前被拒绝。
+- `ctx.agentPresets.readGraph(id): Promise<FlowGraph>` 某个 preset 的组装以图的形式返回。存储的 `agent.flow.json` 只在仍能精确投射出从组装文件解析到的行时才被采用——手改或旧版按行创作的写入获胜，否则这些行会被重新投射成一幅全新的链式图。没有图文件的旧 preset 在打开时重新生成。
 - `ctx.agentPresets.copy(from, id, name?): Promise<void>` 通过整目录复制一个既有 preset 来创建本地创作的 preset——整目录复制的创作写入。组装文本不经过这道接缝，因此副本与其来源同等可加载；复制出的元数据保留来源的描述、但绝不保留其名称与 roster 排序，`name`（或回退到 id）才是区分两行的依据。
 - `ctx.agentPresets.remove(id): Promise<void>` 删除一个本地创作的 preset；已加入的会话保留其常驻挂载。若用户默认值恰好指向刚删除的 preset 则一并清除：存一个尚不存在的默认值是刻意的，但本次删除的这个再也不会有人提供，留着会让所有未显式指定的新会话无法启动。
 
@@ -61,6 +63,14 @@ subagent 的子 agent 通过 `composeFrom()` 加入其父方的常驻组装，�
 - **未知的来源。** 来源可以是任何信任级别——复制随附 preset 正是主要用途——但必须存在；复制失败会回滚做到一半的目录，而不是留下一个 discovery 看不见的目录。
 
 复制出的目录树被收紧为仅属主可用（文件 `0o600` 并保留属主执行位，目录 `0o700`），符号链接被解引用以保证副本自包含，且根目录在首次复制时创建——部署配置了尚不存在的用户根目录，正是首次运行的正常状态。复制出的 `preset.yml` 会被重写：保留来源的描述供作者就地编辑，但丢弃其名称与 roster `order`——副本若与来源呈现得一模一样、或按随附集合声明的顺序排序，roster 就不再能区分它们。`remove()` 拒绝随部署提供的 preset；随附集合正是副本的已知良好起点。
+
+### 创作组合图
+
+画布把 preset 作为**组合图**来创作，一次写入同时提交两个文件：图投射出的行成为 `agent.cordis.yml`（挂载源，不变），图本身则落在其旁的 `agent.flow.json`，按创作时的节点 id、位置与边保存。图是组装的链式投影——`start` → 每行一个 agent 节点 → `end`，按挂载顺序——且每个 agent 节点的可选 `composition` 字段精确携带它对应的行（`{ module, id?, group?, config?, disabled?, inject? }`），因此投影回行是无损的，`compose()` 的行不变量原样适用。图的节点 id 是画布内部的；行的插件 id 就是 `composition.id` 所说的那个，没有它的行保持未设置。
+
+带 condition 或 loop 节点、带没有 `composition` 模块的 agent 节点、或带环的图都被拒绝——分支是流程引擎的后续阶段，不是 preset 域的事。存储属于 preset 且带版本：`agent.flow.json` 位于 `agent.cordis.yml` 旁，携带 `formatVersion` 1 与 256 KiB 上限，并与组装原子地写入，因此双文件写入只完成一半的状态永远不会成为持久状态。
+
+打开时，存储的图是布局缓存而非第二个真相。`readGraph()` 仅在 `graphToRows(stored)` 仍等于从 `agent.cordis.yml` 解析出的行时才返回它；否则从这些行重新投影出一幅全新的链式图，因此手改或旧版按行创作的写入获胜，没有图文件的旧 preset 也在打开时重新生成。
 
 ### preset 的各行如何解析
 
@@ -154,3 +164,4 @@ Indirectly, through the plugins a standing composition registers, which own ever
 - **健康是形状检查，不是挂载** —— 发现过程只证明组装能以加载器方言解析、由具名行组成，不证明每一行的模块都能解析并激活；引用不存在的包的行仍在第一个会话处失败，并回滚该会话的创建。
 - **副本是会漂移的快照** —— 升级部署不会更新随附 preset 的副本，本层也没有表达「standard 加一处改动」的 patch 语义（那是 bundle 层 `cordis.patch.yml` 的能力）；随附集合自己也接受同样的代价——`cordis` 与 `code` 就是 `standard` 的完整副本——换来整份组装在一个文件里可读。
 - **根目录扫描不做监听** —— 每次读取都实际访问文件系统，这让名单保持新鲜，但每次 `list()` 会对每个根目录产生一次 `readdir`。
+- **复制出的 preset 保留来源的组合图** —— `copy()` 是整目录复制，因此旁边的 `agent.flow.json` 的布局与 `name` 逐字随行，而 `preset.yml` 被重写；副本的图一直服务到该 preset 下次作为图被创作时。

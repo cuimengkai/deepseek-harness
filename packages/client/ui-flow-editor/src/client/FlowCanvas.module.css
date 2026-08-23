@@ -1,0 +1,107 @@
+.canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  /* The canvas owns pan and zoom gestures (pointer pan + wheel zoom), so
+     scrollbars are hidden and the view transform replaces them. Disable
+     browser touch pan/scroll so a node drag keeps firing pointermove instead
+     of being cancelled into a scroll. */
+  overflow: hidden;
+  touch-action: none;
+  background-color: var(--dsw-alias-bg-base);
+  background-image: radial-gradient(
+    circle,
+    var(--dsw-alias-separator-primary) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+.content {
+  position: relative;
+  transform-origin: 0 0;
+}
+
+.canvasHint {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  pointer-events: none;
+  user-select: none;
+}
+
+.edges {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.edgeGroup {
+  pointer-events: visibleStroke;
+}
+
+.edgeHit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+}
+
+.edgeStroke {
+  fill: none;
+  stroke: var(--dsw-alias-separator-primary);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.edgeSelected .edgeStroke {
+  stroke: var(--dsw-alias-brand-primary);
+  stroke-width: 3;
+}
+
+.edgeLabel {
+  fill: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.connectLine {
+  fill: none;
+  stroke: var(--dsw-alias-brand-primary);
+  stroke-width: 2;
+  stroke-dasharray: 6 4;
+  pointer-events: none;
+}
+
+.node {
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+  cursor: grab;
+  user-select: none;
+}
+
+.nodeSelected {
+  box-shadow: 0 0 0 1px var(--dsw-alias-brand-primary);
+}
+
+.port {
+  position: absolute;
+  right: -7px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 50%;
+  border: 2px solid var(--dsw-alias-bg-module-platform);
+  background: var(--dsw-alias-brand-primary);
+  cursor: crosshair;
+}
+
+.port:hover {
+  transform: scale(1.2);
+}

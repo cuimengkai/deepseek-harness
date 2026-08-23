@@ -360,7 +360,8 @@ describe('AgentRegistry factory seam', () => {
     const calls: {
       create: Array<{ ownerCtx: Context; options: CreateAgentOptions }>
       resume: Array<{ ownerCtx: Context; options: ResumeAgentOptions }>
-    } = { create: [], resume: [] }
+      dispose: SessionId[]
+    } = { create: [], resume: [], dispose: [] }
     const factory: AgentFactory = {
       async createAgent(ownerCtx, options) {
         calls.create.push({ ownerCtx, options })
@@ -369,6 +370,10 @@ describe('AgentRegistry factory seam', () => {
       async resume(ownerCtx, options) {
         calls.resume.push({ ownerCtx, options })
         return { agent: stubAgent(options.resumeSessionId), dispose: () => Promise.resolve() }
+      },
+      async disposeAgent(id) {
+        calls.dispose.push(id)
+        return false
       },
     }
     return { factory, calls }
@@ -389,6 +394,17 @@ describe('AgentRegistry factory seam', () => {
     }, { inject: ['agents'] }))
     expect(calls.create[0]?.ownerCtx.fiber).toBe(callerFiber)
     expect(calls.resume[0]?.ownerCtx.fiber).toBe(callerFiber)
+  })
+
+  it('disposeAgent delegates to the factory; false without a factory or an unknown id', async () => {
+    const ctx = new Context()
+    await ctx.plugin(AgentRegistry)
+    await expect(ctx.agents.disposeAgent(SessionId('s'))).resolves.toBe(false)
+
+    const { factory, calls } = stubFactory()
+    ctx.agents.setFactory(factory)
+    await expect(ctx.agents.disposeAgent(SessionId('s'))).resolves.toBe(false)
+    expect(calls.dispose).toEqual([SessionId('s')])
   })
 
   it('rejects a second factory and clears the slot with its owner (HMR)', async () => {
@@ -425,6 +441,9 @@ describe('AgentRegistry factory seam', () => {
       async resume(_ownerCtx: Context, options: ResumeAgentOptions) {
         this.calls().push('resume')
         return { agent: stubAgent(options.resumeSessionId), dispose: () => Promise.resolve() }
+      }
+      async disposeAgent() {
+        return false
       }
     }
     await ctx.plugin(TracedFactory)

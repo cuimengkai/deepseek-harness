@@ -27,7 +27,7 @@ The workflow's `meta` is host-provided data, not evaluated script text. The engi
 
 Inside the worker, the script receives `args` and these hooks:
 
-- `agent(prompt, { label, phase, schema, model })` starts one host-side subagent. With a schema it returns the structured value; otherwise it returns final text. An ordinary failed child yields `null`.
+- `agent(prompt, { label, phase, schema, model, modelKinds })` starts one host-side subagent. With a schema it returns the structured value; otherwise it returns final text. An ordinary failed child yields `null`. `modelKinds` binds model kinds to per-kind provider/model routes; the routes are forwarded into the child's `AgentOptions` but request routing does not consume them yet.
 - `parallel(thunks)` runs thunks under the configured concurrency limit.
 - `pipeline(items, ...stages)` passes `(previous, item, index)` without a cross-stage barrier.
 - `phase(title)` and `log(message)` emit observer narration.

@@ -47,10 +47,14 @@ import {
 import { skillListRequestSchema } from '../api/skills.schema.ts'
 import {
   agentPresetComposeRequestSchema, agentPresetCopyRequestSchema, agentPresetListRequestSchema,
-  agentPresetOpenDocumentRequestSchema, agentPresetReadRequestSchema, agentPresetRemoveRequestSchema,
-  agentPresetSelectRequestSchema,
+  agentPresetOpenDocumentRequestSchema, agentPresetReadGraphRequestSchema, agentPresetReadRequestSchema,
+  agentPresetRemoveRequestSchema, agentPresetSaveGraphRequestSchema, agentPresetSelectRequestSchema,
 } from '../api/agent-presets.schema.ts'
 import { projectInsightReadRequestSchema } from '../api/project-insight.schema.ts'
+import {
+  flowDeleteRequestSchema, flowGetRequestSchema, flowGetRunRequestSchema, flowListRequestSchema,
+  flowListRunsRequestSchema, flowRunRequestSchema, flowSaveRequestSchema, flowStopRequestSchema,
+} from '../api/flow.schema.ts'
 import {
   goalCreateRequestSchema,
   goalEditRequestSchema,
@@ -128,7 +132,17 @@ const UNARY_ROUTES: UnaryRoutes = {
   'agentPreset.openDocument': { schema: agentPresetOpenDocumentRequestSchema, invoke: (api, r, signal) => api.agentPresets.openDocument(r, signal) },
   'agentPreset.remove': { schema: agentPresetRemoveRequestSchema, invoke: (api, r) => api.agentPresets.remove(r) },
   'agentPreset.compose': { schema: agentPresetComposeRequestSchema, invoke: (api, r) => api.agentPresets.compose(r) },
+  'agentPreset.readGraph': { schema: agentPresetReadGraphRequestSchema, invoke: (api, r) => api.agentPresets.readGraph(r) },
+  'agentPreset.saveGraph': { schema: agentPresetSaveGraphRequestSchema, invoke: (api, r) => api.agentPresets.saveGraph(r) },
   'projectInsight.read': { schema: projectInsightReadRequestSchema, invoke: (api, r, signal) => api.projectInsight.read(r, signal) },
+  'flow.list': { schema: flowListRequestSchema, invoke: (api, r) => api.flow.list(r) },
+  'flow.get': { schema: flowGetRequestSchema, invoke: (api, r) => api.flow.get(r) },
+  'flow.save': { schema: flowSaveRequestSchema, invoke: (api, r) => api.flow.save(r) },
+  'flow.delete': { schema: flowDeleteRequestSchema, invoke: (api, r) => api.flow.delete(r) },
+  'flow.run': { schema: flowRunRequestSchema, invoke: (api, r, signal) => api.flow.run(r, signal) },
+  'flow.getRun': { schema: flowGetRunRequestSchema, invoke: (api, r) => api.flow.getRun(r) },
+  'flow.listRuns': { schema: flowListRunsRequestSchema, invoke: (api, r) => api.flow.listRuns(r) },
+  'flow.stop': { schema: flowStopRequestSchema, invoke: (api, r) => api.flow.stop(r) },
   'goal.create': { schema: goalCreateRequestSchema, invoke: (api, r) => api.goals.create(r) },
   'goal.edit': { schema: goalEditRequestSchema, invoke: (api, r) => api.goals.edit(r) },
   'goal.pause': { schema: goalPauseRequestSchema, invoke: (api, r) => api.goals.pause(r) },

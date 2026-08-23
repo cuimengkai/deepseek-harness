@@ -165,3 +165,37 @@ describe('Agent', () => {
     )
   })
 })
+
+describe('disposeAgent', () => {
+  it('drains a live created agent, clears both registries, and reports unknown ids as false', async () => {
+    const ctx = await harness(new MockAdapter([textResponse('ok')]))
+    const agent = ctx.agentLoop.create(SessionId('drop'), { provider: 'mock', model: 'mock' })
+    expect(ctx.agents.get(SessionId('drop'))).toBe(agent)
+    expect(ctx.sessions.get(SessionId('drop'))).toBe(agent.session)
+
+    await expect(ctx.agentLoop.disposeAgent(SessionId('drop'))).resolves.toBe(true)
+    expect(ctx.agents.get(SessionId('drop'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('drop'))).toBeUndefined()
+
+    // Unknown id and double-dispose both report false.
+    await expect(ctx.agentLoop.disposeAgent(SessionId('drop'))).resolves.toBe(false)
+    await expect(ctx.agentLoop.disposeAgent(SessionId('missing'))).resolves.toBe(false)
+
+    // The registry delegates to the loop factory.
+    await expect(ctx.agents.disposeAgent(SessionId('missing'))).resolves.toBe(false)
+  })
+
+  it('disposes an in-flight agent, draining the turn before returning', async () => {
+    const adapter = new MockAdapter(['hang'])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('busy'), { provider: 'mock', model: 'mock' })
+
+    send(agent, 'go')
+    await vi.waitFor(() => { expect(adapter.requests).toHaveLength(1) })
+
+    await expect(ctx.agents.disposeAgent(SessionId('busy'))).resolves.toBe(true)
+    expect(agent.status).toBe('idle')
+    expect(ctx.agents.get(SessionId('busy'))).toBeUndefined()
+    expect(ctx.sessions.get(SessionId('busy'))).toBeUndefined()
+  })
+})

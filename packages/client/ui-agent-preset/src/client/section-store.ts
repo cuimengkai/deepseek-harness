@@ -1,25 +1,33 @@
 /**
  * Agent-preset management controller: the roster as a list, a copy dialog as
- * one way a preset is created, a drag-and-drop composer as the other, and a
+ * one way a preset is created, a flow-graph composer as the other, and a
  * read-only canvas view over the shipped compositions.
  *
  * The browser writes no composition text. Creation is either a host-side copy
  * of an existing preset (`{ from, id, name? }` is all that crosses the wire) or
- * a validated ROW LIST the composer assembles — each row names an installed
- * plugin module, the host re-checks that against its own inventory, and an
- * overwrite is refused for presets that ship with the deployment. Everything
- * else happens in the preset's own files, which is why the page's other job is
- * getting the user TO those files: open the directory where the host has a
- * desktop, show its path where it does not.
+ * a validated COMPOSITION GRAPH the composer assembles — each agent node names
+ * an installed plugin module, the host re-checks that against its own inventory
+ * and derives the rows from the graph, and an overwrite is refused for presets
+ * that ship with the deployment. Everything else happens in the preset's own
+ * files, which is why the page's other job is getting the user TO those files:
+ * open the directory where the host has a desktop, show its path where it does
+ * not.
  *
  * The host stays the single fact source. Every mutation writes through the
  * wire and the page re-reads the roster afterwards, because a copy or a
  * composition changes more than the row it targeted.
  */
 
-import type { IApiClient, ComposeRow } from '@deepseek-ai/dsh-api-remotes/client'
+import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import {
+  cascadePosition, chainAddModule, chainAgents, chainMoveIndex, chainMoveNode,
+  chainRemoveNode, chainReorder, emptyChainGraph, graphLayoutEqual, graphRows,
+} from './preset-graph.ts'
 import { beginRosterRead, messageOf, writeDefaultPreset } from './settings-store.ts'
+
+export { rowIdFor } from './preset-graph.ts'
 
 /** Ids a preset directory may be named, mirroring the host's own rule. */
 const PRESET_ID = /^[a-z0-9][a-z0-9-]*$/
@@ -67,28 +75,29 @@ export interface PresetView {
   id: string
   /** Display name, for the composer head. */
   title: string
-  /** The composition's rows, in chain order. */
-  rows: ComposeRow[]
+  /** The composition's graph, as the host served it. */
+  graph: FlowGraph
 }
 
 /**
- * The drag-and-drop composer: an agent as a list of plugin rows. Editing an
- * existing user preset keeps the full wire rows (so a preserved `config` or
- * `disabled` survives an overwrite); rows added from the palette carry none.
+ * The flow-graph composer: an agent as a chain of plugin nodes on the canvas.
+ * Editing an existing user preset keeps the full graph (so a preserved `config`
+ * or `disabled` survives an overwrite); nodes added from the palette carry
+ * none.
  */
 export interface ComposeDraft {
   /** Target preset id; a free id creates, a roster id overwrites. */
   id: string
   /** Display name being typed; empty falls back to the id. */
   name: string
-  /** The composition being built, in display order. */
-  rows: ComposeRow[]
+  /** The composition graph being edited. */
+  graph: FlowGraph
   /** Whether the compose is in flight. */
   saving: boolean
   /** The last compose failure, cleared by the next edit. */
   error: string | null
   /** What the composer opened with, so an untouched draft disables Save. */
-  original: { id: string; name: string; rows: ComposeRow[] }
+  original: { id: string; name: string; graph: FlowGraph }
 }
 
 /**
@@ -140,7 +149,7 @@ export interface AgentPresetSectionState {
   copy: CopyDraft | null
   /** The open read-only viewer, or null. */
   view: PresetView | null
-  /** The open drag-and-drop composer, or null. */
+  /** The open flow-graph composer, or null. */
   composer: ComposeDraft | null
   /** The composer palette's last load; null while the composer is closed. */
   palette: ComposePalette | null
@@ -191,24 +200,6 @@ export function draftBlocker(
 }
 
 /**
- * Derive a composition row id from an installed module name: strip the
- * `@deepseek-ai/` and `dsh-` prefixes (so `@deepseek-ai/dsh-tool-bash` reads
- * as `tool-bash`), then append `-2`/`-3` until the id is free.
- * @param moduleName - the exact module specifier the row mounts.
- * @param rows - the rows already in the composition, for the conflict check.
- * @returns an id no row in the composition already uses.
- */
-export function rowIdFor(moduleName: string, rows: readonly ComposeRow[]): string {
-  const base = moduleName.replace(/^@deepseek-ai\//, '').replace(/^dsh-/, '')
-  const used = new Set(rows.map(row => row.id))
-  if (!used.has(base)) return base
-  for (let n = 2; ; n++) {
-    const candidate = `${base}-${String(n)}`
-    if (!used.has(candidate)) return candidate
-  }
-}
-
-/**
  * Derive a plugin module's display name from its specifier: strip any `@scope/`
  * prefix and the `dsh-`/`tool-` prefixes, then split on `-` and title-case each
  * word. A subpath keeps its `/` (`dsh-web-app/startup` → `Web App/Startup`); an
@@ -227,104 +218,21 @@ export function displayNameFor(moduleName: string): string {
 }
 
 /**
- * Insert a plugin module into the composition at a slot. A module already in
- * the composition is refused — one agent runs one instance of a plugin.
- * @param rows - the rows before the insertion.
- * @param moduleName - the module being dropped from the palette.
- * @param index - the slot it lands in, clamped to the list bounds.
- * @returns the rows with the new row inserted, or the same rows on a duplicate.
- */
-export function insertRowAt(rows: readonly ComposeRow[], moduleName: string, index: number): ComposeRow[] {
-  if (rows.some(row => row.name === moduleName)) return rows as ComposeRow[]
-  const next = [...rows]
-  next.splice(Math.min(Math.max(index, 0), rows.length), 0, {
-    id: rowIdFor(moduleName, rows),
-    name: moduleName,
-  })
-  return next
-}
-
-/**
- * Add a plugin module to the composition, at the end. A module already in the
- * composition is refused — one agent runs one instance of a plugin.
- * @param rows - the rows before the addition.
- * @param moduleName - the module being dragged in from the palette.
- * @returns the rows with the new row appended, or the same rows on a duplicate.
- */
-export function addRow(rows: readonly ComposeRow[], moduleName: string): ComposeRow[] {
-  return insertRowAt(rows, moduleName, rows.length)
-}
-
-/**
- * Remove a row from the composition.
- * @param rows - the rows before the removal.
- * @param id - the row id being removed.
- * @returns the rows without that id.
- */
-export function removeRow(rows: readonly ComposeRow[], id: string): ComposeRow[] {
-  return rows.filter(row => row.id !== id)
-}
-
-/**
- * Reorder the composition: move one row so it lands before the element
- * originally at `toIndex` (or at the end when `toIndex` is past the last one).
- * @param rows - the rows before the move.
- * @param fromIndex - the row being dragged.
- * @param toIndex - the target slot, clamped to the list bounds.
- * @returns the reordered rows, or the same rows when `fromIndex` is out of range.
- */
-export function moveRow(rows: readonly ComposeRow[], fromIndex: number, toIndex: number): ComposeRow[] {
-  if (fromIndex < 0 || fromIndex >= rows.length) return rows as ComposeRow[]
-  const next = [...rows]
-  // fromIndex was range-checked above, so the removal yields exactly one row.
-  const moved = next.splice(fromIndex, 1)[0]
-  if (moved === undefined) return rows as ComposeRow[]
-  next.splice(Math.min(Math.max(toIndex, 0), next.length), 0, moved)
-  return next
-}
-
-/**
- * Map a drop's coordinate along an axis to an insertion slot: before the first
- * element whose midpoint lies past the pointer on that axis, or at the end. The
- * axis is the caller's — the component measures either `rect.top + height/2`
- * (the old vertical list) or `rect.left + width/2` (the pipeline canvas).
- * @param point - the pointer's client coordinate along the axis at drop time.
- * @param midpoints - each element's midpoint along the same axis, in display order.
- * @returns the slot the dragged row lands in.
- */
-export function insertionIndexFor(point: number, midpoints: readonly number[]): number {
-  for (let i = 0; i < midpoints.length; i++) {
-    const midpoint = midpoints[i]
-    if (midpoint !== undefined && point < midpoint) return i
-  }
-  return midpoints.length
-}
-
-/** Whether two compositions differ in the fields the composer edits. */
-function rowsEqual(a: readonly ComposeRow[], b: readonly ComposeRow[]): boolean {
-  if (a.length !== b.length) return false
-  // a.length === b.length, so every index over `a` is defined in `b`.
-  return a.every((row, index) => {
-    const other = b[index]
-    return other !== undefined && row.id === other.id && row.name === other.name
-  })
-}
-
-/**
  * Whether the draft differs from what the composer opened with.
  * @param draft - the composer draft to compare.
- * @returns true when any edited field differs from the original.
+ * @returns true when any edited field — the id, name, composition, or layout —
+ * differs from the original.
  */
 export function composeDirty(draft: ComposeDraft): boolean {
   const { original } = draft
   return draft.id !== original.id
     || draft.name !== original.name
-    || !rowsEqual(draft.rows, original.rows)
+    || !graphLayoutEqual(draft.graph, original.graph)
 }
 
 /**
  * Why this composition cannot be saved yet, as a locale key, or undefined when
- * it can. Client-side only: the host re-checks the id, the row structure, and
+ * it can. Client-side only: the host re-checks the id, the graph's rows, and
  * module installability, and its answer is what the composer reports.
  * @param draft - the open composer.
  * @param rows - the roster, for the create/id-collision check.
@@ -336,7 +244,7 @@ export function composeBlocker(
 ): 'idRequired' | 'idInvalid' | 'noRows' | 'idTaken' | 'unchanged' | undefined {
   if (draft.id === '') return 'idRequired'
   if (!PRESET_ID.test(draft.id)) return 'idInvalid'
-  if (draft.rows.length === 0) return 'noRows'
+  if (graphRows(draft.graph).length === 0) return 'noRows'
   if (!composeDirty(draft)) return 'unchanged'
   // A create must not land on an id the roster already supplies. Editing an
   // existing preset keeps its own id (which is on the roster by definition),
@@ -360,7 +268,7 @@ export function handoffBlocker(
 ): 'idRequired' | 'idInvalid' | 'noRows' | 'idTaken' | undefined {
   if (draft.id === '') return 'idRequired'
   if (!PRESET_ID.test(draft.id)) return 'idInvalid'
-  if (draft.rows.length === 0) return 'noRows'
+  if (graphRows(draft.graph).length === 0) return 'noRows'
   if (draft.original.id !== draft.id && rows.some(row => row.id === draft.id)) return 'idTaken'
   return undefined
 }
@@ -408,7 +316,7 @@ export class AgentPresetSectionController {
       this.set({ palette: { status: 'ready', modules } })
     } catch {
       // The palette is an offering, not a gate: an edit already in the
-      // composer keeps its rows, and only new drags lose the list.
+      // composer keeps its graph, and only new drags lose the list.
       this.set({ palette: { status: 'unavailable', modules: [] } })
     }
   }
@@ -454,13 +362,13 @@ export class AgentPresetSectionController {
     this.set({ error: null, copy: null, composer: null })
     void this.loadPalette()
     try {
-      const response = await this.api.agentPresets.read({ agentPreset: id })
+      const response = await this.api.agentPresets.readGraph({ agentPreset: id })
       if (!response.result.ok) {
         this.set({ error: response.result.error.message })
         return
       }
-      const { name, rows } = response.result.value
-      this.set({ view: { id, title: name ?? id, rows: [...rows] } })
+      const { name, graph } = response.result.value
+      this.set({ view: { id, title: name ?? id, graph } })
     } catch (error) {
       this.set({ error: messageOf(error) })
     }
@@ -472,36 +380,39 @@ export class AgentPresetSectionController {
   }
 
   /**
-   * Open the drag-and-drop composer. A null id starts a new preset from an
-   * empty composition; an id opens that preset's rows for in-place editing.
+   * Open the flow-graph composer. A null id starts a new preset from an empty
+   * chain graph; an id opens that preset's graph for in-place editing.
    * Either way the palette starts loading and any other overlay closes.
    * @param id - the user preset to edit, or null to create.
-   * @returns once an existing preset's rows loaded or the failure is on the page.
+   * @returns once an existing preset's graph loaded or the failure is on the page.
    */
   async beginCompose(id: string | null): Promise<void> {
     this.set({ error: null, copy: null, view: null, palette: { status: 'loading', modules: [] } })
     void this.loadPalette()
     if (id === null) {
-      this.set({ composer: { id: '', name: '', rows: [], saving: false, error: null, original: { id: '', name: '', rows: [] } } })
+      const graph = emptyChainGraph('', '')
+      this.set({
+        composer: { id: '', name: '', graph, saving: false, error: null, original: { id: '', name: '', graph } },
+      })
       return
     }
     const row = this.store.getSnapshot().rows.find(candidate => candidate.id === id)
     try {
-      const response = await this.api.agentPresets.read({ agentPreset: id })
+      const response = await this.api.agentPresets.readGraph({ agentPreset: id })
       if (!response.result.ok) {
         this.set({ error: response.result.error.message })
         return
       }
-      const { name, rows } = response.result.value
+      const { name, graph } = response.result.value
       const title = name ?? row?.name ?? id
       this.set({
         composer: {
           id,
           name: title,
-          rows: [...rows],
+          graph,
           saving: false,
           error: null,
-          original: { id, name: title, rows: [...rows] },
+          original: { id, name: title, graph },
         },
       })
     } catch (error) {
@@ -532,51 +443,98 @@ export class AgentPresetSectionController {
   }
 
   /**
-   * Add a plugin to the composition from the palette. A module already in the
-   * composition is refused (see {@link addRow}).
-   * @param moduleName - the module dragged in.
+   * Add a plugin module to the composition from the palette's click path. A
+   * module already in the composition is refused (see {@link chainAddModule}).
+   * @param moduleName - the module being added.
+   * @returns the new node's canvas id, or undefined when refused.
    */
-  addRow(moduleName: string): void {
+  addRow(moduleName: string): string | undefined {
     const composer = this.store.getSnapshot().composer
-    if (composer === null) return
-    this.patchComposer({ rows: addRow(composer.rows, moduleName), error: null })
+    if (composer === null) return undefined
+    const added = chainAddModule(composer.graph, moduleName, cascadePosition(chainAgents(composer.graph).length))
+    if (added === undefined) return undefined
+    this.patchComposer({ graph: added.graph, error: null })
+    return added.nodeId
   }
 
   /**
-   * Insert a plugin into the composition from the palette at a slot. A module
-   * already in the composition is refused (see {@link insertRowAt}).
-   * @param moduleName - the module dropped onto the canvas.
-   * @param index - the slot it lands in.
+   * Add a plugin module to the composition from the palette's drop path, at
+   * the graph position it landed on. A module already in the composition is
+   * refused (see {@link chainAddModule}).
+   * @param moduleName - the module being dropped.
+   * @param position - the graph position the node lands at.
+   * @returns the new node's canvas id, or undefined when refused.
    */
-  insertRowAt(moduleName: string, index: number): void {
+  addNodeAt(moduleName: string, position: { x: number; y: number }): string | undefined {
     const composer = this.store.getSnapshot().composer
-    if (composer === null) return
-    this.patchComposer({ rows: insertRowAt(composer.rows, moduleName, index), error: null })
+    if (composer === null) return undefined
+    const added = chainAddModule(composer.graph, moduleName, position)
+    if (added === undefined) return undefined
+    this.patchComposer({ graph: added.graph, error: null })
+    return added.nodeId
   }
 
   /**
-   * Remove one row from the composition.
-   * @param id - the row id being removed.
+   * Remove one node from the composition by its composition row id — the
+   * inspector's remove, which knows the row, not the canvas node id.
+   * @param rowId - the row id (`composition.id`, falling back to the module).
    */
-  removeRow(id: string): void {
+  removeRow(rowId: string): void {
     const composer = this.store.getSnapshot().composer
     if (composer === null) return
-    this.patchComposer({ rows: removeRow(composer.rows, id), error: null })
+    const node = chainAgents(composer.graph).find(agent =>
+      (agent.composition?.id ?? agent.composition?.module) === rowId)
+    if (node === undefined) return
+    this.patchComposer({ graph: chainRemoveNode(composer.graph, node.id), error: null })
   }
 
   /**
-   * Reorder the composition in place.
-   * @param fromIndex - the row being dragged.
+   * Remove one node from the composition by its canvas id — the delete key.
+   * @param nodeId - the canvas node id being removed.
+   */
+  removeNode(nodeId: string): void {
+    const composer = this.store.getSnapshot().composer
+    if (composer === null) return
+    this.patchComposer({ graph: chainRemoveNode(composer.graph, nodeId), error: null })
+  }
+
+  /**
+   * Reorder the composition in place by chain index — the inspector's move
+   * buttons, which know the position, not the canvas node id.
+   * @param fromIndex - the agent node being moved.
    * @param toIndex - where it lands.
    */
   moveRow(fromIndex: number, toIndex: number): void {
     const composer = this.store.getSnapshot().composer
     if (composer === null) return
-    this.patchComposer({ rows: moveRow(composer.rows, fromIndex, toIndex), error: null })
+    this.patchComposer({ graph: chainMoveIndex(composer.graph, fromIndex, toIndex), error: null })
   }
 
   /**
-   * Save the composition, re-read the roster, and announce the directory
+   * Move one node's canvas position — the drag gesture.
+   * @param nodeId - the node being dragged.
+   * @param position - the new graph position.
+   */
+  moveNode(nodeId: string, position: { x: number; y: number }): void {
+    const composer = this.store.getSnapshot().composer
+    if (composer === null) return
+    this.patchComposer({ graph: chainMoveNode(composer.graph, nodeId, position), error: null })
+  }
+
+  /**
+   * Reorder the composition so one node runs right after another — the connect
+   * gesture.
+   * @param fromNodeId - the node the dragged port came from.
+   * @param toNodeId - the node being moved after it.
+   */
+  reorderNode(fromNodeId: string, toNodeId: string): void {
+    const composer = this.store.getSnapshot().composer
+    if (composer === null) return
+    this.patchComposer({ graph: chainReorder(composer.graph, fromNodeId, toNodeId), error: null })
+  }
+
+  /**
+   * Save the composition graph, re-read the roster, and announce the directory
    * change. A free id creates the preset; an id already on the roster
    * overwrites it in place.
    * @returns true when the composition saved, false when it was blocked,
@@ -589,9 +547,11 @@ export class AgentPresetSectionController {
     this.patchComposer({ saving: true, error: null })
     try {
       const name = draft.name.trim()
-      const response = await this.api.agentPresets.compose({
+      const response = await this.api.agentPresets.saveGraph({
         agentPreset: draft.id,
-        rows: draft.rows,
+        // The graph is stored beside the preset it belongs to, so its own id
+        // follows the target rather than the id the draft opened under.
+        graph: { ...draft.graph, id: draft.id },
         ...name === '' ? {} : { name },
         overwrite: this.store.getSnapshot().rows.some(row => row.id === draft.id),
       })

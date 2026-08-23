@@ -40,15 +40,18 @@
       - text: Bash tool Bash command tool
       - code: "@deepseek-ai/dsh-tool-bash"
       - text: 已添加
-- text: 开始 Bash
-- code: "@deepseek-ai/dsh-tool-bash"
-- text: Bash command tool
-- 'button "移除: @deepseek-ai/dsh-tool-bash"': ×
+- img
+- text: 开始
+- button "把该节点接到此节点之后"
+- text: 结束
+- button "把该节点接到此节点之后"
 - text: Str Replace Editor
 - code: "@deepseek-ai/dsh-tool-str-replace-editor"
-- text: String-replace file editor tool
-- 'button "移除: @deepseek-ai/dsh-tool-str-replace-editor"': ×
-- text: 结束
+- button "把该节点接到此节点之后"
+- text: Bash
+- code: "@deepseek-ai/dsh-tool-bash"
+- button "把该节点接到此节点之后"
+- text: 把插件拖入画布；从节点端口拖到另一个节点以调整顺序；Delete 删除。
 - alert: 请填写标识符。
 - button "让 Agent 帮我搭建/完善" [disabled]
 - button "取消"

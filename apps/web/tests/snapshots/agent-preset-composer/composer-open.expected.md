@@ -39,7 +39,12 @@
     - listitem "拖入组合":
       - text: Str Replace Editor tool String-replace file editor tool
       - code: "@deepseek-ai/dsh-tool-str-replace-editor"
-- paragraph: 把插件拖到这里
+- img
+- text: 开始
+- button "把该节点接到此节点之后"
+- text: 结束
+- button "把该节点接到此节点之后"
+- text: 把插件拖入画布；从节点端口拖到另一个节点以调整顺序；Delete 删除。
 - paragraph: 保存后交给「创造模式」搭建或完善。
 - alert: 请填写标识符。
 - button "让 Agent 帮我搭建/完善" [disabled]

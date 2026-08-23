@@ -523,6 +523,9 @@ describe('ConversationRoot resident composer', () => {
     expect(selectWorkspace).toHaveBeenCalledWith(wid('second'))
     expect(b.view.queryByText('Selected Folder')).toBeNull()
     expect(b.view.getByText('one')).toBeTruthy()
+    // The failure is surfaced, not swallowed: the failed pick shows an alert
+    // under the hero row instead of looking like it did nothing.
+    expect(b.view.getByRole('alert').textContent).toContain('打开工作区失败：connect failed')
   })
 
   it('blank session keeps the interactive picker chip (workspace switchable until the first message)', () => {

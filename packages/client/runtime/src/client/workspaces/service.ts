@@ -55,6 +55,15 @@ export class WorkspaceRuntime implements IWorkspaces {
   private readonly manager: WorkspaceManager
   /** In-flight blank-session connects keyed by workspace (reuse or create). */
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
+  /**
+   * Agent preset staged by the new-session hero for the session the next
+   * connect produces. The seat applies its stage to an already-current blank
+   * session immediately; this records the same choice so a connect that then
+   * CREATES a different session (a different workspace pick) carries it on the
+   * create arm, instead of the new session opening on the deployment default.
+   * Cleared by the connect that consumes it (create sends, reuse discards).
+   */
+  private pendingAgentPreset: string | undefined
   /** Guards the runtime-owned one-shot initial-selection subscription. */
   private initialSelectionStarted = false
 
@@ -96,6 +105,10 @@ export class WorkspaceRuntime implements IWorkspaces {
     // would miss the reuse scan and mint another hidden blank session.
     const inflight = this.connecting.get(workspaceId)
     if (inflight !== undefined) return inflight
+    // The staged preset binds to whichever session this connect lands on: a
+    // fresh create carries it in the wire payload; a reused blank was already
+    // composed by the seat's immediate apply (or the list-change applier).
+    const agentPreset = this.takePendingAgentPreset()
     // Reuse requires workspace membership (id in sessionIds AND same
     // canonical cwd — the host's own membership rule), never cwd alone:
     // a cwd match can belong to no account (sessions the CLI/TUI birthed at
@@ -117,10 +130,37 @@ export class WorkspaceRuntime implements IWorkspaces {
         })
       }
     }
-    const attempt = this.sessions.create({ workspaceId })
+    const attempt = this.sessions.create({
+      workspaceId,
+      ...(agentPreset === undefined ? {} : { agentPreset }),
+    })
       .finally(() => { this.connecting.delete(workspaceId) })
     this.connecting.set(workspaceId, attempt)
     return attempt
+  }
+
+  /**
+   * Record the agent preset staged for the session the next connect produces.
+   * @param agentPreset - the staged preset id.
+   */
+  notePendingAgentPreset(agentPreset: string): void {
+    this.pendingAgentPreset = agentPreset
+  }
+
+  /**
+   * Drop the staged preset without a connect. The seat calls this when its
+   * stage settles — applied, dropped as unservable, or rejected — so a stale
+   * preset never rides a later unrelated connect.
+   */
+  clearPendingAgentPreset(): void {
+    this.pendingAgentPreset = undefined
+  }
+
+  /** Read and clear the staged preset; only the create arm consumes it. */
+  private takePendingAgentPreset(): string | undefined {
+    const staged = this.pendingAgentPreset
+    this.pendingAgentPreset = undefined
+    return staged
   }
 
   /**

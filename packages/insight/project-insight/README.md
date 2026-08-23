@@ -20,7 +20,7 @@ The `./tool` entry registers `scan_project` into an agent preset's tools layer. 
 
 ## Model Experience
 
-The develop preset's persona directs the model to call `scan_project` on first workspace entry and again after significant file changes. The returned summary names modules, components, and top dependencies the model uses to locate files; the full document is never sent to the model.
+Indirectly, through the `scan_project` tool it registers: the develop persona directs calls on first entry and after significant changes, and the returned module/component summary guides file location while the full document stays off the wire.
 
 #### KV Cache effect
 

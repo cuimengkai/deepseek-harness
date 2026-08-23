@@ -98,6 +98,9 @@ async function harness(
     async resume() {
       throw new Error('test harness has no persisted sessions')
     },
+    async disposeAgent() {
+      return false
+    },
   }
   ctx.agents.setFactory(factory)
   // Structural picker fake: the gateway only reads capability(); a stable

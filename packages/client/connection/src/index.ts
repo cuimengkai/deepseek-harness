@@ -90,11 +90,12 @@ const PRIVILEGED_METHODS = new Set([
   // A preset composition names the plugins a session runs, so reading one is
   // reconnaissance; copy, compose, and remove rearrange what the deployment
   // offers, and openDocument drives the host desktop — all more than the roster
-  // beside them. (Authoring is rows-only: no method here accepts composition
-  // text or a path, and the Host validates a rows payload three ways — the
-  // inventory proof that every named module is installed, the preset domain's
-  // row invariants, and a user-authored overwrite target — so the pin is about
-  // who may manage the roster at all.)
+  // beside them. (Authoring carries structure, never composition text or a
+  // path: a rows payload, or a graph whose agent nodes project those rows, and
+  // the Host validates it three ways — the inventory proof that every named
+  // module is installed, the preset domain's row invariants, and a
+  // user-authored overwrite target — so the pin is about who may manage the
+  // roster at all.)
   //
   // CHOOSING one is not pinned, and `agentPreset.list` is not either. Picking a
   // preset looks like escalation — one of them mounts the toolset that edits the
@@ -105,16 +106,28 @@ const PRIVILEGED_METHODS = new Set([
   // any caller that may start a session at all can already run commands as this
   // process. Pinning the switch would be a fence beside an open gate.
   'agentPreset.read',
+  'agentPreset.readGraph',
   'agentPreset.copy',
   'agentPreset.openDocument',
   'agentPreset.remove',
   'agentPreset.compose',
+  'agentPreset.saveGraph',
   // Reading a stored workspace document resolves the project root from the
   // payload cwd and walks the tree for the freshness check — reconnaissance,
   // the same posture as the authoring methods above. The browser never
   // triggers a scan through this pin: the host-plane auto-scan hook owns
   // that, and a fresh read just forwards the committed document.
   'projectInsight.read',
+  // The four flow store methods resolve the project root from the payload cwd
+  // and read/write `.dsh/flows` under it — project files, the same posture as
+  // projectInsight.read. The four run methods (flow.run/getRun/listRuns/stop)
+  // are deliberately NOT here: they address the flow engine's in-memory run
+  // surface by run id, and `flow.run` compiles an already-browser-authored
+  // graph without touching the project tree.
+  'flow.list',
+  'flow.get',
+  'flow.save',
+  'flow.delete',
   'host.pickDirectory',
   'host.openPath',
   'settings.describe',

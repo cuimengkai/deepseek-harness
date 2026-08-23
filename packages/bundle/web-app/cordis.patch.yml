@@ -320,6 +320,26 @@
     - id: ui-project-insight
       name: '@deepseek-ai/dsh-client-ui-project-insight'
 
+    # The flow canvas: one conversation view entry (order 15) that authors,
+    # runs, and watches branching agent flows through the host flow engine
+    # (the `flow` host row below). Sessions whose composition lacks the engine
+    # render a read-only notice.
+    - id: ui-flow-editor
+      name: '@deepseek-ai/dsh-client-ui-flow-editor'
+
+    # The flow ENGINE (a host-plane service, not a preset row) runs every `flow.*`
+    # RPC's graph through `workflowEngine`, which the base composition's enabled
+    # `workflow-worker-thread` row provides. It stays on the host plane: all eight
+    # flow RPCs resolve `ctx.get('flowEngine')` on the host, six of them
+    # session-less. Listed inside this insert because a patch row must target an
+    # existing id — inserted rows append behind the base tree, so the engine
+    # still mounts after `workflow-worker-thread`, which it resolves through
+    # `ctx.get` at construction (mirrors examples/flow-demo ordering). The
+    # session's own workflow tool still comes from its preset's `tool-workflow`
+    # row; this host engine is a separate realm.
+    - id: flow
+      name: '@deepseek-ai/dsh-flow'
+
 # ── the agent plane moves behind agent presets ─────────────────────────────
 #
 # Every row below composes what ONE agent contributes to the host registries:
@@ -435,9 +455,6 @@
 # singleton rather than a tool this agent calls, and the setup list is not
 # scope-aware — one copy per mounted preset means every child gets `report`
 # registered once per live session, which throws on the second.
-
-- id: workflow-worker-thread
-  disabled: true
 
 - id: tool-workflow
   disabled: true

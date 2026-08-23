@@ -4,6 +4,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import type {} from '@deepseek-ai/dsh-session/context'
 import { mkdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname } from 'node:path'
@@ -15,6 +16,13 @@ import type {} from '@deepseek-ai/dsh-agent-presets/types'
 // Type-only: brings the `ctx.projectInsight` service merge into this program
 // (read is served over the optional `ctx.get('projectInsight')` boundary).
 import type {} from '@deepseek-ai/dsh-project-insight'
+// Type-only: brings the `ctx.flowEngine` service merge into this program
+// (the run surface is served over the optional `ctx.get('flowEngine')`
+// boundary; the flow engine is host-plane, so a composition without it fails
+// `flow.*` calls with flow-unavailable rather than at load).
+import type {} from '@deepseek-ai/dsh-flow'
+import { FlowError } from '@deepseek-ai/dsh-flow'
+import { FlowRunId } from '@deepseek-ai/dsh-flow/types'
 // Type-only: brings the `ctx.pluginInventory` service merge into this program
 // (the gateway is a Typert remote, but the compose handler proves installed
 // modules against its in-process projection, not over the wire).
@@ -313,6 +321,8 @@ async function buildModelCatalog(ctx: Context): Promise<{
           id: model.id,
           name: model.name,
           ...model.description === undefined ? {} : { description: model.description },
+          ...resolved.inputModalities === undefined ? {} : { inputModalities: [...resolved.inputModalities] },
+          ...resolved.kinds === undefined ? {} : { kinds: [...resolved.kinds] },
           ...reasoning === undefined ? {} : { reasoning },
         }
       }))
@@ -988,6 +998,41 @@ function presetError(agentPreset: string, error: unknown): RpcError {
   return { code: 'internal', message: `agent preset "${agentPreset}": ${String(error)}`, details: {} }
 }
 
+/**
+ * Map one flow-engine failure onto its wire code. The flow-id and run-id
+ * details echo the payload of the failing operation; only the callers that can
+ * hit those codes pass the corresponding id, so the `?? ''` fallback is
+ * unreachable (get/delete always hold the flow id, stop always the run id).
+ */
+function flowError(error: unknown, ids: { flowId?: string; runId?: string } = {}): RpcError {
+  if (error instanceof FlowError) {
+    switch (error.code) {
+      case 'FLOW_NOT_FOUND':
+        return { code: 'flow-not-found', message: error.message, details: { flowId: ids.flowId ?? '' } }
+      case 'FLOW_VERSION':
+        return { code: 'flow-version', message: error.message, details: { flowId: ids.flowId ?? '' } }
+      case 'FLOW_RUN_NOT_FOUND':
+        return { code: 'flow-run-not-found', message: error.message, details: { runId: ids.runId ?? '' } }
+      case 'FLOW_INVALID':
+        return { code: 'flow-invalid', message: error.message, details: {} }
+      case 'FLOW_CAP':
+        return { code: 'flow-cap', message: error.message, details: {} }
+      case 'FLOW_ENGINE_ABSENT':
+        return { code: 'flow-unavailable', message: error.message, details: {} }
+    }
+  }
+  return { code: 'internal', message: `flow: ${String(error)}`, details: {} }
+}
+
+/** The flow engine is absent from this composition. */
+function flowUnavailable(): RpcError {
+  return {
+    code: 'flow-unavailable',
+    message: 'flow engine is absent: this deployment does not mount @deepseek-ai/dsh-flow in its composition',
+    details: {},
+  }
+}
+
 class AgentPresetConflict extends Error {
   constructor(
     readonly sessionId: SessionId,
@@ -1087,7 +1132,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
    */
   const presetSwitches = new Map<SessionId, Promise<unknown>>()
   /** Client-chosen identity creation/resume, deduplicated across concurrent retries. */
-  const sessionCreations = new Map<SessionId, Promise<Agent>>()
+  const sessionCreations = new Map<SessionId, Promise<{ agent: Agent; effectiveRequest: string | undefined }>>()
   /** Serializes path ownership and explicit title checks with Workspace mutations. */
   let workspaceCreationChain = Promise.resolve()
   const pendingQuestions = new Map<RpcId, PendingQuestion>()
@@ -1584,6 +1629,43 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
     checkPersistedIdentity: boolean,
     presetId?: string,
   ): Promise<Agent> {
+    /**
+     * Create the fresh session's agent, falling back to the deployment default
+     * when a REQUESTED preset cannot resolve or mount. Only the fresh-create
+     * arm uses this fallback: a workspace pick that named a bad preset still
+     * opens the workspace (on the default composition) instead of hard-failing
+     * the create. Adoption and resume never reach here — they compose the
+     * preset the session already runs, and a bad stored composition keeps
+     * refusing loud so its owner can repair it.
+     */
+    async function createFreshAgent(id: string | undefined): Promise<{ agent: Agent; fellBack: boolean }> {
+      const attempt = async (target: string | undefined): Promise<Agent> => {
+        const composition = await composeAgent(target)
+        return (await ctx.agents.create({
+          sessionId,
+          agentOptions: agentOptions(),
+          meta: {
+            cwd,
+            ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
+          },
+          setup: composition.setup,
+        })).agent
+      }
+      if (id === undefined) return { agent: await attempt(undefined), fellBack: false }
+      try {
+        return { agent: await attempt(id), fellBack: false }
+      } catch (error: unknown) {
+        // `UnknownPresetError` from resolve, `PresetMountError` from setup's
+        // mount: either makes the pick's named preset unservable, and the
+        // create rolled back cleanly (a setup rejection publishes neither id),
+        // so retrying the default is safe. The fallback is reported so the
+        // caller can compare the yielded agent against what the create ACTUALLY
+        // honored rather than the unservable request.
+        if (!(error instanceof UnknownPresetError || error instanceof PresetMountError)) throw error
+        return { agent: await attempt(undefined), fellBack: true }
+      }
+    }
+
     let creation = sessionCreations.get(sessionId)
     if (creation === undefined) {
       creation = (async () => {
@@ -1592,7 +1674,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         if (attached !== undefined && hasSubagentOwner(attached, live)) {
           throw new SubagentSessionOwnership(sessionId)
         }
-        if (live !== undefined) return live
+        if (live !== undefined) return { agent: live, effectiveRequest: presetId }
 
         const persistence = checkPersistedIdentity ? ctx.get('sessionPersistence') : undefined
         const stored = persistence === undefined
@@ -1617,11 +1699,14 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           // session's history was produced under that composition, and
           // rebuilding it differently would replay tool calls the model can no
           // longer make.
-          return (await ctx.agents.resume({
-            resumeSessionId: sessionId,
-            agentOptions: agentOptions(),
-            setup: (await composeAgent(storedPreset)).setup,
-          })).agent
+          return {
+            agent: (await ctx.agents.resume({
+              resumeSessionId: sessionId,
+              agentOptions: agentOptions(),
+              setup: (await composeAgent(storedPreset)).setup,
+            })).agent,
+            effectiveRequest: presetId,
+          }
         }
 
         try {
@@ -1629,23 +1714,21 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         } catch (error: unknown) {
           throw new Error(`failed to ensure project directory "${cwd}": ${String(error)}`, { cause: error })
         }
-        const composition = await composeAgent(presetId)
-        return (await ctx.agents.create({
-          sessionId,
-          agentOptions: agentOptions(),
-          meta: {
-            cwd,
-            ...composition.agentPreset === undefined ? {} : { agentPreset: composition.agentPreset },
-          },
-          setup: composition.setup,
-        })).agent
+        const fresh = await createFreshAgent(presetId)
+        return {
+          agent: fresh.agent,
+          // A fallback composed the deployment default, so the effective
+          // request is empty: the gate must not reject the fallback result as
+          // a requested-preset mismatch.
+          effectiveRequest: fresh.fellBack ? undefined : presetId,
+        }
       })().catch((error: unknown) => {
         // Another Host entry path may have published the same identity while
         // this operation crossed an asynchronous persistence/filesystem step.
         const live = ctx.agents.get(sessionId)
         if (live !== undefined) {
           if (hasSubagentOwner(live.session, live)) throw new SubagentSessionOwnership(sessionId)
-          return live
+          return { agent: live, effectiveRequest: presetId }
         }
         const attached = ctx.sessions.get(sessionId)
         if (attached !== undefined && hasSubagentOwner(attached, undefined)) {
@@ -1657,12 +1740,16 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       })
       sessionCreations.set(sessionId, creation)
     }
-    const agent = await creation
+    const { agent, effectiveRequest } = await creation
     if (hasSubagentOwner(agent.session, agent)) throw new SubagentSessionOwnership(sessionId)
     // Beside the cwd check for the same reason, and after the await so it
     // covers every path that yields a live agent — freshly created, adopted
     // live, resumed from disk, or recovered by the concurrent-creation catch.
-    assertPresetUnchanged(sessionId, presetId, resolveSessionPreset(agent.session))
+    // Compared against the effective request (what the create actually
+    // honored): a fresh fallback composed the deployment default, so its gate
+    // compares against nothing the request named instead of rejecting the
+    // fallback result.
+    assertPresetUnchanged(sessionId, effectiveRequest, resolveSessionPreset(agent.session))
     if (agent.session.header.cwd !== cwd) {
       throw new SessionCwdConflict(sessionId, cwd, agent.session.header.cwd)
     }
@@ -3135,6 +3222,30 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         }
       },
 
+      // Graph authoring is privileged for the same reason rows authoring is
+      // (see PRIVILEGED_METHODS in dsh-client-connection): the graph's agent
+      // nodes name the plugins a session runs, and the payload carries graph
+      // structure, never composition text or a path. The read mirrors `read` —
+      // same trust class — while the stored layout is a cache the service
+      // regenerates when it no longer projects the composition.
+      async readGraph(request) {
+        const { agentPreset } = request.payload
+        const presets = ctx.get('agentPresets')
+        if (presets === undefined) return err(request, noRoster(agentPreset))
+        try {
+          const preset = await presets.resolve(agentPreset)
+          return ok(request, {
+            agentPreset: preset.id,
+            trust: preset.trust,
+            graph: await presets.readGraph(preset.id),
+            ...preset.name === undefined ? {} : { name: preset.name },
+            ...preset.description === undefined ? {} : { description: preset.description },
+          })
+        } catch (error: unknown) {
+          return err(request, presetError(agentPreset, error))
+        }
+      },
+
       async copy(request) {
         const { from, agentPreset, name } = request.payload
         const presets = ctx.get('agentPresets')
@@ -3219,6 +3330,43 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           return err(request, presetError(agentPreset, error))
         }
       },
+
+      // Graph authoring is privileged for the same reason rows authoring is
+      // (see PRIVILEGED_METHODS in dsh-client-connection): the payload is graph
+      // structure, never composition text or a path, and the rows are derived
+      // from the graph's agent nodes before the same three-way validation as
+      // `compose` — the inventory proof that every named module is installed,
+      // the preset domain's own row invariants, and (for `overwrite`) a
+      // user-authored target. A deployment without the inventory can prove
+      // nothing, so saveGraph refuses rather than write blind.
+      async saveGraph(request) {
+        const { agentPreset, graph, name, description, overwrite } = request.payload
+        const presets = ctx.get('agentPresets')
+        if (presets === undefined) return err(request, noRoster(agentPreset))
+        const inventory = ctx.get('pluginInventory')
+        if (inventory === undefined) {
+          return err(request, {
+            code: 'internal',
+            message: 'this deployment mounts no plugin inventory, so a composition cannot be proven to name installed plugins',
+            details: {},
+          })
+        }
+        const installed = new Set(inventory.list().entries.map(entry => entry.moduleName))
+        try {
+          await presets.composeGraph(agentPreset, graph, {
+            ...name === undefined ? {} : { name },
+            ...description === undefined ? {} : { description },
+          }, {
+            overwrite: overwrite ?? false,
+            assertResolvable: (composed: readonly ComposeRow[]): readonly string[] =>
+              composed.filter(row => row.group !== true).map(row => row.name)
+                .filter(moduleName => !installed.has(moduleName)),
+          })
+          return ok(request, { agentPreset })
+        } catch (error: unknown) {
+          return err(request, presetError(agentPreset, error))
+        }
+      },
     },
 
     projectInsight: {
@@ -3252,6 +3400,106 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             message: `project-insight read failed: ${error instanceof Error ? error.message : String(error)}`,
             details: {},
           })
+        }
+      },
+    },
+
+    flow: {
+      // The four store methods read/write `.dsh/flows` under the payload cwd
+      // — project files, so they are privileged (see PRIVILEGED_METHODS in
+      // dsh-client-connection). The four run methods address the flow engine's
+      // in-memory run surface; `run` resolves the session's agent as the
+      // parent of every child. The engine is host-plane, so a composition
+      // without it fails every method with flow-unavailable rather than
+      // failing the whole proxy at load.
+      async list(request) {
+        const flowEngine = ctx.get('flowEngine')
+        if (flowEngine === undefined) return err(request, flowUnavailable())
+        try {
+          return ok(request, { flows: await flowEngine.list(request.payload.cwd) })
+        } catch (error: unknown) {
+          return err(request, flowError(error))
+        }
+      },
+      async get(request) {
+        const flowEngine = ctx.get('flowEngine')
+        if (flowEngine === undefined) return err(request, flowUnavailable())
+        try {
+          return ok(request, await flowEngine.get(request.payload.cwd, request.payload.id))
+        } catch (error: unknown) {
+          return err(request, flowError(error, { flowId: request.payload.id }))
+        }
+      },
+      async save(request) {
+        const flowEngine = ctx.get('flowEngine')
+        if (flowEngine === undefined) return err(request, flowUnavailable())
+        try {
+          await flowEngine.save(request.payload.cwd, request.payload.graph)
+          return ok(request, { id: request.payload.graph.id })
+        } catch (error: unknown) {
+          return err(request, flowError(error, { flowId: request.payload.graph.id }))
+        }
+      },
+      async delete(request) {
+        const flowEngine = ctx.get('flowEngine')
+        if (flowEngine === undefined) return err(request, flowUnavailable())
+        try {
+          await flowEngine.delete(request.payload.cwd, request.payload.id)
+          return ok(request, {})
+        } catch (error: unknown) {
+          return err(request, flowError(error, { flowId: request.payload.id }))
+        }
+      },
+      async run(request, signal) {
+        const flowEngine = ctx.get('flowEngine')
+        if (flowEngine === undefined) return err(request, flowUnavailable())
+        // Cold-resolves the session's agent so its history runs under the
+        // composition it was produced with — the same posture every generic
+        // entry point (prompt, models, commands) uses.
+        const found = await agentFor(request.payload.sessionId)
+        if ('error' in found) return err(request, found.error)
+        try {
+          const { runId } = flowEngine.run({
+            graph: request.payload.graph,
+            parent: found.agent,
+            ...(request.payload.input === undefined ? {} : { input: request.payload.input }),
+            ...(signal === undefined ? {} : { signal }),
+          })
+          return ok(request, { runId })
+        } catch (error: unknown) {
+          if (isAborted(signal)) {
+            return err(request, { code: 'cancelled', message: 'flow run was aborted before starting', details: {} })
+          }
+          return err(request, flowError(error, { flowId: request.payload.graph.id }))
+        }
+      },
+      async getRun(request) {
+        const flowEngine = ctx.get('flowEngine')
+        if (flowEngine === undefined) return err(request, flowUnavailable())
+        try {
+          const run = flowEngine.getRun(FlowRunId(request.payload.runId))
+          return ok(request, { run: run ?? null })
+        } catch (error: unknown) {
+          return err(request, flowError(error, { runId: request.payload.runId }))
+        }
+      },
+      async listRuns(request) {
+        const flowEngine = ctx.get('flowEngine')
+        if (flowEngine === undefined) return err(request, flowUnavailable())
+        try {
+          return ok(request, { runs: flowEngine.listRuns(request.payload.flowId) })
+        } catch (error: unknown) {
+          return err(request, flowError(error))
+        }
+      },
+      async stop(request) {
+        const flowEngine = ctx.get('flowEngine')
+        if (flowEngine === undefined) return err(request, flowUnavailable())
+        try {
+          flowEngine.stop(FlowRunId(request.payload.runId))
+          return ok(request, {})
+        } catch (error: unknown) {
+          return err(request, flowError(error, { runId: request.payload.runId }))
         }
       },
     },

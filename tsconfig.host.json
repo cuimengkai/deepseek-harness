@@ -287,6 +287,7 @@
     { "path": "./packages/workflow/workflow" },
     { "path": "./packages/workflow/workflow-worker-thread" },
     { "path": "./packages/workflow/tool-workflow" },
+    { "path": "./packages/workflow/flow" },
     { "path": "./packages/workflow/tool-ralph" },
     { "path": "./packages/todo/tool-todo" },
     { "path": "./packages/plan/plan-mode" },

@@ -4,6 +4,7 @@
  */
 
 import { isDeepStrictEqual } from 'node:util'
+import type {} from '@deepseek-ai/dsh-session/context'
 import { FiberState } from '@deepseek-ai/cordis'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, PreStepDecision } from '@deepseek-ai/dsh-agent'

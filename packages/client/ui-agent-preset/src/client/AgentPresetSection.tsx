@@ -54,14 +54,28 @@ export interface AgentPresetSectionInjected {
   setComposerId: (id: string) => void
   /** Name the composed preset's display name. */
   setComposerName: (name: string) => void
-  /** Add a plugin module to the composition from the palette. */
-  addRow: (moduleName: string) => void
-  /** Insert a plugin module into the composition at a slot. */
-  insertRowAt: (moduleName: string, index: number) => void
-  /** Remove one row from the composition. */
+  /**
+   * Add a plugin module to the composition from the palette's click path.
+   * Returns the new node's canvas id, or undefined when the module is already
+   * composed, so the caller can select it.
+   */
+  addRow: (moduleName: string) => string | undefined
+  /**
+   * Add a plugin module to the composition from the palette's drop path, at
+   * the graph position it landed on. Returns the new node's canvas id, or
+   * undefined when the module is already composed.
+   */
+  addNodeAt: (moduleName: string, position: { x: number; y: number }) => string | undefined
+  /** Remove one row from the composition, by its row id (or module name). */
   removeRow: (rowId: string) => void
-  /** Reorder the composition. */
+  /** Remove one node from the composition by its canvas id (the delete key). */
+  removeNode: (nodeId: string) => void
+  /** Reorder the composition by chain index. */
   moveRow: (from: number, to: number) => void
+  /** Move one node's canvas position (the drag gesture). */
+  moveNode: (nodeId: string, position: { x: number; y: number }) => void
+  /** Reorder the composition so one node runs right after another (connect). */
+  reorderNode: (fromNodeId: string, toNodeId: string) => void
   /**
    * Save the composition. Resolves true when it saved, false when it was
    * blocked or failed, so a caller can chain a follow-up on success.
@@ -257,9 +271,12 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
             setComposerId: props.setComposerId,
             setComposerName: props.setComposerName,
             addRow: props.addRow,
-            insertRowAt: props.insertRowAt,
+            addNodeAt: props.addNodeAt,
             removeRow: props.removeRow,
+            removeNode: props.removeNode,
             moveRow: props.moveRow,
+            moveNode: props.moveNode,
+            reorderNode: props.reorderNode,
             confirmCompose: props.confirmCompose,
             // The handoff leaves settings with the new session, exactly as the
             // old creator button did.
@@ -273,8 +290,8 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
   }
 
   // A shipped preset opens as the same design page an edit shows, but
-  // read-only: its rows are the known-good composition a copy starts from, so
-  // the canvas explains the chain without any edit affordance. The roster it
+  // read-only: its composition graph is the known-good one a copy starts from,
+  // so the canvas explains the chain without any edit affordance. The roster it
   // views is the workspace, not context to keep on screen.
   if (state.view !== null) {
     const view = state.view
@@ -286,10 +303,10 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
     const draft: ComposeDraft = {
       id: view.id,
       name: title,
-      rows: view.rows,
+      graph: view.graph,
       saving: false,
       error: null,
-      original: { id: view.id, name: title, rows: view.rows },
+      original: { id: view.id, name: title, graph: view.graph },
     }
     return (
       <div className={`${css.section} ${css.sectionComposer}`}>
@@ -301,15 +318,22 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
           t={t}
           actions={{
             // Read-only renders none of the edit controls, so only the close
-            // action is reachable; the rest stay as inert stubs so a read-only
-            // path cannot mutate a shipped composition by accident.
+            // action (and, on an authoring deployment, the copy handoff) is
+            // reachable; the rest stay as inert stubs so a read-only path
+            // cannot mutate a shipped composition by accident.
             closeComposer: props.closeView,
+            ...(state.authorable
+              ? { onEdit: () => { props.closeView(); props.beginCopy(view.id) } }
+              : {}),
             setComposerId: () => {},
             setComposerName: () => {},
-            addRow: () => {},
-            insertRowAt: () => {},
+            addRow: () => undefined,
+            addNodeAt: () => undefined,
             removeRow: () => {},
+            removeNode: () => {},
             moveRow: () => {},
+            moveNode: () => {},
+            reorderNode: () => {},
             confirmCompose: () => Promise.resolve(false),
           }}
         />

@@ -10,7 +10,7 @@
 
 ## 模型体验
 
-不直接涉及：标签渲染已提交文档，绝不触及模型。`projectInsight.read` RPC 读取项目文件但不产生任何模型输入，此处也不拥有任何提示词段、persona 或工具。
+无——标签渲染已提交文档，绝不触及模型；`projectInsight.read` RPC 读取项目文件但不产生任何模型输入。
 
 #### KV Cache 影响
 

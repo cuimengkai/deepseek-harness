@@ -72,6 +72,19 @@ export class AgentPresetSeatController {
      * refresh. Optional: a harness that renders no list omits it.
      */
     private readonly onApplied?: (sessionId: string, agentPreset: string) => void,
+    /**
+     * Report every staged pick to the workspace connect, so a pick that then
+     * creates a different session carries the preset instead of the new
+     * session opening on the deployment default.
+     */
+    private readonly onStage?: (agentPreset: string) => void,
+    /**
+     * Report that the stage settled — applied, dropped as unservable, or
+     * rejected — so the workspace can drop the pending preset it recorded for
+     * the next connect. A settled stage must not ride a later unrelated
+     * connect.
+     */
+    private readonly onStageSettled?: () => void,
   ) {}
 
   private set(patch: Partial<AgentPresetSeatState>): void {
@@ -133,6 +146,7 @@ export class AgentPresetSeatController {
   stage(id: string, introduce = false): void {
     this.staged = id
     this.set({ current: id, error: null, introduce })
+    this.onStage?.(id)
   }
 
   /** Acknowledge the introduction cue once the chip has played it. */
@@ -156,12 +170,14 @@ export class AgentPresetSeatController {
     // host refuses the swap, so the stage is no longer meaningful.
     if (!session.blank || session.agentPreset === staged) {
       this.staged = undefined
+      this.onStageSettled?.()
       return
     }
     this.set({ busy: true, error: null })
     try {
       const response = await this.api.agentPresets.select({ sessionId: session.id, agentPreset: staged })
       this.staged = undefined
+      this.onStageSettled?.()
       if (!response.result.ok) {
         this.set({ busy: false, error: response.result.error.message, current: this.fallback })
         return
@@ -171,6 +187,7 @@ export class AgentPresetSeatController {
       this.onApplied?.(session.id, response.result.value.agentPreset)
     } catch (error) {
       this.staged = undefined
+      this.onStageSettled?.()
       this.set({ busy: false, error: messageOf(error), current: this.fallback })
     }
   }

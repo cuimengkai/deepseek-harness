@@ -43,6 +43,9 @@
       "path": "../../insight/project-insight"
     },
     {
+      "path": "../../workflow/flow"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {

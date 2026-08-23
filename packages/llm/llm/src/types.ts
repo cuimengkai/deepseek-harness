@@ -158,6 +158,24 @@ export interface ModelModalityMap {
 export type ModelModality = ModelModalityMap[keyof ModelModalityMap]
 
 /**
+ * Merge-extensible model-role vocabulary: what KIND of output a model is for,
+ * distinct from {@link ModelModality} (what input content it accepts). A
+ * vision-capable chat model is kind `text` with modality `text`+`image`; an
+ * image generator is kind `image`; a speech model is kind `audio`; a vectorizer
+ * is kind `embedding`. Catalog surfaces use kinds to group, label, and bind
+ * models to request roles.
+ */
+export interface ModelKindMap {
+  text: 'text'
+  image: 'image'
+  audio: 'audio'
+  embedding: 'embedding'
+}
+
+/** Any declared model kind. */
+export type ModelKind = ModelKindMap[keyof ModelKindMap]
+
+/**
  * One provider route an adapter plugin can activate through configuration,
  * whether or not the route is currently registered. Configuration surfaces
  * merge this directory with `listProviders()` to offer every configurable
@@ -227,6 +245,10 @@ export interface LlmDiscoveredModel {
   contextWindow?: number
   /** Maximum output tokens, when disclosed. */
   maxTokens?: number
+  /** Accepted request modalities, when the endpoint discloses them. */
+  inputModalities?: readonly ModelModality[]
+  /** Model roles this entry can serve, when the endpoint discloses them. */
+  kinds?: readonly ModelKind[]
 }
 
 /** One adapter-discovered model; catalog membership is advisory, not request validation. */
@@ -241,6 +263,11 @@ export interface LlmModelInfo {
   description?: string
   /** Accepted request modalities; absent means unknown, while an explicit omission is negative capability. */
   inputModalities?: readonly ModelModality[]
+  /**
+   * Model roles this entry can serve, in adapter-preferred order; absent means
+   * unknown, while catalog surfaces treat absence as the text-only default.
+   */
+  kinds?: readonly ModelKind[]
 }
 
 /** Provider-owned context capacity for one exact provider/model route. */

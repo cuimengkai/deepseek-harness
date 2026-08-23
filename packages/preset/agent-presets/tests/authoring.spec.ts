@@ -19,8 +19,10 @@ import Include, { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import * as yaml from 'js-yaml'
 import { beforeEach, describe, expect, it } from 'vitest'
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
 import AgentPresets, {
   ComposeModuleError, COMPOSITION_FILE, copyComposition, METADATA_FILE, parseComposition,
+  PRESET_GRAPH_FILE, PRESET_GRAPH_MAX_BYTES,
 } from '@deepseek-ai/dsh-agent-presets'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
@@ -480,5 +482,187 @@ describe('composing a preset from rows', () => {
 describe('parsing a composition document', () => {
   it('refuses a non-list document', () => {
     expect(() => parseComposition('name: not-a-list\n')).toThrow(/not a top-level list/)
+  })
+})
+
+describe('composing a preset from a graph', () => {
+  const GRAPH: FlowGraph = {
+    id: 'graph-composed', name: 'Graph name',
+    nodes: [
+      { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+      {
+        id: 'agent-1', type: 'agent', position: { x: 220, y: 0 }, prompt: '',
+        composition: { id: 'persona', module: '@deepseek-ai/dsh-persona', config: { text: 'base' } },
+      },
+      {
+        id: 'agent-2', type: 'agent', position: { x: 440, y: 0 }, prompt: '',
+        composition: { id: 'bash', module: '@deepseek-ai/dsh-tool-bash' },
+      },
+      { id: 'end', type: 'end', position: { x: 660, y: 0 } },
+    ],
+    edges: [
+      { id: 'e-start', from: 'start', to: 'agent-1' },
+      { id: 'e-1', from: 'agent-1', to: 'agent-2' },
+      { id: 'e-end', from: 'agent-2', to: 'end' },
+    ],
+  }
+
+  it('writes rows and the companion graph the read returns unchanged', async () => {
+    await ctx.agentPresets.composeGraph('graph-composed', GRAPH, { name: 'Graph name' },
+      { overwrite: false, assertResolvable: () => [] })
+
+    expect(await ctx.agentPresets.readRows('graph-composed')).toEqual([
+      { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'base' } },
+      { id: 'bash', name: '@deepseek-ai/dsh-tool-bash' },
+    ])
+    expect(await ctx.agentPresets.readGraph('graph-composed')).toEqual(GRAPH)
+    // The companion file sits beside the composition, mode-matched to it.
+    expect(existsSync(join(userRoot, 'graph-composed', PRESET_GRAPH_FILE))).toBe(true)
+  })
+
+  it('publishes meta.name as the stored graph name so the roster and canvas agree', async () => {
+    await ctx.agentPresets.composeGraph('graph-named', GRAPH, { name: 'Roster name' },
+      { overwrite: false, assertResolvable: () => [] })
+    expect((await ctx.agentPresets.readGraph('graph-named')).name).toBe('Roster name')
+    expect((await ctx.agentPresets.list()).find(preset => preset.id === 'graph-named'))
+      .toMatchObject({ name: 'Roster name' })
+  })
+
+  it('readGraph regenerates a chain graph for a rows-composed preset with no companion file', async () => {
+    await ctx.agentPresets.compose('plain', [
+      { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'base' } },
+      { id: 'bash', name: '@deepseek-ai/dsh-tool-bash' },
+    ], undefined, { overwrite: false, assertResolvable: () => [] })
+
+    const graph = await ctx.agentPresets.readGraph('plain')
+    expect(graph.nodes.map(node => node.type)).toEqual(['start', 'agent', 'agent', 'end'])
+    expect(graph.nodes[1]).toMatchObject({
+      id: 'agent-1',
+      composition: { id: 'persona', module: '@deepseek-ai/dsh-persona' },
+    })
+    expect(graph.edges.map(edge => [edge.from, edge.to])).toEqual([
+      ['start', 'agent-1'], ['agent-1', 'agent-2'], ['agent-2', 'end'],
+    ])
+  })
+
+  it('readGraph regenerates when the composition no longer matches the stored layout', async () => {
+    await ctx.agentPresets.composeGraph('stale', GRAPH, undefined,
+      { overwrite: false, assertResolvable: () => [] })
+    // A later rows-based edit wins over the stored layout.
+    await ctx.agentPresets.compose('stale', [
+      { id: 'only', name: '@deepseek-ai/dsh-persona', config: { text: 'edited' } },
+    ], undefined, { overwrite: true, assertResolvable: () => [] })
+
+    const graph = await ctx.agentPresets.readGraph('stale')
+    expect(graph.nodes.filter(node => node.type === 'agent')).toHaveLength(1)
+    expect(graph.nodes[1]).toMatchObject({
+      id: 'agent-1',
+      composition: { id: 'only', module: '@deepseek-ai/dsh-persona' },
+    })
+  })
+
+  it('refuses a condition or loop node before any write', async () => {
+    const graph: FlowGraph = {
+      ...GRAPH,
+      nodes: [
+        ...GRAPH.nodes.slice(0, 2),
+        { id: 'cond', type: 'condition', position: { x: 440, y: 0 }, expression: 'true' },
+        { id: 'end', type: 'end', position: { x: 660, y: 0 } },
+      ],
+      edges: [
+        { id: 'e-start', from: 'start', to: 'agent-1' },
+        { id: 'e-true', from: 'agent-1', to: 'cond' },
+        { id: 'e-end', from: 'cond', to: 'end' },
+      ],
+    }
+    await expect(ctx.agentPresets.composeGraph('branch', graph, undefined,
+      { overwrite: false, assertResolvable: () => [] })).rejects.toThrow(/branching is a later phase/)
+    expect(existsSync(join(userRoot, 'branch'))).toBe(false)
+  })
+
+  it('refuses an agent node without a composition module', async () => {
+    const graph: FlowGraph = {
+      ...GRAPH,
+      nodes: [
+        { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+        { id: 'agent-1', type: 'agent', position: { x: 220, y: 0 }, prompt: 'plain prompt' },
+        { id: 'end', type: 'end', position: { x: 440, y: 0 } },
+      ],
+      edges: [
+        { id: 'e-start', from: 'start', to: 'agent-1' },
+        { id: 'e-end', from: 'agent-1', to: 'end' },
+      ],
+    }
+    await expect(ctx.agentPresets.composeGraph('no-comp', graph, undefined,
+      { overwrite: false, assertResolvable: () => [] })).rejects.toThrow(/without a composition module/)
+    expect(existsSync(join(userRoot, 'no-comp'))).toBe(false)
+  })
+
+  it('refuses a cyclic graph', async () => {
+    const graph: FlowGraph = {
+      ...GRAPH,
+      nodes: [
+        { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+        {
+          id: 'a', type: 'agent', position: { x: 220, y: 0 }, prompt: '',
+          composition: { id: 'persona', module: '@deepseek-ai/dsh-persona' },
+        },
+        {
+          id: 'b', type: 'agent', position: { x: 440, y: 0 }, prompt: '',
+          composition: { id: 'bash', module: '@deepseek-ai/dsh-tool-bash' },
+        },
+        { id: 'end', type: 'end', position: { x: 660, y: 0 } },
+      ],
+      edges: [
+        { id: 'e1', from: 'a', to: 'b' },
+        { id: 'e2', from: 'b', to: 'a' },
+      ],
+    }
+    await expect(ctx.agentPresets.composeGraph('cyclic', graph, undefined,
+      { overwrite: false, assertResolvable: () => [] })).rejects.toThrow(/acyclic/)
+    expect(existsSync(join(userRoot, 'cyclic'))).toBe(false)
+  })
+
+  it('refuses an uninstalled module through the resolvability proof', async () => {
+    const graph: FlowGraph = {
+      ...GRAPH,
+      nodes: [
+        { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+        {
+          id: 'agent-1', type: 'agent', position: { x: 220, y: 0 }, prompt: '',
+          composition: { id: 'p', module: '@deepseek-ai/dsh-missing' },
+        },
+        { id: 'end', type: 'end', position: { x: 440, y: 0 } },
+      ],
+      edges: [
+        { id: 'e-start', from: 'start', to: 'agent-1' },
+        { id: 'e-end', from: 'agent-1', to: 'end' },
+      ],
+    }
+    await expect(ctx.agentPresets.composeGraph('missing', graph, undefined,
+      { overwrite: false, assertResolvable: () => ['@deepseek-ai/dsh-missing'] }))
+      .rejects.toThrow(ComposeModuleError)
+    expect(existsSync(join(userRoot, 'missing'))).toBe(false)
+  })
+
+  it('refuses a graph document beyond the size cap and leaves nothing behind', async () => {
+    const huge = { ...GRAPH, name: 'x'.repeat(PRESET_GRAPH_MAX_BYTES) }
+    await expect(ctx.agentPresets.composeGraph('huge', huge, undefined,
+      { overwrite: false, assertResolvable: () => [] })).rejects.toThrow(/exceeds the \d+-byte cap/)
+    expect(existsSync(join(userRoot, 'huge'))).toBe(false)
+  })
+
+  it('refuses to overwrite a shipped preset and to create over an occupied id', async () => {
+    await expect(ctx.agentPresets.composeGraph('standard', GRAPH, undefined,
+      { overwrite: true, assertResolvable: () => [] })).rejects.toThrow(/only a locally authored preset may be overwritten/)
+    await seedPreset(userRoot, 'mine', {})
+    await expect(ctx.agentPresets.composeGraph('mine', GRAPH, undefined,
+      { overwrite: false, assertResolvable: () => [] })).rejects.toThrow(/already exists/)
+  })
+
+  it('readGraph regenerates a chain for a shipped preset with no companion file', async () => {
+    const graph = await ctx.agentPresets.readGraph('standard')
+    expect(graph.nodes[0]).toMatchObject({ id: 'start', type: 'start' })
+    expect(graph.nodes.filter(node => node.type === 'agent').length).toBeGreaterThan(0)
   })
 })

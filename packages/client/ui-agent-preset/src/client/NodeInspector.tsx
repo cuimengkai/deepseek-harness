@@ -1,8 +1,8 @@
 /**
- * The composer's inspector: details for the selected pipeline node. The canvas
- * floats it out over the workspace only while a node is selected; the palette
- * always carries reorder and remove actions, so the inspector is where the
- * full description, row id, and those same actions live on demand.
+ * The composer's inspector: details for the selected flow node. The canvas
+ * floats it out over the workspace only while a node is selected, so the
+ * inspector is where the full description, row id, and the reorder and remove
+ * actions live on demand.
  */
 
 import type { ReactNode } from 'react'
@@ -21,7 +21,7 @@ export interface NodeInspectorProps {
   module: PaletteModule | undefined
   canMoveUp: boolean
   canMoveDown: boolean
-  /** Remove the selected row. */
+  /** Remove the selected node, by its row id or the module name when none was set. */
   onRemove: (id: string) => void
   /** Move the selected row one slot; -1 up, +1 down. */
   onMove: (delta: -1 | 1) => void
@@ -80,8 +80,7 @@ export function NodeInspector(props: NodeInspectorProps): ReactNode {
               <Button
                 variant="outline"
                 className={css.deleteConfirm}
-                disabled={row.id === undefined}
-                onClick={() => { if (row.id !== undefined) onRemove(row.id) }}
+                onClick={() => { onRemove(row.id ?? row.name) }}
               >
                 {t('removeRow')}
               </Button>

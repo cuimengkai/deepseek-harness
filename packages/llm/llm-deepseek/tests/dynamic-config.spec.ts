@@ -160,7 +160,7 @@ describe('request-level dynamic configuration', () => {
       models: [{ id: 'settings-model', name: 'From Settings', inputModalities: ['text', 'image'] }],
     })
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'settings-model', name: 'From Settings', inputModalities: ['text', 'image'] },
+      { provider: 'deepseek-official', id: 'settings-model', name: 'From Settings', inputModalities: ['text', 'image'], kinds: ['text'] },
     ])
   })
 
@@ -226,7 +226,7 @@ describe('request-level dynamic configuration', () => {
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toHaveLength(3)
     await ctx.settings.update(NS, { models: [{ id: 'recovered' }] })
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'recovered', name: 'recovered', inputModalities: ['text'] },
+      { provider: 'deepseek-official', id: 'recovered', name: 'recovered', inputModalities: ['text'], kinds: ['text'] },
     ])
   })
 

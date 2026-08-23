@@ -46,6 +46,13 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     return page.locator('[data-settings-page]')
   }
 
+  /** The flow canvas's drop surface: the `.canvas` element behind the view
+   * content. The view content carries the data-view attributes; the surface
+   * that owns the drop handlers is its parent. */
+  function canvas(): Locator {
+    return settingsPage().locator('[data-view-x]').locator('xpath=..')
+  }
+
   /** Native HTML5 drag of a palette card into the empty canvas slot. */
   async function dragOnto(source: Locator, target: Locator): Promise<void> {
     const from = await source.boundingBox()
@@ -125,22 +132,23 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     // dialog holding the raw YAML.
     await settings.getByRole('heading', { name: '查看 · 标准模式' }).waitFor({ timeout: 10_000 })
     await settings.getByRole('heading', { name: '组合', exact: true }).waitFor({ timeout: 10_000 })
-    await settings.locator('[data-row-id="persona"]').waitFor({ timeout: 10_000 })
+    await settings.locator('[data-node-id="agent-1"]').waitFor({ timeout: 10_000 })
 
-    // The whole shipped chain is on the canvas, first row to last.
-    const rows = await settings.locator('[data-row-id]').evaluateAll(
-      nodes => nodes.map(node => node.getAttribute('data-row-id') as string),
-    )
-    expect(rows.length).toBeGreaterThan(1)
-    expect(rows[0]).toBe('persona')
+    // The whole shipped chain is on the canvas, first row to last. The rows
+    // carry canvas-internal node ids, so the proof is the first node card
+    // naming the first row's module and the agent-node count.
+    const agentNodes = settings.locator('[data-node-id^="agent-"]')
+    expect(await agentNodes.count()).toBeGreaterThan(1)
+    expect(await agentNodes.first().textContent()).toMatch(/persona/i)
 
     // Read-only means exactly that: no palette to drag from, no id/name fields,
-    // no save, and the nodes neither drag nor offer a remove control.
+    // no save, and no connect ports (the port render is gated on the
+    // read-only flag).
     expect(await settings.getByPlaceholder('搜索插件').count()).toBe(0)
     expect(await settings.getByRole('textbox').count()).toBe(0)
     expect(await settings.getByRole('button', { name: '保存' }).count()).toBe(0)
-    expect(await settings.locator('[data-row-id]').first().getAttribute('draggable')).toBe('false')
-    expect(await settings.getByRole('button', { name: /^移除:/ }).count()).toBe(0)
+    expect(await settings.getByRole('button', { name: '把该节点接到此节点之后' }).count()).toBe(0)
+    expect(await settings.getByRole('button', { name: '移除' }).count()).toBe(0)
 
     // Back returns to the roster. The composer's back button carries its own
     // aria-label, distinct from the settings chrome's text-only 返回 button.
@@ -285,8 +293,8 @@ describe('web e2e: agent-preset authoring is a host-side copy', () => {
     await settings.getByRole('heading', { name: '新建 Agent' }).waitFor({ timeout: 10_000 })
     await settings.getByPlaceholder('搜索插件').fill('str-replace-editor')
     await settings.getByText(STR_REPLACE).waitFor({ timeout: 10_000 })
-    await dragOnto(settings.getByText(STR_REPLACE), settings.getByText('把插件拖到这里'))
-    await settings.locator('[data-row-id="tool-str-replace-editor"]').waitFor({ timeout: 10_000 })
+    await dragOnto(settings.getByText(STR_REPLACE), canvas())
+    await settings.locator('[data-node-id="agent-1"]').waitFor({ timeout: 10_000 })
     await settings.getByPlaceholder('my-agent').fill('my-agent')
     await settings.getByRole('button', { name: '让 Agent 帮我搭建/完善' }).click()
 

@@ -34,6 +34,10 @@ import type { CommandDescriptor, CommandExecution, CommandResult } from '@deepse
 // (no Node runtime), so the fixture names a wire document without importing the
 // scanner into the browser bundle.
 import type { ProjectInsightDoc } from '@deepseek-ai/dsh-project-insight/src/schema.ts'
+// Type-only from the flow types subpath: the graph vocabulary is pure types
+// (browser-safe), so the fixture names a wire graph without importing the
+// flow engine's host runtime.
+import type { FlowGraph, FlowRunSnapshot } from '@deepseek-ai/dsh-flow/types'
 import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session/surface'
 import type {
   ApiProxy, ClientRequest, ClientResponse, HistoryEntry, HostFrame, MuxFrame, RpcReceipt,
@@ -1569,6 +1573,84 @@ const FIXTURE_INSIGHT_DOC: ProjectInsightDoc = {
   },
 }
 
+/** The flow graph the flows pane fixture serves: a small acyclic start →
+ * condition → agent → end graph exercising the branch surface so the canvas
+ * renders real nodes and edges. Typed as the graph vocabulary so the wire
+ * literals stay narrow against the contract unions. */
+const FIXTURE_FLOW_GRAPH: FlowGraph = {
+  id: 'fixture-flow',
+  name: 'Fixture Flow',
+  description: 'A small deterministic graph for the flows pane.',
+  nodes: [
+    { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+    { id: 'check', type: 'condition', position: { x: 140, y: 0 }, expression: 'args?.go === true' },
+    { id: 'work', type: 'agent', position: { x: 280, y: 0 }, prompt: 'Summarize the input' },
+    { id: 'end', type: 'end', position: { x: 420, y: 0 } },
+  ],
+  edges: [
+    { id: 'e1', from: 'start', to: 'check' },
+    { id: 'e2', from: 'check', to: 'work', label: 'true' },
+    { id: 'e3', from: 'check', to: 'end', label: 'false' },
+    { id: 'e4', from: 'work', to: 'end' },
+  ],
+}
+
+/** A settled run of the fixture flow, as the runs pane serves it. */
+const FIXTURE_FLOW_RUN: FlowRunSnapshot = {
+  runId: 'fixture-flow-run',
+  flowId: 'fixture-flow',
+  flowName: 'Fixture Flow',
+  status: 'completed',
+  stopReason: 'completed',
+  agentsStarted: 1,
+  nodeStatuses: { start: 'done', check: 'done', work: 'done', end: 'done' },
+}
+
+/**
+ * One fixture preset's composition rows projected to a chain graph: `start` →
+ * one agent node per row (carrying the row's composition) → `end`, laid out
+ * left to right. The host projects the same shape from the same rows, so the
+ * graph composer renders a composed preset faithfully without a graph file.
+ */
+function fixtureGraphFromRows(
+  rows: RequestPayload<'agentPreset.compose'>['rows'],
+  id: string,
+  name: string,
+): FlowGraph {
+  const agents = rows.map((row, index) => ({
+    id: `agent-${index + 1}`,
+    type: 'agent' as const,
+    position: { x: 220 + index * 180, y: 0 },
+    prompt: row.name,
+    composition: { module: row.name, ...(row.id === undefined ? {} : { id: row.id }) },
+  }))
+  const nodes: FlowGraph['nodes'] = [
+    { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+    ...agents,
+    { id: 'end', type: 'end', position: { x: 220 + rows.length * 180, y: 0 } },
+  ]
+  const edges: Array<{ id: string; from: string; to: string }> = []
+  if (agents.length === 0) {
+    edges.push({ id: 'start-edge', from: 'start', to: 'end' })
+  } else {
+    let from: string = 'start'
+    for (const node of agents) {
+      edges.push({ id: edges.length === 0 ? 'start-edge' : `chain-${edges.length - 1}`, from, to: node.id })
+      from = node.id
+    }
+    edges.push({ id: 'end-edge', from, to: 'end' })
+  }
+  return { id, name, nodes, edges }
+}
+
+/** The rows one fixture graph's agent nodes project (the host's `graphToRows` mirror). */
+function fixtureRowsFromGraph(graph: FlowGraph): RequestPayload<'agentPreset.compose'>['rows'] {
+  return graph.nodes.flatMap((node) => {
+    if (node.type !== 'agent' || node.composition === undefined) return []
+    return [{ ...(node.composition.id === undefined ? {} : { id: node.composition.id }), name: node.composition.module }]
+  })
+}
+
 /** Build the fixture's legacy API and Remote RPC faces over one state graph. */
 function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // The resident fixture sessions all carry history, so none of them is blank.
@@ -1603,6 +1685,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     rows: RequestPayload<'agentPreset.compose'>['rows']
     name?: string
     description?: string
+    graph?: FlowGraph
   }>([
     ['standard', { trust: 'system', content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n", rows: [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }] }],
     ['minimal', { trust: 'system', content: "- id: tool-web-search\n  name: '@deepseek-ai/dsh-tool-web-search'\n", rows: [{ id: 'tool-web-search', name: '@deepseek-ai/dsh-tool-web-search' }] }],
@@ -2894,6 +2977,24 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           ...preset.description === undefined ? {} : { description: preset.description },
         })
       },
+      readGraph: (request) => {
+        const { agentPreset } = request.payload
+        const preset = fixturePresets.get(agentPreset)
+        if (preset === undefined) {
+          return err(request, {
+            code: 'agent-preset-not-found',
+            message: `unknown agent preset "${agentPreset}"`,
+            details: { agentPreset, available: [...fixturePresets.keys()] },
+          })
+        }
+        return ok(request, {
+          agentPreset,
+          trust: preset.trust,
+          graph: preset.graph ?? fixtureGraphFromRows(preset.rows, agentPreset, preset.name ?? agentPreset),
+          ...preset.name === undefined ? {} : { name: preset.name },
+          ...preset.description === undefined ? {} : { description: preset.description },
+        })
+      },
       copy: (request) => {
         const { from, agentPreset } = request.payload
         const source = fixturePresets.get(from)
@@ -2916,6 +3017,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           content: source.content,
           rows: [...source.rows],
           ...request.payload.name === undefined ? {} : { name: request.payload.name },
+          ...source.graph === undefined ? {} : { graph: source.graph },
         })
         return ok(request, { agentPreset })
       },
@@ -2978,6 +3080,38 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         })
         return ok(request, { agentPreset })
       },
+      // Mirror the Host's graph composer: the graph is stored verbatim and the
+      // rows/content derive from its agent nodes, so a save-then-read journey
+      // restores the authored positions and the roster re-reads the same rows.
+      saveGraph: (request) => {
+        const { agentPreset, graph, name, description, overwrite } = request.payload
+        const existing = fixturePresets.get(agentPreset)
+        if (existing !== undefined && existing.trust === 'system') {
+          return err(request, {
+            code: 'agent-preset-read-only',
+            message: `agent preset "${agentPreset}" ships with the deployment`,
+            details: { agentPreset, reason: 'only a locally authored preset may be overwritten' },
+          })
+        }
+        if (existing !== undefined && overwrite !== true) {
+          return err(request, {
+            code: 'agent-preset-invalid',
+            message: `agent preset "${agentPreset}" already exists`,
+            details: { agentPreset, reason: 'already exists' },
+          })
+        }
+        const rows = fixtureRowsFromGraph(graph)
+        const content = rows.map(row => `- id: ${row.id}\n  name: '${row.name}'\n`).join('')
+        fixturePresets.set(agentPreset, {
+          trust: 'user',
+          content,
+          rows,
+          name: name ?? graph.name,
+          ...description === undefined ? {} : { description },
+          graph,
+        })
+        return ok(request, { agentPreset })
+      },
     },
 
     projectInsight: {
@@ -2988,6 +3122,35 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         root: 'fixture',
         doc: FIXTURE_INSIGHT_DOC,
       }),
+    },
+
+    flow: {
+      // Deterministic store and run surface for the flows pane; a real host
+      // persists under `.dsh/flows` and tracks live runs off-loop.
+      list: request => ok(request, { flows: [{
+        id: FIXTURE_FLOW_GRAPH.id,
+        name: FIXTURE_FLOW_GRAPH.name,
+        nodeCount: FIXTURE_FLOW_GRAPH.nodes.length,
+        updatedAt: 0,
+        ...(FIXTURE_FLOW_GRAPH.description === undefined ? {} : { description: FIXTURE_FLOW_GRAPH.description }),
+      }] }),
+      get: request => request.payload.id === FIXTURE_FLOW_GRAPH.id
+        ? ok(request, FIXTURE_FLOW_GRAPH)
+        : err(request, { code: 'flow-not-found', message: `flow "${request.payload.id}" does not exist`, details: { flowId: request.payload.id } }),
+      save: request => ok(request, { id: request.payload.graph.id }),
+      delete: request => ok(request, {}),
+      run: request => ok(request, { runId: FIXTURE_FLOW_RUN.runId }),
+      getRun: request => request.payload.runId === FIXTURE_FLOW_RUN.runId
+        ? ok(request, { run: FIXTURE_FLOW_RUN })
+        : ok(request, { run: null }),
+      listRuns: request => ok(request, { runs: [{
+        runId: FIXTURE_FLOW_RUN.runId,
+        flowId: FIXTURE_FLOW_RUN.flowId,
+        flowName: FIXTURE_FLOW_RUN.flowName,
+        status: FIXTURE_FLOW_RUN.status,
+        startedAt: 0,
+      }] }),
+      stop: request => ok(request, {}),
     },
 
     skills: {
@@ -3331,7 +3494,17 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'agentPreset.openDocument': return this.api.agentPresets.openDocument(request, new AbortController().signal)
       case 'agentPreset.remove': return this.api.agentPresets.remove(request)
       case 'agentPreset.compose': return this.api.agentPresets.compose(request)
+      case 'agentPreset.readGraph': return this.api.agentPresets.readGraph(request)
+      case 'agentPreset.saveGraph': return this.api.agentPresets.saveGraph(request)
       case 'projectInsight.read': return this.api.projectInsight.read(request, signal)
+      case 'flow.list': return this.api.flow.list(request)
+      case 'flow.get': return this.api.flow.get(request)
+      case 'flow.save': return this.api.flow.save(request)
+      case 'flow.delete': return this.api.flow.delete(request)
+      case 'flow.run': return this.api.flow.run(request, signal)
+      case 'flow.getRun': return this.api.flow.getRun(request)
+      case 'flow.listRuns': return this.api.flow.listRuns(request)
+      case 'flow.stop': return this.api.flow.stop(request)
       case 'goal.create': return this.api.goals.create(request)
       case 'goal.edit': return this.api.goals.edit(request)
       case 'goal.pause': return this.api.goals.pause(request)

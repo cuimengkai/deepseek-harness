@@ -356,6 +356,15 @@
   padding-left: 20px;
 }
 
+/* A failed workspace connect, below the hero row; same tone as the chat
+   open-error band. */
+.workspaceError {
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 12px;
+  line-height: 18px;
+  padding-left: 20px;
+}
+
 /* Hero: the composer sits inside the session scroll body; center there so
    the tree seat matches active (sticky footer) without a Root remount. */
 .root[data-phase='hero'] .scrollBody {

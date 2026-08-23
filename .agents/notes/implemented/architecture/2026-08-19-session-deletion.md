@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-08-19-session-deletion.zh.md)
 
+The delete operation's live-refusal contract is superseded by [stop-then-delete](2026-08-23-stop-then-delete-session-deletion.md).
+
 ## Problem
 
 Session persistence is event-sourced and append-only: a durable log is never rewritten, so sessions and disk usage accumulate without bound and there is no official cleanup path. `SessionPersistence` had no delete operation; the only "removal" was manual file deletion, which the search index already reconciles (`persistentDeletes`) but nothing triggered officially.

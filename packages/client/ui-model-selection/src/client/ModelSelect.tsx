@@ -308,6 +308,9 @@ export function ModelSelect(
                               {model.description !== undefined && (
                                 <span className={css.description}>{model.description}</span>
                               )}
+                              {model.kinds !== undefined && model.kinds.length > 0 && (
+                                <span className={css.kindTag}>{model.kinds.join(', ')}</span>
+                              )}
                             </span>
                             <span className={css.check}>
                               {selected ? <IconCheckOutline16 /> : null}

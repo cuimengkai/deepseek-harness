@@ -44,10 +44,14 @@ import {
 import { skillListValueSchema } from '../api/skills.schema.ts'
 import {
   agentPresetComposeValueSchema, agentPresetCopyValueSchema, agentPresetListValueSchema,
-  agentPresetOpenDocumentValueSchema, agentPresetReadValueSchema, agentPresetRemoveValueSchema,
-  agentPresetSelectValueSchema,
+  agentPresetOpenDocumentValueSchema, agentPresetReadGraphValueSchema, agentPresetReadValueSchema,
+  agentPresetRemoveValueSchema, agentPresetSaveGraphValueSchema, agentPresetSelectValueSchema,
 } from '../api/agent-presets.schema.ts'
 import { projectInsightReadValueSchema } from '../api/project-insight.schema.ts'
+import {
+  flowDeleteValueSchema, flowGetRunValueSchema, flowGetValueSchema, flowListRunsValueSchema,
+  flowListValueSchema, flowRunValueSchema, flowSaveValueSchema, flowStopValueSchema,
+} from '../api/flow.schema.ts'
 import {
   goalCreateValueSchema,
   goalEditValueSchema,
@@ -132,13 +136,25 @@ export interface IApiClient {
     list(payload: RequestPayload<'agentPreset.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.list'>>>
     select(payload: RequestPayload<'agentPreset.select'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.select'>>>
     read(payload: RequestPayload<'agentPreset.read'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.read'>>>
+    readGraph(payload: RequestPayload<'agentPreset.readGraph'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.readGraph'>>>
     copy(payload: RequestPayload<'agentPreset.copy'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.copy'>>>
     openDocument(payload: RequestPayload<'agentPreset.openDocument'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.openDocument'>>>
     remove(payload: RequestPayload<'agentPreset.remove'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.remove'>>>
     compose(payload: RequestPayload<'agentPreset.compose'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.compose'>>>
+    saveGraph(payload: RequestPayload<'agentPreset.saveGraph'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.saveGraph'>>>
   }
   projectInsight: {
     read(payload: RequestPayload<'projectInsight.read'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'projectInsight.read'>>>
+  }
+  flow: {
+    list(payload: RequestPayload<'flow.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.list'>>>
+    get(payload: RequestPayload<'flow.get'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.get'>>>
+    save(payload: RequestPayload<'flow.save'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.save'>>>
+    delete(payload: RequestPayload<'flow.delete'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.delete'>>>
+    run(payload: RequestPayload<'flow.run'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.run'>>>
+    getRun(payload: RequestPayload<'flow.getRun'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.getRun'>>>
+    listRuns(payload: RequestPayload<'flow.listRuns'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.listRuns'>>>
+    stop(payload: RequestPayload<'flow.stop'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.stop'>>>
   }
   events: {
     mux(payload: Parameters<ApiProxy['events']['mux']>[0]['payload'], signal: AbortSignal, onOpen?: () => void): AsyncIterable<RpcRequest<MuxFrame>>
@@ -211,11 +227,21 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'agentPreset.list': agentPresetListValueSchema,
   'agentPreset.select': agentPresetSelectValueSchema,
   'agentPreset.read': agentPresetReadValueSchema,
+  'agentPreset.readGraph': agentPresetReadGraphValueSchema,
   'agentPreset.copy': agentPresetCopyValueSchema,
   'agentPreset.openDocument': agentPresetOpenDocumentValueSchema,
   'agentPreset.remove': agentPresetRemoveValueSchema,
   'agentPreset.compose': agentPresetComposeValueSchema,
+  'agentPreset.saveGraph': agentPresetSaveGraphValueSchema,
   'projectInsight.read': projectInsightReadValueSchema,
+  'flow.list': flowListValueSchema,
+  'flow.get': flowGetValueSchema,
+  'flow.save': flowSaveValueSchema,
+  'flow.delete': flowDeleteValueSchema,
+  'flow.run': flowRunValueSchema,
+  'flow.getRun': flowGetRunValueSchema,
+  'flow.listRuns': flowListRunsValueSchema,
+  'flow.stop': flowStopValueSchema,
   'goal.create': goalCreateValueSchema,
   'goal.edit': goalEditValueSchema,
   'goal.pause': goalPauseValueSchema,
@@ -478,14 +504,27 @@ export abstract class AbstractApiClient implements IApiClient {
     list: (payload, signal) => this.callUnary('agentPreset.list', payload, signal),
     select: (payload, signal) => this.callUnary('agentPreset.select', payload, signal),
     read: (payload, signal) => this.callUnary('agentPreset.read', payload, signal),
+    readGraph: (payload, signal) => this.callUnary('agentPreset.readGraph', payload, signal),
     copy: (payload, signal) => this.callUnary('agentPreset.copy', payload, signal),
     openDocument: (payload, signal) => this.callUnary('agentPreset.openDocument', payload, signal),
     remove: (payload, signal) => this.callUnary('agentPreset.remove', payload, signal),
     compose: (payload, signal) => this.callUnary('agentPreset.compose', payload, signal),
+    saveGraph: (payload, signal) => this.callUnary('agentPreset.saveGraph', payload, signal),
   }
 
   readonly projectInsight: IApiClient['projectInsight'] = {
     read: (payload, signal) => this.callUnary('projectInsight.read', payload, signal),
+  }
+
+  readonly flow: IApiClient['flow'] = {
+    list: (payload, signal) => this.callUnary('flow.list', payload, signal),
+    get: (payload, signal) => this.callUnary('flow.get', payload, signal),
+    save: (payload, signal) => this.callUnary('flow.save', payload, signal),
+    delete: (payload, signal) => this.callUnary('flow.delete', payload, signal),
+    run: (payload, signal) => this.callUnary('flow.run', payload, signal),
+    getRun: (payload, signal) => this.callUnary('flow.getRun', payload, signal),
+    listRuns: (payload, signal) => this.callUnary('flow.listRuns', payload, signal),
+    stop: (payload, signal) => this.callUnary('flow.stop', payload, signal),
   }
 
   readonly goals: IApiClient['goals'] = {

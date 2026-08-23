@@ -11,7 +11,7 @@
  */
 
 import type { RpcRequest, RpcResponse } from './rpc.ts'
-import type { ProjectInsightDoc } from '@deepseek-ai/dsh-project-insight/src/schema.ts'
+import type { ProjectInsightDoc } from '@deepseek-ai/dsh-project-insight'
 
 /** Whether a stored document exists and matches the current tree. */
 export type ProjectInsightReadStatus = 'none' | 'fresh' | 'stale' | 'error'

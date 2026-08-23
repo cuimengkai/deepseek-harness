@@ -380,6 +380,25 @@ describe('WorkspaceBrowser', () => {
     }
   })
 
+  it('surfaces a session-delete failure as an alert instead of a silent note', async () => {
+    const rejection = new Error('session-live')
+    const deleteSession = vi.fn(async () => { throw rejection })
+    mount({
+      useSessions: hook(sessionState([summary('gone-s', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['gone-s'])])),
+      deleteSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    fireEvent.click(screen.getByRole('button', { name: '会话“gone-s”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+    expect(deleteSession).toHaveBeenCalledWith(sid('gone-s'))
+    await waitFor(() => {
+      expect(screen.getByRole('alert').textContent).toBe('session-live')
+    })
+    // The row stays; the host refused the delete and the refusal is visible.
+    expect(screen.getByText('gone-s')).toBeTruthy()
+  })
+
   it('renders a fork child as a top-level row without a session twist', () => {
     const parent = summary('parent-s', 2)
     const child = { ...summary('child-s', 1), parentId: parent.id }

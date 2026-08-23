@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ApiProxy, HostFrame, MuxFrame } from '../src/api/index.ts'
+import type { ApiProxy, FlowApi, HostFrame, MuxFrame, ProjectInsightApi } from '../src/api/index.ts'
 import type { ClientResponse, RpcMessage, RpcReceipt, RpcRequest } from '../src/api/rpc.ts'
 import { RpcId } from '../src/api/rpc.ts'
 import { toFetchHandler } from '../src/fetch/handler.ts'
@@ -224,6 +224,18 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         const value = { agentPreset: request.payload.agentPreset }
         return Promise.resolve({ rpcId: request.rpcId, result: { ok: true as const, value } })
       },
+      readGraph(request: RpcRequest<{ agentPreset: string }>) {
+        const value = {
+          agentPreset: request.payload.agentPreset,
+          trust: 'user' as const,
+          graph: { id: 'g', name: 'G', nodes: [], edges: [] },
+        }
+        return Promise.resolve({ rpcId: request.rpcId, result: { ok: true as const, value } })
+      },
+      saveGraph(request: RpcRequest<{ agentPreset: string }>) {
+        const value = { agentPreset: request.payload.agentPreset }
+        return Promise.resolve({ rpcId: request.rpcId, result: { ok: true as const, value } })
+      },
     },
     skills: {
       async list(request) {
@@ -289,6 +301,10 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         return { rpcId: request.rpcId, result: { ok: true, value: { models: [] } } }
       },
     },
+    // Transport double: these domains are not under test here, so the stubs
+    // satisfy the interface without scripting any method.
+    projectInsight: {} as ProjectInsightApi,
+    flow: {} as FlowApi,
     events: {
       mux: (_request, signal) => stream(muxFrames, signal),
       host: (_request, signal) => stream(hostFrames, signal),

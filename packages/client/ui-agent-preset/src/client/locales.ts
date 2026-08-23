@@ -3,7 +3,7 @@
 /** Locale keys these surfaces render. */
 export type AgentPresetSettingsKey =
   | 'title' | 'description' | 'loading' | 'error' | 'userTrust' | 'seatHint' | 'headerHint'
-  | 'nav' | 'sectionIntro' | 'builtIn' | 'setDefault' | 'view'
+  | 'nav' | 'sectionIntro' | 'builtIn' | 'setDefault' | 'view' | 'editCopy'
   | 'presetStandardName' | 'presetStandardDescription'
   | 'presetCodeName' | 'presetCodeDescription'
   | 'presetMinimalName' | 'presetMinimalDescription'
@@ -17,7 +17,7 @@ export type AgentPresetSettingsKey =
   | 'compose' | 'composeTitle' | 'composeIntro' | 'newAgent'
   | 'handoff' | 'handoffHint'
   | 'palette' | 'paletteHint' | 'paletteSearch' | 'paletteLoading' | 'paletteUnavailable' | 'paletteEmpty'
-  | 'compositionLabel' | 'compositionEmpty' | 'reorderHint'
+  | 'compositionLabel' | 'canvasHint' | 'connectLabel'
   | 'canvasStart' | 'canvasEnd' | 'inspectorTitle' | 'rowId' | 'moveUp' | 'moveDown' | 'paletteCategoryOther'
   | 'paletteCollapse' | 'paletteExpand'
   | 'rowAdded' | 'alreadyAdded' | 'removeRow'
@@ -43,6 +43,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   builtIn: 'Built-in',
   setDefault: 'Set as default',
   view: 'View',
+  editCopy: 'Edit a copy',
   presetStandardName: 'Standard mode',
   presetStandardDescription:
     'Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.',
@@ -94,8 +95,8 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   paletteUnavailable: 'This deployment reports no plugin inventory, so nothing can be dragged in.',
   paletteEmpty: 'No installed plugins to add.',
   compositionLabel: 'Composition',
-  compositionEmpty: 'Drag plugins here',
-  reorderHint: 'Drag to reorder',
+  canvasHint: 'Drag plugins in; connect a port to reorder; Delete removes.',
+  connectLabel: 'Connect after this node',
   canvasStart: 'Start',
   canvasEnd: 'End',
   inspectorTitle: 'Plugin details',
@@ -141,6 +142,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   builtIn: '内置',
   setDefault: '设为默认',
   view: '查看',
+  editCopy: '编辑副本',
   presetStandardName: '标准模式',
   presetStandardDescription: '功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。',
   presetCodeName: 'PTC 模式',
@@ -184,8 +186,8 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   paletteUnavailable: '此部署没有提供插件清单，无法拖入插件。',
   paletteEmpty: '没有可添加的已安装插件。',
   compositionLabel: '组合',
-  compositionEmpty: '把插件拖到这里',
-  reorderHint: '拖拽调整顺序',
+  canvasHint: '把插件拖入画布；从节点端口拖到另一个节点以调整顺序；Delete 删除。',
+  connectLabel: '把该节点接到此节点之后',
   canvasStart: '开始',
   canvasEnd: '结束',
   inspectorTitle: '插件详情',

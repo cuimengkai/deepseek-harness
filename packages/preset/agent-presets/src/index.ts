@@ -24,6 +24,7 @@
 import { stat } from 'node:fs/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
 import { bindScopeParent, createScope, scopeOf, type Scope, type ScopeKey, type ScopeParentBinding } from '@deepseek-ai/dsh-scope'
 // Type-only: resolves the `agent/created` lifecycle event this service watches.
 import type {} from '@deepseek-ai/dsh-agent'
@@ -33,8 +34,10 @@ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { discoverPresets, USER_PRESET_DIR } from './discovery.ts'
 import {
   ComposeModuleError, copyComposition, deleteComposition, parseComposition, PresetExistsError,
-  PresetNotWritableError, readComposition, replaceComposition, writableRoot, writeComposition,
+  PresetNotWritableError, readComposition, readCompositionGraph, replaceComposition, writableRoot,
+  writeComposition,
 } from './authoring.ts'
+import { graphToRows, rowsToGraph } from './conversion.ts'
 import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
 import type { PresetMetadata } from './metadata.ts'
 import { PresetMountError, UnknownPresetError, type AgentPreset, type Config, type PresetRoot } from './preset.ts'
@@ -91,8 +94,12 @@ export {
 export {
   ComposeModuleError, copyComposition, deleteComposition, InvalidPresetIdError,
   parseComposition, PresetExistsError, PresetNotWritableError, readComposition,
-  replaceComposition, writableRoot, writeComposition,
+  readCompositionGraph, replaceComposition, writableRoot, writeComposition,
 } from './authoring.ts'
+export {
+  graphRowsMatch, graphToRows, PRESET_GRAPH_FILE, PRESET_GRAPH_FORMAT_VERSION,
+  PRESET_GRAPH_MAX_BYTES, rowsToGraph, type PresetGraphDocument,
+} from './conversion.ts'
 export { resolveSessionPreset, type PresetBearingSession } from './session.ts'
 export { PresetMountError, UnknownPresetError } from './preset.ts'
 export type { AgentPreset, Config, PresetRoot, PresetTrust } from './preset.ts'
@@ -504,6 +511,87 @@ export class AgentPresets extends Service {
       assertResolvable: (rows: readonly ComposeRow[]) => readonly string[]
     },
   ): Promise<void> {
+    await this.composeTo(id, rows, meta, options)
+  }
+
+  /**
+   * Write a locally authored preset's composition AND companion graph from a
+   * preset composition graph.
+   *
+   * The graph authoring write behind `agentPreset.saveGraph`. The graph is the
+   * AUTHORING source: its agent nodes' `composition` fields project exactly the
+   * rows that mount, so the rows are DERIVED here (`graphToRows`) and validated
+   * exactly as {@link compose} validates them — non-empty, module-per-row,
+   * unique ids, the resolvability proof — and one authoring primitive writes
+   * both files: `agent.cordis.yml` from the derived rows and `agent.flow.json`
+   * beside it holding the graph as authored. A graph with a condition or loop
+   * node, an agent without a composition module, or a cycle is refused before
+   * any write. The graph's display name and the preset's are one thing: a given
+   * `meta.name` also becomes the stored graph's name, so the roster and the
+   * canvas agree.
+   * @param id - the preset id, which becomes its directory name.
+   * @param graph - the preset composition graph to persist.
+   * @param meta - display metadata to publish beside the composition.
+   * @param options - create-vs-replace choice and the resolvability proof.
+   * @throws when {@link compose} throws, or the graph does not project rows.
+   */
+  async composeGraph(
+    id: string,
+    graph: FlowGraph,
+    meta: PresetMetadata | undefined,
+    options: {
+      /** Whether to replace an existing preset in place (false = create). */
+      overwrite: boolean
+      /**
+       * Prove every module the projected rows name is installed. Returns the
+       * unresolved module names; a non-empty result refuses the composition.
+       */
+      assertResolvable: (rows: readonly ComposeRow[]) => readonly string[]
+    },
+  ): Promise<void> {
+    const rows = graphToRows(graph)
+    const normalized = meta?.name === undefined ? graph : { ...graph, name: meta.name }
+    await this.composeTo(id, rows, meta, options, normalized)
+  }
+
+  /**
+   * Read one preset's composition graph, regenerating a stale or absent layout.
+   *
+   * The graph authoring read behind `agentPreset.readGraph`. The stored
+   * `agent.flow.json` is a layout cache: it serves only while it still projects
+   * exactly the rows parsed from the composition file (a hand edit or a legacy
+   * rows-composer write wins), and otherwise the rows are re-projected as a
+   * fresh chain graph. Backward compatible: an older preset with no graph file
+   * regenerates on open.
+   * @param id - the preset id.
+   * @returns the preset's composition graph.
+   * @throws when no configured root supplies that id, or the composition does
+   * not parse.
+   */
+  async readGraph(id: string): Promise<FlowGraph> {
+    const preset = await this.resolve(id)
+    const rows = await parseComposition(await readComposition(preset))
+    const stored = await readCompositionGraph(preset, rows)
+    if (stored !== undefined) return stored
+    return rowsToGraph(preset.id, preset.name ?? preset.id, rows)
+  }
+
+  /**
+   * The shared rows-composition core behind {@link compose} and
+   * {@link composeGraph}: validate the rows three ways, then write them through
+   * the authoring primitive, carrying the companion graph when the caller
+   * authors a preset graph so one write commits both files.
+   */
+  private async composeTo(
+    id: string,
+    rows: readonly ComposeRow[],
+    meta: PresetMetadata | undefined,
+    options: {
+      overwrite: boolean
+      assertResolvable: (rows: readonly ComposeRow[]) => readonly string[]
+    },
+    graph?: FlowGraph,
+  ): Promise<void> {
     if (rows.length === 0) {
       throw new PresetNotWritableError(id, 'a composition needs at least one plugin row')
     }
@@ -528,13 +616,13 @@ export class AgentPresets extends Service {
       if (preset.trust !== 'user') {
         throw new PresetNotWritableError(id, 'only a locally authored preset may be overwritten')
       }
-      await replaceComposition(writableRoot(this.resolvedRoots), id, entryRows, meta)
+      await replaceComposition(writableRoot(this.resolvedRoots), id, entryRows, meta, graph)
     } else {
       // The roster check refuses ids any root supplies, mirroring `write`.
       if ((await this.list()).some(preset => preset.id === id)) {
         throw new PresetExistsError(id)
       }
-      await writeComposition(writableRoot(this.resolvedRoots), id, entryRows, meta)
+      await writeComposition(writableRoot(this.resolvedRoots), id, entryRows, meta, graph)
     }
     // A settled mount under this id can only be stale; the fresh preset must
     // not inherit it. Every session already joined keeps its generation.

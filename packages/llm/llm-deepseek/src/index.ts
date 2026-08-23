@@ -14,7 +14,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertUsableApiKey, LlmError, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { ModelKind, ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -49,17 +49,19 @@ const DEFAULT_API_KEY_ENV = 'DEEPSEEK_API_KEY'
 const PROVIDER = 'deepseek-official'
 
 const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
-  { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: DEFAULT_CONTEXT_WINDOW },
-  { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: DEFAULT_CONTEXT_WINDOW },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', contextWindow: DEFAULT_CONTEXT_WINDOW, kinds: ['text'] },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: DEFAULT_CONTEXT_WINDOW, kinds: ['text'] },
   {
     id: 'deepseek-v4-flash-vision-exp',
     name: 'DeepSeek-V4-Flash-Vision-Exp',
     contextWindow: DEFAULT_CONTEXT_WINDOW,
     inputModalities: ['text', 'image'],
+    kinds: ['text'],
   },
 ]
 
 const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModality[]
+const MODEL_KINDS = ['text', 'image', 'audio', 'embedding'] as const satisfies readonly ModelKind[]
 
 /**
  * Plugin config, validated by the same-named schemastery schema and doubling
@@ -99,6 +101,7 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
   contextWindow: z.number().step(1).min(1),
   maxTokens: z.number().step(1).min(1),
   inputModalities: z.array(z.union(MODEL_MODALITIES)).min(1).default(['text']),
+  kinds: z.array(z.union(MODEL_KINDS)).min(1).default(['text']),
 })
 
 export const Config: z<Config> = z.object({
@@ -160,6 +163,19 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
     if (new Set(inputModalities).size !== inputModalities.length) {
       throw new Error(`llm-deepseek: catalog model "${model.id}" inputModalities must not contain duplicates`)
     }
+    const kinds = model.kinds ?? ['text']
+    if (kinds.length === 0) {
+      throw new Error(`llm-deepseek: catalog model "${model.id}" kinds must not be empty`)
+    }
+    if (kinds.some(kind => !MODEL_KINDS.includes(kind))) {
+      throw new Error(
+        `llm-deepseek: catalog model "${model.id}" kinds must contain only `
+        + MODEL_KINDS.join(', '),
+      )
+    }
+    if (new Set(kinds).size !== kinds.length) {
+      throw new Error(`llm-deepseek: catalog model "${model.id}" kinds must not contain duplicates`)
+    }
     if (seen.has(model.id)) throw new Error(`llm-deepseek: duplicate catalog model "${model.id}"`)
     seen.add(model.id)
     return {
@@ -169,6 +185,7 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
       ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
       ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
       inputModalities: [...inputModalities],
+      kinds: [...kinds],
     }
   })
 }

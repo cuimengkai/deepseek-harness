@@ -1,32 +1,41 @@
 /**
- * The agent composer: an agent as a horizontal pipeline. The palette on the
- * left offers the deployment's installed plugins, annotated with display
- * name, category, and description; the canvas in the middle is the
- * composition as a chain from Start through one node per plugin row to End —
- * chain order is the row order written to the host; and the inspector on the
- * right shows the selected node's details. Saving writes the ROW LIST to the
- * host — the browser still never composes YAML text, and the host re-checks
- * every row against its own inventory before the file is touched.
+ * The agent composer: an agent as a chain on a flow canvas. The palette on
+ * the left offers the deployment's installed plugins, annotated with display
+ * name, category, and description; the canvas in the middle is the composition
+ * as a graph from Start through one node per plugin row to End — chain order
+ * is the row order written to the host; and the inspector on the right shows
+ * the selected node's details. Nodes drag to rearrange the layout, connect by
+ * dragging from a port onto another node to reorder the chain after it, and a
+ * palette module drops onto the canvas to append. Saving writes the GRAPH to
+ * the host — the browser still never composes YAML text, and the host
+ * re-checks the derived rows against its own inventory before the file is
+ * touched.
  *
  * The footer also offers Creator mode: the handoff saves the composition and
  * stages a session on the self-referential preset so the agent can build or
  * refine the preset in conversation. An untouched preset skips the save — it
  * is already on disk — and hands off directly.
  *
- * Dragging is HTML5 native DnD: no dependency, and jsdom tests assert the
- * handlers reach the store actions rather than simulating the drag.
+ * The gestures are the shared flow canvas's: drag moves a node, the port
+ * connects (a preset-chain reorder), and Delete removes the selection.
+ * Selection lives here as local state, so the same component renders the
+ * shipped compositions read-only (a preset's design page) with selection and
+ * the inspector still live.
  */
 
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { FlowNode } from '@deepseek-ai/dsh-flow/types'
+import { FlowCanvas } from '@deepseek-ai/dsh-client-ui-flow-editor/client'
 import {
   composeBlocker, handoffBlocker,
   type ComposeDraft, type ComposePalette, type PaletteModule, type PresetRow,
 } from './section-store.ts'
+import { chainAgents, compositionToRow } from './preset-graph.ts'
+import { presetFlowSurface, type PresetSurfaceActions } from './preset-flow-controller.ts'
 import type { AgentPresetSettingsKey } from './locales.ts'
-import { ComposerPalette } from './ComposerPalette.tsx'
-import { PipelineCanvas } from './PipelineCanvas.tsx'
+import { ComposerPalette, categoryColor, glyphLetter } from './ComposerPalette.tsx'
 import { NodeInspector } from './NodeInspector.tsx'
 import css from './AgentPresetComposer.module.css'
 
@@ -35,13 +44,31 @@ export interface AgentPresetComposerActions {
   closeComposer: () => void
   setComposerId: (id: string) => void
   setComposerName: (name: string) => void
-  addRow: (moduleName: string) => void
-  insertRowAt: (moduleName: string, index: number) => void
+  /**
+   * Append a module to the composition (the palette's click path). Returns the
+   * new node's canvas id, or undefined when the module is already composed.
+   */
+  addRow: (moduleName: string) => string | undefined
+  /**
+   * Add a module at a graph position (the palette's drop path). Returns the new
+   * node's canvas id, or undefined when the module is already composed.
+   */
+  addNodeAt: (moduleName: string, position: { x: number; y: number }) => string | undefined
+  /** Remove one row, by its row id (falling back to the module name). */
   removeRow: (rowId: string) => void
+  /** Remove one node by its canvas id (the delete key). */
+  removeNode: (nodeId: string) => void
+  /** Reorder the composition by chain index (the inspector's move buttons). */
   moveRow: (from: number, to: number) => void
+  /** Move one node's canvas position (the drag gesture). */
+  moveNode: (nodeId: string, position: { x: number; y: number }) => void
+  /** Reorder the composition so `to` runs right after `from` (the connect gesture). */
+  reorderNode: (fromNodeId: string, toNodeId: string) => void
   confirmCompose: () => Promise<boolean>
   /** Stage the self-referential preset and start a session on it. */
   startCreatorDraft?: () => void
+  /** Begin a copy of a shipped read-only preset (the design page's edit way in). */
+  onEdit?: () => void
 }
 
 /** Full composer props. */
@@ -72,43 +99,102 @@ export interface AgentPresetComposerProps {
  */
 export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode {
   const { draft, palette, roster, t, actions, readOnly = false } = props
-  /** The composition row being dragged, null for a palette drag. */
-  const [dragging, setDragging] = useState<number | null>(null)
-  /** The selected node's row id, undefined when none is selected. */
-  const [selectedRowId, setSelectedRowId] = useState<string | undefined>(undefined)
+  /** The selected node's canvas id, null when none is selected. */
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  /** The selected edge's id, null when none is selected. */
+  const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   /** Whether the palette floats over the canvas, or hides behind its tab. */
   const [paletteOpen, setPaletteOpen] = useState(true)
 
   const blocker = composeBlocker(draft, roster)
   const message = draft.error ?? (blocker === undefined ? null : t(blocker))
   const overwriting = roster.some(row => row.id === draft.id)
-  const inComposition = new Set(draft.rows.map(row => row.name))
+  const agents = chainAgents(draft.graph)
+  const inComposition = new Set(agents.flatMap(node => node.composition === undefined ? [] : [node.composition.module]))
   /** The palette's annotation for a module, when the ready inventory knows it. */
   const moduleFor = (moduleName: string): PaletteModule | undefined =>
     palette === null || palette.status !== 'ready'
       ? undefined
       : palette.modules.find(module => module.moduleName === moduleName)
 
-  const selectedIndex = draft.rows.findIndex(row => row.id === selectedRowId)
-  const selectedRow = selectedIndex === -1 ? undefined : draft.rows[selectedIndex]
+  const selectedAgent = selectedNodeId === null
+    ? undefined
+    : agents.find(node => node.id === selectedNodeId)
+  const selectedIndex = selectedAgent === undefined ? -1 : agents.indexOf(selectedAgent)
+  const selectedRow = selectedAgent?.composition === undefined
+    ? undefined
+    : compositionToRow(selectedAgent.composition)
 
   const handoffAvailable = actions.startCreatorDraft !== undefined
     && roster.some(row => row.id === 'cordis')
   const handoffBlocked = handoffBlocker(draft, roster)
 
-  // A selection outlives its row only by accident: a save closes the composer
-  // and a remove deletes the row, so drop the stale id rather than render an
-  // inspector over nothing.
+  // A selection outlives its node only by accident: a save closes the composer,
+  // a remove deletes the node, and a reorder relinks the edges, so drop the
+  // stale id rather than render an inspector over nothing.
   useEffect(() => {
-    if (selectedRowId !== undefined && !draft.rows.some(row => row.id === selectedRowId)) {
-      setSelectedRowId(undefined)
+    if (selectedNodeId !== null && !draft.graph.nodes.some(node => node.id === selectedNodeId)) {
+      setSelectedNodeId(null)
     }
-  }, [draft.rows, selectedRowId])
+    if (selectedEdgeId !== null && !draft.graph.edges.some(edge => edge.id === selectedEdgeId)) {
+      setSelectedEdgeId(null)
+    }
+  }, [draft.graph.edges, draft.graph.nodes, selectedEdgeId, selectedNodeId])
 
   /** Move the selected node one slot, for the inspector's move buttons. */
   function handleMove(delta: -1 | 1): void {
     if (selectedIndex === -1) return
     actions.moveRow(selectedIndex, selectedIndex + delta)
+  }
+
+  // The surface the shared canvas gestures against: selection is this
+  // component's state, and every mutation routes through the store actions.
+  // Removing the chain terminals is refused — they are the composition's
+  // frame, not a row — and the connect gesture (a reorder) clears the edge
+  // selection, because the chain edges relink under the same ids.
+  const surfaceActions: PresetSurfaceActions = {
+    selectNode: setSelectedNodeId,
+    selectEdge: setSelectedEdgeId,
+    moveNode: actions.moveNode,
+    removeNode: (id) => { if (id !== 'start' && id !== 'end') actions.removeNode(id) },
+    removeEdge: () => {},
+    addNodeAt: actions.addNodeAt,
+    addEdge: (from, to) => { actions.reorderNode(from, to); setSelectedEdgeId(null) },
+  }
+  const surface = presetFlowSurface(draft.graph, selectedNodeId, selectedEdgeId, readOnly, surfaceActions)
+
+  /** The node card content: a chain terminal, or a plugin's module card. */
+  const renderNode = (node: FlowNode): ReactNode => {
+    if (node.type === 'start' || node.type === 'end') {
+      const isStart = node.type === 'start'
+      return (
+        <div className={`${css.canvasEnd}${isStart ? ` ${css.canvasStart}` : ''}`}>
+          <span className={css.nodeGlyph} aria-hidden="true">{isStart ? '›' : '■'}</span>
+          <span className={css.nodeName}>{isStart ? t('canvasStart') : t('canvasEnd')}</span>
+        </div>
+      )
+    }
+    // A preset composition is a chain of plugin agents; the flow canvas also
+    // knows condition/loop nodes, which this domain never composes.
+    if (node.type !== 'agent') return null
+    const composition = node.composition
+    if (composition === undefined) return null
+    const module = moduleFor(composition.module)
+    return (
+      <div className={css.nodeCard}>
+        <span
+          className={css.nodeGlyph}
+          aria-hidden="true"
+          style={{ backgroundColor: categoryColor(module?.category) }}
+        >
+          {glyphLetter(module?.displayName ?? composition.module)}
+        </span>
+        <span className={css.nodeBody}>
+          <span className={css.nodeName}>{module?.displayName ?? composition.module}</span>
+          <code className={css.nodeModule}>{composition.module}</code>
+        </span>
+      </div>
+    )
   }
 
   /** Save-then-handoff; an untouched preset skips the save and hands off now. */
@@ -135,6 +221,20 @@ export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode 
         <h2 className={css.composerTitle}>
           {readOnly ? `${t('view')} · ${draft.name}` : draft.original.id === '' ? t('newAgent') : t('composeTitle')}
         </h2>
+        {/* A shipped preset's design page is read-only by contract, so its edit
+            affordance is to copy: close the view and open the copy dialog over
+            the preset, where the copy can diverge. */}
+        {readOnly && actions.onEdit !== undefined
+          ? (
+            <button
+              type="button"
+              className={css.editCopyButton}
+              onClick={actions.onEdit}
+            >
+              {t('editCopy')}
+            </button>
+          )
+          : null}
       </div>
       {readOnly ? null : (
         <>
@@ -175,8 +275,14 @@ export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode 
                 <ComposerPalette
                   palette={palette}
                   inComposition={inComposition}
-                  onAdd={actions.addRow}
-                  onDragModule={() => { setDragging(null) }}
+                  onAdd={(moduleName) => {
+                    const id = actions.addRow(moduleName)
+                    if (id !== undefined) setSelectedNodeId(id)
+                  }}
+                  // The palette's drag is announced to nothing: the shared
+                  // canvas owns the drop, reading the module name straight from
+                  // the data-transfer payload.
+                  onDragModule={() => {}}
                   onCollapse={() => { setPaletteOpen(false) }}
                   t={t}
                 />
@@ -192,21 +298,14 @@ export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode 
                   {t('palette')}
                 </button>
               )}
-          <PipelineCanvas
-            readOnly={readOnly}
-            rows={draft.rows}
-            dragging={dragging}
-            selectedRowId={selectedRowId}
-            moduleFor={moduleFor}
-            onSelect={setSelectedRowId}
-            onDragNode={setDragging}
-            onDragEnd={() => { setDragging(null) }}
-            onMoveRow={actions.moveRow}
-            onInsert={actions.insertRowAt}
-            onRemove={actions.removeRow}
-            t={t}
+          <FlowCanvas
+            surface={surface}
+            renderNode={renderNode}
+            dropMime="text/plain"
+            canvasHint={readOnly ? undefined : t('canvasHint')}
+            connectAriaLabel={t('connectLabel')}
           />
-          {selectedRow === undefined
+          {selectedRow === undefined || selectedAgent === undefined
             ? null
             : (
               <NodeInspector
@@ -214,7 +313,7 @@ export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode 
                 row={selectedRow}
                 module={moduleFor(selectedRow.name)}
                 canMoveUp={selectedIndex > 0}
-                canMoveDown={selectedIndex !== -1 && selectedIndex < draft.rows.length - 1}
+                canMoveDown={selectedIndex !== -1 && selectedIndex < agents.length - 1}
                 onRemove={actions.removeRow}
                 onMove={handleMove}
                 t={t}
@@ -224,7 +323,7 @@ export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode 
       </div>
       {readOnly ? null : (
         <>
-          {draft.rows.length === 0 && handoffAvailable
+          {agents.length === 0 && handoffAvailable
             ? <p className={css.handoffHint}>{t('handoffHint')}</p>
             : null}
           {message === null ? null : <p className={css.error} role="alert">{message}</p>}

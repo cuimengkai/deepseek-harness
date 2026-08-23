@@ -9,6 +9,7 @@ import { mkdtempSync, realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
 import AgentRegistry, { type AgentFactory } from '@deepseek-ai/dsh-agent'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import SessionStore, { SessionId, type Session } from '@deepseek-ai/dsh-session'
@@ -16,9 +17,10 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { RpcId, type RpcRequest } from '../src/api/rpc.ts'
 import type { HostFrame } from '../src/api/events.ts'
 import {
-  ComposeModuleError, InvalidPresetIdError, PresetExistsError, PresetNotWritableError,
-  resolveSessionPreset, UnknownPresetError,
+  ComposeModuleError, graphToRows, InvalidPresetIdError, PresetExistsError, PresetMountError,
+  PresetNotWritableError, resolveSessionPreset, rowsToGraph, UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
+import { agentPresetSaveGraphRequestSchema } from '../src/api/agent-presets.schema.ts'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { GoalId } from '@deepseek-ai/dsh-goal'
 import { createApiProxy } from '../src/api-proxy.ts'
@@ -41,8 +43,8 @@ function stubAgent(session: Session): Agent {
  * ship with the deployment.
  */
 function roster(ids: readonly string[], userIds: readonly string[] = []): unknown {
-  /** Presets the double's `compose` minted, so `list`/`resolve` surface them like disk writes would. */
-  const composed = new Map<string, { rows: unknown[]; name?: string; description?: string }>()
+  /** Presets the double's `compose`/`composeGraph` minted, so `list`/`resolve` surface them like disk writes would. */
+  const composed = new Map<string, { rows: unknown[]; graph?: FlowGraph; name?: string; description?: string }>()
   const trustOf = (id: string): 'system' | 'user' =>
     (composed.has(id) || userIds.includes(id) ? 'user' : 'system')
   const presetOf = (id: string): object => {
@@ -65,7 +67,13 @@ function roster(ids: readonly string[], userIds: readonly string[] = []): unknow
       }
       return Promise.resolve(presetOf(wanted))
     },
-    mount: (_ctx: Context, id?: string) => Promise.resolve(presetOf(id ?? ids[0] ?? '')),
+    mount: (_ctx: Context, id?: string) => {
+      const wanted = id ?? ids[0] ?? ''
+      if (failingMounts.has(wanted)) {
+        return Promise.reject(new PresetMountError(wanted, 'test-mount-failure'))
+      }
+      return Promise.resolve(presetOf(wanted))
+    },
     // What a real mount leaves behind: a service instance only the agent that
     // mounted it can be used to address. The doubles are per agent so a test
     // can tell "this session's" from "some session's".
@@ -111,6 +119,40 @@ function roster(ids: readonly string[], userIds: readonly string[] = []): unknow
       })
       return Promise.resolve()
     },
+    // The graph authoring half of the double mirrors `compose`, deriving the
+    // rows through the real conversion so the inventory proof and the read-back
+    // exercise the same projection the host runs.
+    composeGraph: (id: string, graph: FlowGraph, meta: { name?: string; description?: string }, options: {
+      overwrite: boolean
+      assertResolvable: (rows: readonly unknown[]) => readonly string[]
+    }) => {
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return Promise.reject(new InvalidPresetIdError(id))
+      const rows = graphToRows(graph)
+      const unresolved = options.assertResolvable(rows)
+      if (unresolved.length > 0) return Promise.reject(new ComposeModuleError(id, unresolved))
+      if (ids.includes(id) || composed.has(id)) {
+        if (options.overwrite !== true) return Promise.reject(new PresetExistsError(id))
+        if (trustOf(id) === 'system') {
+          return Promise.reject(new PresetNotWritableError(id, 'only a locally authored preset may be overwritten'))
+        }
+      }
+      composed.set(id, {
+        rows,
+        graph,
+        ...meta.name === undefined ? {} : { name: meta.name },
+        ...meta.description === undefined ? {} : { description: meta.description },
+      })
+      return Promise.resolve()
+    },
+    // The stored graph is the layout; a preset without one (a shipped preset or
+    // a rows-composed one) regenerates a chain — the same staleness rule the
+    // real service applies before any write-back.
+    readGraph: (id: string) => {
+      const written = composed.get(id)
+      if (written?.graph !== undefined) return Promise.resolve(written.graph)
+      if (!ids.includes(id)) return Promise.reject(new UnknownPresetError(id, ids))
+      return Promise.resolve(rowsToGraph(id, id, [{ id: 'x', name: 'y' }]))
+    },
     recompose: (_ctx: Context, id: string) => {
       if (!ids.includes(id)) return Promise.reject(new UnknownPresetError(id, ids))
       return Promise.resolve({ id, trust: 'system', path: `/presets/${id}.yml` })
@@ -137,6 +179,8 @@ const standingKeys = new Map<string, object>()
 const standingKeyRequests: string[] = []
 /** Preset ids whose standing mount the double reports as unusable. */
 const failingStandingKeys = new Set<string>()
+/** Preset ids whose compose-time mount the double reports as failing. */
+const failingMounts = new Set<string>()
 
 /** Per-agent service instances a mounted preset would own, keyed by session id. */
 const services = new Map<string, Record<string, unknown>>()
@@ -176,12 +220,23 @@ async function harness(
       // gateway's own `installTarget` relies on.
       const agentCtx = ctx.extend({ agent })
       ;(agent as { ctx?: Context }).ctx = agentCtx
-      await options.setup?.(agentCtx)
+      try {
+        await options.setup?.(agentCtx)
+      } catch (error) {
+        // A setup rejection rolls the creation back — the same composite
+        // teardown the agent-loop runs — so a fallback retry of the same
+        // sessionId starts clean.
+        await ctx.sessions.dispose(session)
+        throw error
+      }
       const unregister = ctx.agents.register(agent)
       return { agent, dispose: () => { unregister(); return Promise.resolve() } }
     },
     async resume() {
       throw new Error('test harness has no persisted sessions')
+    },
+    async disposeAgent() {
+      return false
     },
   }
   ctx.agents.setFactory(factory)
@@ -211,14 +266,31 @@ describe('session.create with an agent preset', () => {
     expect(ctx.sessions.get(SessionId('s2'))?.header.agentPreset).toBe('standard')
   })
 
-  it('rejects an unknown preset and names the ones that exist', async () => {
-    const { api } = await harness(['standard'])
+  it('falls back to the deployment default when the fresh create names an unknown preset', async () => {
+    const { api, ctx } = await harness(['standard', 'minimal'])
 
     const response = await api.sessions.create(request({ sessionId: SessionId('s3'), agentPreset: 'nope' }))
 
-    expect(response.result.ok).toBe(false)
-    if (response.result.ok) throw new Error('unreachable')
-    expect(response.result.error.code).toBe('agent-preset-not-found')
+    // A workspace pick that named a bad preset still opens the workspace: the
+    // fresh create falls back to the default composition instead of hard-failing.
+    expect(response.result.ok).toBe(true)
+    expect(ctx.sessions.get(SessionId('s3'))?.header.agentPreset).toBe('standard')
+  })
+
+  it('falls back to the deployment default when the requested preset cannot mount', async () => {
+    const { api, ctx } = await harness(['standard', 'minimal'])
+    failingMounts.add('minimal')
+    try {
+      const response = await api.sessions.create(request({ sessionId: SessionId('s3b'), agentPreset: 'minimal' }))
+
+      // `UnknownPresetError` covers an unresolvable id; `PresetMountError`
+      // covers a resolvable one whose composition fails to mount. Both land
+      // on the default so the workspace pick survives.
+      expect(response.result.ok).toBe(true)
+      expect(ctx.sessions.get(SessionId('s3b'))?.header.agentPreset).toBe('standard')
+    } finally {
+      failingMounts.delete('minimal')
+    }
   })
 
   it('refuses to adopt a live session under a different preset', async () => {
@@ -710,6 +782,171 @@ describe('composing a preset over the wire', () => {
       rows: [{ id: 'tool-bash', name: TOOL_BASH }],
     }))
 
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('unreachable')
+    expect(response.result.error.code).toBe('agent-preset-not-found')
+  })
+})
+
+/** A chain graph one agent node per module, ids `row-1`... on canvas-internal node ids. */
+function CHAIN_GRAPH(...modules: string[]): FlowGraph {
+  return {
+    id: 'mine', name: 'Graph',
+    nodes: [
+      { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+      ...modules.map((module, index) => ({
+        id: `agent-${index + 1}`, type: 'agent' as const, position: { x: 220 * (index + 1), y: 0 },
+        prompt: '', composition: { id: `row-${index + 1}`, module },
+      })),
+      { id: 'end', type: 'end', position: { x: 220 * (modules.length + 1), y: 0 } },
+    ],
+    edges: modules.length === 0
+      ? [{ id: 'e-start', from: 'start', to: 'end' }]
+      : [
+        { id: 'e-start', from: 'start', to: 'agent-1' },
+        ...modules.slice(0, -1).map((_, index) => ({
+          id: `e-${index}`, from: `agent-${index + 1}`, to: `agent-${index + 2}`,
+        })),
+        { id: 'e-end', from: `agent-${modules.length}`, to: 'end' },
+      ],
+  }
+}
+
+describe('reading a preset graph over the wire', () => {
+  it('forwards the stored graph with its trust and display metadata', async () => {
+    const { api } = await harness(['standard'], undefined, { inventory: ['@deepseek-ai/dsh-tool-bash'] })
+
+    const saved = await api.agentPresets.saveGraph(request({
+      agentPreset: 'mine',
+      name: '我的图',
+      description: 'authored on the canvas',
+      graph: CHAIN_GRAPH('@deepseek-ai/dsh-tool-bash'),
+    }))
+    expect(saved.result.ok).toBe(true)
+
+    const response = await api.agentPresets.readGraph(request({ agentPreset: 'mine' }))
+    expect(response.result.ok).toBe(true)
+    if (!response.result.ok) throw new Error('unreachable')
+    expect(response.result.value.trust).toBe('user')
+    expect(response.result.value.name).toBe('我的图')
+    expect(response.result.value.description).toBe('authored on the canvas')
+    expect(response.result.value.graph.nodes.map(node => node.type)).toEqual(['start', 'agent', 'end'])
+  })
+
+  it('regenerates a chain for a shipped preset with no stored layout', async () => {
+    const { api } = await harness(['standard'])
+
+    const response = await api.agentPresets.readGraph(request({ agentPreset: 'standard' }))
+    expect(response.result.ok).toBe(true)
+    if (!response.result.ok) throw new Error('unreachable')
+    expect(response.result.value.trust).toBe('system')
+    expect(response.result.value.graph.nodes.map(node => node.type)).toEqual(['start', 'agent', 'end'])
+  })
+
+  it('reports a deployment that composes no presets', async () => {
+    const { api } = await harness(undefined)
+
+    const response = await api.agentPresets.readGraph(request({ agentPreset: 'mine' }))
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('unreachable')
+    expect(response.result.error.code).toBe('agent-preset-not-found')
+  })
+})
+
+describe('saving a preset graph over the wire', () => {
+  const TOOL_BASH = '@deepseek-ai/dsh-tool-bash'
+  const TOOL_READ = '@deepseek-ai/dsh-tool-read'
+
+  it('creates a preset from a graph whose rows the read serves back', async () => {
+    const { api } = await harness(['standard'], undefined, { inventory: [TOOL_BASH, TOOL_READ] })
+
+    const response = await api.agentPresets.saveGraph(request({
+      agentPreset: 'mine',
+      name: '我的组合',
+      graph: CHAIN_GRAPH(TOOL_BASH, TOOL_READ),
+    }))
+
+    expect(response.result.ok).toBe(true)
+    if (!response.result.ok) throw new Error('unreachable')
+    expect(response.result.value.agentPreset).toBe('mine')
+    const read = await api.agentPresets.read(request({ agentPreset: 'mine' }))
+    expect(read.result.ok).toBe(true)
+    if (!read.result.ok) throw new Error('unreachable')
+    expect(read.result.value.rows).toEqual([
+      { id: 'row-1', name: TOOL_BASH },
+      { id: 'row-2', name: TOOL_READ },
+    ])
+  })
+
+  it('refuses a graph whose projected rows name an uninstalled module', async () => {
+    const { api } = await harness(['standard'], undefined, { inventory: [TOOL_BASH] })
+
+    const response = await api.agentPresets.saveGraph(request({
+      agentPreset: 'mine',
+      graph: CHAIN_GRAPH(TOOL_BASH, TOOL_READ),
+    }))
+
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('unreachable')
+    expect(response.result.error.code).toBe('agent-preset-invalid')
+    expect(response.result.error.message).toMatch(/uninstalled/)
+    expect((response.result.error.details as { reason?: string } | undefined)?.reason).toContain(TOOL_READ)
+  })
+
+  it('refuses to overwrite a preset that ships with the deployment', async () => {
+    const { api } = await harness(['standard'], undefined, { inventory: [TOOL_BASH] })
+
+    const response = await api.agentPresets.saveGraph(request({
+      agentPreset: 'standard',
+      overwrite: true,
+      graph: CHAIN_GRAPH(TOOL_BASH),
+    }))
+
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('unreachable')
+    expect(response.result.error.code).toBe('agent-preset-read-only')
+  })
+
+  it('refuses a graph with a branching node before any write', async () => {
+    const { api } = await harness(['standard'], undefined, { inventory: [TOOL_BASH] })
+    const branching: FlowGraph = {
+      ...CHAIN_GRAPH(TOOL_BASH),
+      nodes: [
+        { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+        { id: 'a', type: 'agent', position: { x: 220, y: 0 }, prompt: '', composition: { id: 'tool-bash', module: TOOL_BASH } },
+        { id: 'cond', type: 'condition', position: { x: 440, y: 0 }, expression: 'true' },
+        { id: 'end', type: 'end', position: { x: 660, y: 0 } },
+      ],
+      edges: [
+        { id: 'e1', from: 'start', to: 'a' },
+        { id: 'e2', from: 'a', to: 'cond' },
+        { id: 'e3', from: 'cond', to: 'end' },
+      ],
+    }
+    const response = await api.agentPresets.saveGraph(request({ agentPreset: 'mine', graph: branching }))
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('unreachable')
+    expect(response.result.error.message).toMatch(/branching is a later phase/)
+  })
+
+  it('carries the composition subset through the request schema un-stripped', () => {
+    const parsed = agentPresetSaveGraphRequestSchema.parse({
+      agentPreset: 'mine',
+      graph: CHAIN_GRAPH(TOOL_BASH),
+    })
+    const agentNode = parsed.graph.nodes.find(node => node.type === 'agent')
+    expect(agentNode).toMatchObject({
+      composition: { id: 'row-1', module: TOOL_BASH },
+    })
+  })
+
+  it('reports a deployment that composes no presets', async () => {
+    const { api } = await harness(undefined)
+
+    const response = await api.agentPresets.saveGraph(request({
+      agentPreset: 'mine',
+      graph: CHAIN_GRAPH(TOOL_BASH),
+    }))
     expect(response.result.ok).toBe(false)
     if (response.result.ok) throw new Error('unreachable')
     expect(response.result.error.code).toBe('agent-preset-not-found')

@@ -93,6 +93,18 @@ export interface RpcErrorDetailsMap {
   'subagent-not-resumable': { childSessionId: SessionId }
   'subagent-unauthorized': { childSessionId: SessionId }
   'subagent-delivery-unavailable': { childSessionId: SessionId }
+  /** A flow store operation named an unknown saved flow. */
+  'flow-not-found': { flowId: string }
+  /** stop() named an unknown or already-settled run. */
+  'flow-run-not-found': { runId: string }
+  /** A flow graph failed validation (message is the validator's own text). */
+  'flow-invalid': {}
+  /** A saved flow document carries a newer on-disk format version. */
+  'flow-version': { flowId: string }
+  /** The live-run ceiling is reached (message names the bound). */
+  'flow-cap': {}
+  /** The flow engine service is absent from this composition. */
+  'flow-unavailable': {}
   'internal': {}
 }
 

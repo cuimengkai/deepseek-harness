@@ -943,6 +943,9 @@ export function WorkspaceBrowser({
   const [sessionRenameDraft, setSessionRenameDraft] = useState('')
   const [sessionRenaming, setSessionRenaming] = useState(false)
   const [sessionRenameError, setSessionRenameError] = useState<string | null>(null)
+  // Session delete is dialog-free; a host refusal (a member still live after
+  // disposal) surfaces here instead of being swallowed by the row action.
+  const [sessionDeleteError, setSessionDeleteError] = useState<string | null>(null)
   const sessionRenameTrimmed = sessionRenameDraft.trim()
   const sessionRenameBlocked = sessionRenaming || sessionRenameTrimmed === '' || sessionRenameTarget === null
   const closeSessionRename = () => {
@@ -979,11 +982,13 @@ export function WorkspaceBrowser({
   }
 
   // Delete is physically destructive (the log and the subagent tree are gone),
-  // so failures surface loudly; the host refuses a live tree before anything
-  // is removed, and the deleted rows leave every surface on the state echo.
+  // so failures surface loudly in the list area instead of a silent console
+  // note; a new gesture clears the prior error, and the deleted rows leave
+  // every surface on the state echo.
   const onSessionDelete = (sessionId: SessionNode['id']) => {
+    setSessionDeleteError(null)
     deleteSession(sessionId).catch((reason: unknown) => {
-      console.warn('session delete rejected:', reason)
+      setSessionDeleteError(reason instanceof Error ? reason.message : String(reason))
     })
   }
 
@@ -1156,6 +1161,8 @@ export function WorkspaceBrowser({
       {/* Always-mounted seat keeps the region's flex slot while the list
           itself is wide-only. */}
       <div className={css.listArea}>
+        {sessionDeleteError !== null
+          && <div className={css.renameError} role="alert">{sessionDeleteError}</div>}
         {wide && (normalizedQuery !== ''
           ? (
             <SearchResults

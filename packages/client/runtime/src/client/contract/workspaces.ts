@@ -21,6 +21,18 @@ export interface IWorkspaces {
    */
   connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
   /**
+   * Record the agent preset staged for the session the next connect produces.
+   * The connect is where the preset binds (it decides create vs reuse), so the
+   * connect owner holds the stage until that resolution.
+   * @param agentPreset - the staged preset id.
+   */
+  notePendingAgentPreset(agentPreset: string): void
+  /**
+   * Drop the staged preset without a connect. The seat calls this when its
+   * stage settles, so a stale preset never rides a later unrelated connect.
+   */
+  clearPendingAgentPreset(): void
+  /**
    * The New Session flow: connect the explicit, current-Session, or recent
    * Workspace and open the resulting session; failures surface on the session
    * list state.

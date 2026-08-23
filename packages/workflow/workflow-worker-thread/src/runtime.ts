@@ -13,7 +13,7 @@
  */
 
 import * as vm from 'node:vm'
-import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { ContentBlock, ModelKind } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { assertObjectJsonSchema, JsonSchemaError } from '@deepseek-ai/dsh-tools'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
@@ -36,7 +36,7 @@ export interface ExecutionObserver {
 }
 
 /** The `agent()` options the script may pass; everything else rejects loud. */
-const SUPPORTED_AGENT_OPTIONS = new Set(['label', 'phase', 'schema', 'provider', 'model'])
+const SUPPORTED_AGENT_OPTIONS = new Set(['label', 'phase', 'schema', 'provider', 'model', 'modelKinds'])
 /** Deferred Claude Code options we name explicitly in the rejection message. */
 const DEFERRED_AGENT_OPTIONS = new Set(['effort', 'isolation', 'agentType'])
 
@@ -279,6 +279,7 @@ export class WorkflowExecution {
           ...opts.schema !== undefined ? { schema: opts.schema } : {},
           ...opts.provider !== undefined ? { provider: opts.provider } : {},
           ...opts.model !== undefined ? { model: opts.model } : {},
+          ...opts.modelKinds !== undefined ? { modelKinds: opts.modelKinds } : {},
         })
       } catch (error: unknown) {
         // The host refuses starts once the run is cancelled — a refusal that
@@ -351,6 +352,7 @@ export class WorkflowExecution {
     provider?: string
     model?: string
     schema?: ObjectJsonSchema
+    modelKinds?: Partial<Record<ModelKind, { provider?: string; model?: string }>>
   } {
     if (rawOpts === undefined) return {}
     let opts: unknown
@@ -368,9 +370,9 @@ export class WorkflowExecution {
     for (const key of Object.keys(record)) {
       if (SUPPORTED_AGENT_OPTIONS.has(key)) continue
       if (DEFERRED_AGENT_OPTIONS.has(key)) {
-        throw new WorkflowError(`agent() option "${key}" is deferred and not supported by this engine (supported: label, phase, schema, provider, model)`, 'UNSUPPORTED_OPTION')
+        throw new WorkflowError(`agent() option "${key}" is deferred and not supported by this engine (supported: label, phase, schema, provider, model, modelKinds)`, 'UNSUPPORTED_OPTION')
       }
-      throw new WorkflowError(`agent() option "${key}" is not recognized (supported: label, phase, schema, provider, model)`, 'UNSUPPORTED_OPTION')
+      throw new WorkflowError(`agent() option "${key}" is not recognized (supported: label, phase, schema, provider, model, modelKinds)`, 'UNSUPPORTED_OPTION')
     }
     for (const key of ['label', 'phase', 'provider', 'model'] as const) {
       if (record[key] !== undefined && typeof record[key] !== 'string') {
@@ -388,13 +390,50 @@ export class WorkflowExecution {
         throw new WorkflowError(`agent() schema is outside the supported subset — ${error.message}`, 'UNSUPPORTED_SCHEMA', { cause: error })
       }
     }
+    let modelKinds: Partial<Record<ModelKind, { provider?: string; model?: string }>> | undefined
+    if (record.modelKinds !== undefined) {
+      modelKinds = this.readModelKinds(record.modelKinds)
+    }
     return {
       ...record.label !== undefined ? { label: record.label as string } : {},
       ...record.phase !== undefined ? { phase: record.phase as string } : {},
       ...record.provider !== undefined ? { provider: record.provider as string } : {},
       ...record.model !== undefined ? { model: record.model as string } : {},
       ...schema !== undefined ? { schema } : {},
+      ...modelKinds !== undefined ? { modelKinds } : {},
     }
+  }
+
+  /** Validate one `agent()` `modelKinds` bag into a detached per-kind route map. */
+  private readModelKinds(raw: unknown): Partial<Record<ModelKind, { provider?: string; model?: string }>> {
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      throw new WorkflowError('agent() option "modelKinds" must be an object keyed by model kind', 'INVALID_ARGUMENT')
+    }
+    const result: Partial<Record<ModelKind, { provider?: string; model?: string }>> = {}
+    for (const [kind, binding] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof binding !== 'object' || binding === null || Array.isArray(binding)) {
+        throw new WorkflowError(`agent() modelKinds entry "${kind}" must be an object`, 'INVALID_ARGUMENT')
+      }
+      const record = binding as Record<string, unknown>
+      for (const key of Object.keys(record)) {
+        if (key !== 'provider' && key !== 'model') {
+          throw new WorkflowError(`agent() modelKinds entry "${kind}" only accepts provider and model`, 'INVALID_ARGUMENT')
+        }
+      }
+      for (const key of ['provider', 'model'] as const) {
+        if (record[key] !== undefined && (typeof record[key] !== 'string' || record[key].length === 0)) {
+          throw new WorkflowError(`agent() modelKinds entry "${kind}" ${key} must be a non-empty string`, 'INVALID_ARGUMENT')
+        }
+      }
+      if (record.provider === undefined && record.model === undefined) {
+        throw new WorkflowError(`agent() modelKinds entry "${kind}" binds nothing — give it a provider or a model`, 'INVALID_ARGUMENT')
+      }
+      result[kind as ModelKind] = {
+        ...record.provider === undefined ? {} : { provider: record.provider as string },
+        ...record.model === undefined ? {} : { model: record.model as string },
+      }
+    }
+    return result
   }
 
   /** The `parallel(thunks)` hook: each thunk caught → `null`; fatal errors propagate. */

@@ -1,0 +1,43 @@
+# Keyless flow demo: one branching flow run against a fixture graph. The flow
+# engine compiles the graph off-loop and each agent node starts an in-process
+# child that resolves the `flow-mock` LLM adapter. The mock is registered first
+# (its `inject: ['llm']` defers apply until agent-spine mounts the runtime);
+# the flow row must follow the workflow row because the engine resolves
+# `workflowEngine` through `ctx.get` at construction. The driver picks the
+# branch (`go`/`no-go`) from argv and streams the workflow events plus the
+# settled run snapshot. Nothing here touches the network or reads a credential.
+- id: flow-mock-llm
+  name: './flow-mock-llm.ts'
+
+# Subagent capability seam: the provider registry plus the in-process `spawn`
+# backend children run on.
+- id: subagent
+  name: '@deepseek-ai/dsh-subagent'
+
+- id: subagent-spawn-in-process
+  name: '@deepseek-ai/dsh-subagent-spawn-in-process'
+
+# The workflow engine executes each run's compiled script on a fresh worker
+# thread and bridges `agent()` calls back to the in-process children.
+- id: workflow-worker-thread
+  name: '@deepseek-ai/dsh-workflow-worker-thread'
+
+- id: flow
+  name: '@deepseek-ai/dsh-flow'
+
+# The default agent spine bundles the LLM runtime, session store, tool
+# registry, and loop; its single `main` root agent is the flow run's parent.
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents:
+      - id: main
+        provider: flow-mock
+        model: flow-mock
+    workspaceContext: false
+    dshHome: './.dsh-home'
+    skills:
+      filesystem:
+        agentsHome: './.agents-home'
+    persona: 'Keyless flow demo.'
+    toolBash: false

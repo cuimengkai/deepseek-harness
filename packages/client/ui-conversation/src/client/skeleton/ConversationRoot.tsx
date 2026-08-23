@@ -30,6 +30,10 @@ export function ConversationRoot({
 
   const [pickerOpen, setPickerOpen] = useState(false)
   const [pendingWorkspaceId, setPendingWorkspaceId] = useState<WorkspaceId | undefined>()
+  // A failed connect's message, shown under the hero row until the next pick
+  // resolves (landing a session or a new attempt clears it). A silent catch
+  // made "the pick did nothing" indistinguishable from a hang.
+  const [workspaceError, setWorkspaceError] = useState<string | null>(null)
   const pickerAnchor = useRef<HTMLButtonElement>(null)
 
   // Publishes the seat's live height as --dsh-composer-height on the scroll
@@ -56,12 +60,14 @@ export function ConversationRoot({
   )
 
   // Clear the pending pick once the session lands in it, or when the picked
-  // workspace disappears from a ready list (deleted from the sidebar).
+  // workspace disappears from a ready list (deleted from the sidebar). A
+  // landing also clears a failed pick's error.
   useEffect(() => {
     if (pendingWorkspaceId === undefined) return
     if (sessionWorkspace?.workspaceId === pendingWorkspaceId
       || (workspaces.phase === 'ready' && pendingWorkspace === undefined)) {
       setPendingWorkspaceId(undefined)
+      setWorkspaceError(null)
     }
   }, [pendingWorkspaceId, sessionWorkspace?.workspaceId, workspaces.phase, pendingWorkspace])
 
@@ -113,8 +119,10 @@ export function ConversationRoot({
         onPick: (workspaceId) => {
           setPickerOpen(false)
           setPendingWorkspaceId(workspaceId)
-          void selectWorkspace(workspaceId).catch(() => {
+          setWorkspaceError(null)
+          void selectWorkspace(workspaceId).catch((reason: unknown) => {
             setPendingWorkspaceId(current => current === workspaceId ? undefined : current)
+            setWorkspaceError(reason instanceof Error ? reason.message : String(reason))
           })
         },
         onClose: () => { setPickerOpen(false) },
@@ -161,6 +169,11 @@ export function ConversationRoot({
       {hero && <HeroGlow className={css.heroGlow} />}
       {hero && <HeroShell t={t} renderSlot={renderSlot} />}
       {hero && heroWorkspaceRow}
+      {hero && workspaceError !== null && (
+        <div className={css.workspaceError} role="alert">
+          {t('workspace.connectError', { message: workspaceError })}
+        </div>
+      )}
       {zone !== undefined && renderSlot('conversation.input.dock', zone)}
       {inputBar}
     </div>

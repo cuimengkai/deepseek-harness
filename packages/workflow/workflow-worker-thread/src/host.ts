@@ -354,11 +354,12 @@ export class WorkerRun implements WorkflowRun {
         parent: this.parent,
         signal: this.controller.signal,
         ...request.schema !== undefined ? { outputSchema: request.schema } : {},
-        ...request.provider !== undefined || request.model !== undefined
+        ...request.provider !== undefined || request.model !== undefined || request.modelKinds !== undefined
           ? {
             agentOptions: {
               ...request.provider !== undefined ? { provider: request.provider } : {},
               ...request.model !== undefined ? { model: request.model } : {},
+              ...request.modelKinds !== undefined ? { modelKinds: request.modelKinds } : {},
             },
           }
           : {},

@@ -20,6 +20,8 @@ import type {
   LlmModelReasoningInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
+  ModelKind,
+  ModelModality,
 } from '@deepseek-ai/dsh-llm'
 
 class ScriptedAdapter extends LlmAdapter {
@@ -595,6 +597,45 @@ describe('LlmRuntime', () => {
       provider: 'route', id: 'model', name: 'Model',
       inputModalities: ['text', 'image'],
     })
+  })
+
+  it('carries role kinds through catalog, discovery, and exact-resolution projections', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    const source: LlmModelInfo = { provider: 'route', id: 'fast', name: 'Fast', inputModalities: ['text', 'image'], kinds: ['text'] }
+    ctx.llm.registerAdapter(['route'], new CatalogAdapter({ id: 'route', name: 'Route' }, [source]))
+    const exact = new class extends ScriptedAdapter {
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return Promise.resolve({
+          provider, id: model, name: model,
+          inputModalities: ['text', 'image'], kinds: ['text'],
+        })
+      }
+    }(SCRIPT)
+    ctx.llm.registerAdapter(['exact'], exact)
+    ctx.llm.registerModelDiscovery('settings', async () => [
+      { id: 'discovered', name: 'Discovered', inputModalities: ['image'], kinds: ['image'] },
+    ])
+
+    await expect(ctx.llm.listModels('route')).resolves.toEqual([source])
+    await expect(ctx.llm.resolveModelInfo('exact', 'fast')).resolves.toEqual({
+      provider: 'exact', id: 'fast', name: 'fast',
+      inputModalities: ['text', 'image'], kinds: ['text'],
+    })
+    await expect(ctx.llm.discoverModels('settings', { baseURL: 'http://127.0.0.1:1' })).resolves.toEqual([
+      { id: 'discovered', name: 'Discovered', inputModalities: ['image'], kinds: ['image'] },
+    ])
+
+    // The projections detach adapter-owned arrays: mutating a returned copy
+    // leaves the next advertised view intact.
+    const advertised = await ctx.llm.listModels('route')
+    // The projection returns a fresh array; the cast mutates the detached copy
+    // only, leaving the next advertised view intact.
+    ;(advertised[0]!.inputModalities as ModelModality[]).push('image')
+    ;(advertised[0]!.kinds as ModelKind[]).push('embedding')
+    await expect(ctx.llm.listModels('route')).resolves.toEqual([
+      { provider: 'route', id: 'fast', name: 'Fast', inputModalities: ['text', 'image'], kinds: ['text'] },
+    ])
   })
 
   it('resolves detached model context independently of advisory catalog membership', async () => {

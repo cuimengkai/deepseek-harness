@@ -21,6 +21,7 @@ import { AgentPresetSection } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionInjected } from '../src/client/AgentPresetSection.tsx'
 import { AgentPresetSeat } from '../src/client/AgentPresetSeat.tsx'
 import type { AgentPresetSeatInjected } from '../src/client/AgentPresetSeat.tsx'
+import { emptyChainGraph } from '../src/client/preset-graph.ts'
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
@@ -98,6 +99,23 @@ async function bench() {
           rpcId: 'r',
           result: { ok: true as const, value: { agentPreset: 'standard', trust: 'system', content: '' } },
         }),
+        readGraph: (payload: { agentPreset: string }) => Promise.resolve({
+          rpcId: 'r',
+          result: {
+            ok: true as const,
+            value: {
+              agentPreset: payload.agentPreset,
+              trust: 'system',
+              // The bench never inspects a composition, so the empty chain is
+              // all the mount needs.
+              graph: emptyChainGraph(payload.agentPreset, ''),
+            },
+          },
+        }),
+        saveGraph: () => Promise.resolve({
+          rpcId: 'r',
+          result: { ok: true as const, value: { agentPreset: 'x' } },
+        }),
         copy: (payload: { from: string; agentPreset: string }) => {
           calls.push(`copy:${payload.agentPreset}`)
           // The host's roster now contains it, which is the whole point of the
@@ -112,6 +130,17 @@ async function bench() {
         remove: () => Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: {} } }),
         select: (payload: { agentPreset: string }) => {
           calls.push(`select:${payload.agentPreset}`)
+          if (payload.agentPreset === 'broken') {
+            // A named preset the host no longer supplies; the seat must settle
+            // (clearing the pending stage) instead of holding it forever.
+            return Promise.resolve({
+              rpcId: 'r',
+              result: {
+                ok: false as const,
+                error: { code: 'agent-preset-not-found', message: 'no such preset', details: {} },
+              },
+            })
+          }
           return Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { agentPreset: payload.agentPreset } } })
         },
       },
@@ -151,12 +180,16 @@ function declareConversation(slots: SlotRegistry): () => void {
   } as never, () => null)
 }
 
-/** A workspaces double recording new-session starts. */
+/** A workspaces double recording new-session starts and pending-preset stages. */
 function workspacesDouble() {
   const starts: unknown[] = []
+  const pending: Array<'note' | 'clear'> = []
   return {
     starts,
+    pending,
     startSession: (workspaceId?: unknown) => { starts.push(workspaceId ?? null) },
+    notePendingAgentPreset: () => { pending.push('note') },
+    clearPendingAgentPreset: () => { pending.push('clear') },
   }
 }
 
@@ -488,6 +521,88 @@ describe('ui-agent-preset apply', () => {
     // switching sessions the user never picked for.
     await Promise.resolve()
     expect(calls.filter(call => call === 'select:minimal')).toHaveLength(spent)
+  })
+
+  it('clears the workspace pending when the applied stage settles', async () => {
+    const { ctx, slots } = await bench()
+    declareRoot(slots)
+    declareConversation(slots)
+    ctx.provide('conversation', {} as never)
+    const state: {
+      current?: string
+      byId: Record<string, { id: string; blank: boolean; agentPreset?: string }>
+    } = { byId: {} }
+    const sessions = sessionsDouble(state)
+    ctx.provide('sessions', sessions as never)
+    const workspaces = workspacesDouble()
+    ctx.provide('workspaces', workspaces as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    const chip = (slots.entries('conversation.hero.agentPreset')[0]!
+      .inject as unknown as () => AgentPresetSeatInjected)()
+
+    await chip.load()
+    await chip.select('minimal')
+    // Staged on the hero screen with no session to take it yet.
+    expect(workspaces.pending).toEqual(['note'])
+
+    state.current = 's1'
+    state.byId['s1'] = { id: 's1', blank: true, agentPreset: 'standard' }
+    sessions.notify()
+
+    // The applied stage settled, so the pending preset the connect recorded is
+    // dropped: nothing may ride a later unrelated connect.
+    await vi.waitFor(() => { expect(workspaces.pending).toEqual(['note', 'clear']) })
+  })
+
+  it('clears the workspace pending when the stage is dropped as unservable', async () => {
+    const { ctx, slots } = await bench()
+    declareRoot(slots)
+    declareConversation(slots)
+    ctx.provide('conversation', {} as never)
+    const state = {
+      current: 's1',
+      byId: { s1: { id: 's1', blank: false, agentPreset: 'standard' } },
+    }
+    const sessions = sessionsDouble(state)
+    ctx.provide('sessions', sessions as never)
+    const workspaces = workspacesDouble()
+    ctx.provide('workspaces', workspaces as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    const chip = (slots.entries('conversation.hero.agentPreset')[0]!
+      .inject as unknown as () => AgentPresetSeatInjected)()
+
+    await chip.load()
+    // The flow's session already ran a turn, so the swap is refused: the stage
+    // must not linger for some later connect to pick up.
+    await chip.select('minimal')
+
+    expect(workspaces.pending).toEqual(['note', 'clear'])
+  })
+
+  it('clears the workspace pending when the apply is rejected', async () => {
+    const { ctx, slots } = await bench()
+    declareRoot(slots)
+    declareConversation(slots)
+    ctx.provide('conversation', {} as never)
+    const state = {
+      current: 's1',
+      byId: { s1: { id: 's1', blank: true } },
+    }
+    const sessions = sessionsDouble(state)
+    ctx.provide('sessions', sessions as never)
+    const workspaces = workspacesDouble()
+    ctx.provide('workspaces', workspaces as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    const chip = (slots.entries('conversation.hero.agentPreset')[0]!
+      .inject as unknown as () => AgentPresetSeatInjected)()
+
+    await chip.load()
+    await chip.select('broken')
+
+    // A rejected apply settles like a consumed one: the pick never reached a
+    // session, so nothing may carry it into a later connect.
+    expect(workspaces.pending).toEqual(['note', 'clear'])
+    expect(chip.hooks.agentPresetSeat.getSnapshot().error).toBe('no such preset')
   })
 
   it('gives the header label the same roster the General row reads', async () => {

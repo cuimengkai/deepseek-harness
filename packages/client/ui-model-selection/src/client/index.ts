@@ -12,7 +12,7 @@
  * history outside the direct-parent continuation path.
  */
 // Type-only: the carrier types, the forwarded Host-event face and the ctx.remote merge.
-import type { ModelSelection, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelCatalogModel, ModelSelection, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { CommandUiContract, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.model seat).
@@ -44,15 +44,22 @@ function rowId(providerId: string, modelId: string): string {
   return `${providerId}/${modelId}`
 }
 
+/** Kind tags rendered verbatim (stable domain vocabulary), or undefined when the adapter declared none. */
+function kindsText(model: ModelCatalogModel): string | undefined {
+  return model.kinds !== undefined && model.kinds.length > 0 ? model.kinds.join(', ') : undefined
+}
+
 /** Flatten the directory into popup rows; failure rows are listed for visibility but never selectable. */
 function optionsOf(directory: SessionModels, t: TranslateNS<'model'>): SelectOption[] {
   const rows: SelectOption[] = []
   for (const group of directory.groups) {
     for (const model of group.models) {
+      const kinds = kindsText(model)
+      const base = model.description !== undefined ? `${group.name} · ${model.description}` : group.name
       rows.push({
         id: rowId(group.id, model.id),
         label: model.name,
-        detail: model.description !== undefined ? `${group.name} · ${model.description}` : group.name,
+        detail: kinds === undefined ? base : `${base} · ${kinds}`,
         ...(directory.current.provider === group.id && directory.current.model === model.id
           ? { active: true } : {}),
       })

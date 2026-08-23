@@ -11,6 +11,7 @@
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'

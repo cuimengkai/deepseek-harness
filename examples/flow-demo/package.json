@@ -1,0 +1,7 @@
+{
+  "name": "flow-demo-example",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Runnable demo: the visual flow engine (dsh-flow) composing two in-process subagents under a condition branch, one keyless branching run per direction (keyless)"
+}

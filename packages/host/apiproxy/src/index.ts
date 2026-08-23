@@ -87,6 +87,7 @@ export class ApiProxyService extends Service implements ApiProxy {
   readonly skills: ApiProxy['skills']
   readonly agentPresets: ApiProxy['agentPresets']
   readonly projectInsight: ApiProxy['projectInsight']
+  readonly flow: ApiProxy['flow']
   readonly settings: ApiProxy['settings']
   readonly credentials: ApiProxy['credentials']
   readonly llm: ApiProxy['llm']
@@ -116,6 +117,7 @@ export class ApiProxyService extends Service implements ApiProxy {
     this.skills = api.skills
     this.agentPresets = api.agentPresets
     this.projectInsight = api.projectInsight
+    this.flow = api.flow
     this.settings = api.settings
     this.credentials = api.credentials
     this.llm = api.llm

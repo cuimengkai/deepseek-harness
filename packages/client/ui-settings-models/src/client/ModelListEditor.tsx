@@ -143,13 +143,18 @@ function capacitySpelling(value: number | undefined): string {
   return value === undefined ? '' : formatCapacity(value)
 }
 
-/** Adopt a candidate, keeping whatever capacities the provider disclosed. */
+/**
+ * Adopt a candidate, keeping whatever the provider disclosed (kinds included,
+ * so a discovery that reports roles keeps them in the stored profile).
+ */
 function adopt(candidate: DiscoveredModelView): ModelDraft {
   return {
     id: candidate.id,
     ...candidate.name === undefined ? {} : { name: candidate.name },
     ...candidate.contextWindow === undefined ? {} : { contextWindow: candidate.contextWindow },
     ...candidate.maxTokens === undefined ? {} : { maxTokens: candidate.maxTokens },
+    ...candidate.inputModalities === undefined ? {} : { inputModalities: [...candidate.inputModalities] },
+    ...candidate.kinds === undefined ? {} : { kinds: [...candidate.kinds] },
   }
 }
 

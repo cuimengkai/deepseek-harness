@@ -1,14 +1,16 @@
 /**
  * Cascade session deletion: `ctx.sessionDeletion.deleteSession(id)` removes a
- * session's durable log together with its whole subagent descendant tree,
- * refuses while any member is live, and records each deletion in a durable
- * ledger domain. Consumers (the projection cache, the workspace registry)
- * clean their per-session state through optional service calls, so the
- * deletion feature depends on them, never the reverse.
+ * session's durable log together with its whole subagent descendant tree.
+ * Live scope members are disposed first (stop-then-delete), the delete refuses
+ * only when a member remains live after disposal, and each deletion is
+ * recorded in a durable ledger domain. Consumers (the projection cache, the
+ * workspace registry) clean their per-session state through optional service
+ * calls, so the deletion feature depends on them, never the reverse.
  * @module @deepseek-ai/dsh-session-deletion
  */
 
 import { Context, Service } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
@@ -41,10 +43,10 @@ export interface DeleteSessionResult {
 }
 
 /**
- * A delete was refused because part of the target tree is live. Live sessions
- * re-materialize their durable log on the next flush, so the whole operation
- * is rejected before anything is removed; the caller must dispose the listed
- * members first.
+ * A delete was refused because part of the target tree is still live after
+ * disposal. Live sessions re-materialize their durable log on the next flush,
+ * so the whole operation is rejected before anything is removed; the caller
+ * must dispose the listed members first.
  */
 export class SessionDeletionError extends Error {
   /**
@@ -84,20 +86,44 @@ export class SessionDeletion extends Service {
 
   /**
    * Physically delete one session and its entire subagent descendant tree.
-   * The scope is computed once from the merged live + persisted header corpus;
-   * if ANY member is live the whole operation refuses ({@link SessionDeletionError})
-   * and nothing is removed. Otherwise each member's durable log is deleted
-   * root-first through the persistence seam, the operation is recorded in the
-   * ledger (when at least one member existed), and mounted consumers clean
-   * their per-session state.
+   * The scope is computed once from the merged live + persisted header corpus.
+   * Live scope members are disposed first — agent-owned sessions through the
+   * agent factory (`ctx.agents.disposeAgent`), bare live sessions directly via
+   * `ctx.sessions.dispose` — so the persistence coordinator's own live guard
+   * passes; if any member remains live after disposal the whole operation
+   * refuses ({@link SessionDeletionError}) and nothing is removed. Otherwise
+   * each member's durable log is deleted root-first through the persistence
+   * seam, the operation is recorded in the ledger (when at least one member
+   * existed), and mounted consumers clean their per-session state.
    * @param id - the root session to delete.
    * @param options - optional ledger reason.
    * @returns the removed and absent scope members.
-   * @throws {@link SessionDeletionError} when any scope member is live.
+   * @throws {@link SessionDeletionError} when any scope member is still live after disposal.
    */
   async deleteSession(id: SessionId, options: DeleteSessionOptions = {}): Promise<DeleteSessionResult> {
     const headers = await this.headerCorpus()
     const scope = cascadeScope(id, headers)
+
+    // Stop-then-delete: dispose every live scope member before removing durable
+    // logs. An agent-owned session drains through the agent factory (its
+    // composite teardown ends in detachSession); a bare live session is
+    // detached directly. A dispose rejection is logged and left to the
+    // liveness re-check below — the agent teardown already detached the session
+    // in its `finally`, so the re-check decides instead of the rejection
+    // aborting the whole delete.
+    const agents = this.ctx.get('agents') as { disposeAgent(id: SessionId): Promise<boolean> } | undefined
+    for (const member of scope) {
+      if (this.ctx.sessions.get(member) === undefined) continue
+      try {
+        if (agents !== undefined) await agents.disposeAgent(member)
+      } catch (error: unknown) {
+        this.ctx.logger.warn(`session "${member}": disposeAgent rejected before delete: ${String(error)}`)
+      }
+      // Re-fetch: disposeAgent detaches the session when it succeeds, so the
+      // pre-dispose liveness check above is stale by the time we get here.
+      const stillLive = this.ctx.sessions.get(member)
+      if (stillLive !== undefined) await this.ctx.sessions.dispose(stillLive)
+    }
 
     const liveMembers = scope.filter(member => this.ctx.sessions.get(member) !== undefined)
     if (liveMembers.length > 0) {

@@ -539,12 +539,14 @@ export class SessionManager {
       cwd?: string
       sessionId?: SessionId
       reuseWorkspaceBlank?: true
+      agentPreset?: string
     } = {},
   ): Promise<RpcResult<{ sessionId: SessionId }>> {
     try {
       const shared = {
         ...(opts.sessionId === undefined ? {} : { sessionId: opts.sessionId }),
         ...(opts.reuseWorkspaceBlank === undefined ? {} : { reuseWorkspaceBlank: opts.reuseWorkspaceBlank }),
+        ...(opts.agentPreset === undefined ? {} : { agentPreset: opts.agentPreset }),
       }
       const payload = opts.workspaceId !== undefined
         ? { workspaceId: opts.workspaceId, ...shared }

@@ -5,6 +5,7 @@
  */
 
 import { createHash, randomUUID } from 'node:crypto'
+import type {} from '@deepseek-ai/dsh-session/context'
 import type { DatabaseSync } from 'node:sqlite'
 import { Context, Service, type Fiber } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'

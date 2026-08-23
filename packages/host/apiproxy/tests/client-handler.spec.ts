@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { ApiProxy, GoalRef, HostFrame, MuxFrame, RpcMessage, RpcRequest, RpcResponse } from '@deepseek-ai/dsh-host-apiproxy'
+import type { ApiProxy, FlowApi, GoalRef, HostFrame, ModelProviderGroup, MuxFrame, ProjectInsightApi, RpcMessage, RpcRequest, RpcResponse } from '@deepseek-ai/dsh-host-apiproxy'
 import { InProcessApiClient, RpcId, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
 
 const sid = (id: string): SessionId => id as SessionId
@@ -95,10 +95,12 @@ function scriptedApi(overrides: {
       list: r => ok(r, { presets: [], authorable: false, hasDocument: false }),
       select: r => ok(r, { agentPreset: r.payload.agentPreset }),
       read: r => ok(r, { agentPreset: r.payload.agentPreset, trust: 'user' as const, content: '', rows: [] }),
+      readGraph: r => ok(r, { agentPreset: r.payload.agentPreset, trust: 'user' as const, graph: { id: 'g', name: 'G', nodes: [], edges: [] } }),
       copy: r => ok(r, { agentPreset: r.payload.agentPreset }),
       openDocument: r => ok(r, { opened: true as const }),
       remove: r => ok(r, {}),
       compose: r => ok(r, { agentPreset: r.payload.agentPreset }),
+      saveGraph: r => ok(r, { agentPreset: r.payload.agentPreset }),
       ...overrides.agentPresets,
     },
     goals: {
@@ -130,6 +132,9 @@ function scriptedApi(overrides: {
       discoverModels: err,
       ...overrides.llm,
     },
+    // Wire-protocol double: these domains are not scripted per case.
+    projectInsight: {} as ProjectInsightApi,
+    flow: {} as FlowApi,
     events: { mux: () => empty<MuxFrame>(), host: () => empty<HostFrame>(), ...overrides.events },
     respond: overrides.respond ?? (() => Promise.resolve({ accepted: false as const, reason: 'not-pending' as const })),
     downloads: { sessionLog: async () => new Response('stub', { status: 404 }) },
@@ -737,7 +742,11 @@ describe('config unary surface', () => {
       settingsPath: ['providers', 'openai'],
       active: false,
     }
-    const group = { id: 'deepseek-official', name: 'DeepSeek', models: [{ id: 'deepseek-v4-flash', name: 'Flash' }] }
+    const group: ModelProviderGroup = {
+      id: 'deepseek-official',
+      name: 'DeepSeek',
+      models: [{ id: 'deepseek-v4-flash', name: 'Flash', inputModalities: ['text', 'image'], kinds: ['text'] }],
+    }
     const api = scriptedApi({
       settings: {
         describe: record('settings.describe', r => ok(r, { writable: true, hasDocument: false, namespaces: [view] })),
@@ -754,7 +763,7 @@ describe('config unary surface', () => {
       llm: {
         providers: record('llm.providers', r => ok(r, { providers: [providerRow] })),
         models: record('llm.models', r => ok(r, { groups: [group], failures: [] })),
-        discoverModels: record('llm.discoverModels', r => ok(r, { models: [{ id: 'acme-large', contextWindow: 65536 }] })),
+        discoverModels: record('llm.discoverModels', r => ok(r, { models: [{ id: 'acme-large', contextWindow: 65536, inputModalities: ['text'], kinds: ['text'] }] })),
       },
     })
     const c = client(api)
@@ -786,7 +795,7 @@ describe('config unary surface', () => {
       api: 'openai-completions',
       apiKey: 'probe-key',
     })
-    expect(discovered.result).toEqual({ ok: true, value: { models: [{ id: 'acme-large', contextWindow: 65536 }] } })
+    expect(discovered.result).toEqual({ ok: true, value: { models: [{ id: 'acme-large', contextWindow: 65536, inputModalities: ['text'], kinds: ['text'] }] } })
 
     expect(seen.map(call => call.method)).toEqual([
       'settings.describe', 'settings.openDocument', 'settings.update', 'settings.replace', 'settings.mutate',

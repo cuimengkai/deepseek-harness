@@ -46,8 +46,8 @@ describe('project-insight fingerprint', () => {
     await seed(root, files)
     const walked = await walkProject(root, 10)
     expect(walked).toHaveLength(10)
-    expect(walked[0].rel).toBe('file000.txt')
-    expect(walked[9].rel).toBe('file009.txt')
+    expect(walked[0]!.rel).toBe('file000.txt')
+    expect(walked[9]!.rel).toBe('file009.txt')
   })
 
   it('is stable regardless of creation order', async () => {

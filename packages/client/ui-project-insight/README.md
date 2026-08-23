@@ -10,7 +10,7 @@ Each tab owns a per-session `ProjectInsightController` that reads the session's 
 
 ## Model Experience
 
-None directly: the tabs render the committed document and never reach the model. The `projectInsight.read` RPC reads project files but produces no model input, and no prompt section, persona, or tool is owned here.
+None, as the tabs render the committed document and never reach the model; the `projectInsight.read` RPC reads project files but produces no model input.
 
 #### KV Cache effect
 

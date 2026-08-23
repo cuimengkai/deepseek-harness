@@ -211,6 +211,17 @@ export interface AgentFactory {
    * @returns the owned handle after setup, both announcements, and loop start complete.
    */
   resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>
+  /**
+   * Dispose a live agent by its shared agent/session id, without requiring the
+   * holder of its {@link AgentHandle}. Drains the in-flight turn, unregisters
+   * the agent, removes its session, and unwinds its scope. A live agent whose
+   * handle was discarded (the web host's session-ensure path) is still reachable
+   * here, which is what lets cascade session deletion stop a session before
+   * removing its durable log.
+   * @param id - the shared agent/session id of the live agent to dispose.
+   * @returns false when no live agent has that id.
+   */
+  disposeAgent(id: SessionId): Promise<boolean>
 }
 
 /** Thrown when create/resume is called before an agent factory is registered. */
@@ -427,6 +438,22 @@ export class AgentRegistry extends Service {
     const receiver = getTraceable(ownerCtx, target)
     // oxlint-disable-next-line typescript/unbound-method -- Reflect.apply intentionally supplies the caller-traced receiver
     return Reflect.apply(target.resume, receiver, [ownerCtx, options])
+  }
+
+  /**
+   * Dispose a live agent by its shared agent/session id through the registered
+   * factory. Unlike {@link create}/{@link resume} no caller context binds the
+   * teardown: the live lifecycle was already owned by the context that created
+   * it, so this delegates straight to the factory.
+   * @param id - the shared agent/session id of the live agent to dispose.
+   * @returns false when no factory is registered or no live agent has that id.
+   */
+  async disposeAgent(id: SessionId): Promise<boolean> {
+    if (this.factory === undefined) return false
+    // `?.` keeps a factory compiled against a pre-disposeAgent interface from
+    // crashing the deletion path; unknown agents and missing factories both
+    // report false and the caller's liveness re-check owns the decision.
+    return this.factory.target.disposeAgent?.(id) ?? false
   }
 
   /**

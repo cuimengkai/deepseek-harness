@@ -1,6 +1,7 @@
 /** Package-owned durable workflow-record invariants. @module @deepseek-ai/dsh-tool-workflow/invariant */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import type {} from './types.ts'

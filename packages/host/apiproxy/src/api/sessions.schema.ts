@@ -8,6 +8,7 @@
 import { z } from 'zod'
 import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session/types'
 import type { MessageId } from '@deepseek-ai/dsh-llm/brand'
+import type { ModelKind, ModelModality } from '@deepseek-ai/dsh-llm/types'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import type {
@@ -170,11 +171,21 @@ export const modelReasoningSchema = z.object({
   defaultEffort: z.string().min(1).optional(),
 }) satisfies z.ZodType<Wire<ModelReasoning>>
 
+/**
+ * Merge-extensible model vocabulary: any string survives validation (a future
+ * plugin kind must not fail a whole catalog entry), while the wire type keeps
+ * the literal union for client switching.
+ */
+export const modelModalitySchema = z.string().min(1) as unknown as z.ZodType<ModelModality>
+export const modelKindSchema = z.string().min(1) as unknown as z.ZodType<ModelKind>
+
 /** One advisory model entry inside a provider group. */
 export const modelCatalogModelSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   description: z.string().optional(),
+  inputModalities: z.array(modelModalitySchema).min(1).optional(),
+  kinds: z.array(modelKindSchema).min(1).optional(),
   reasoning: modelReasoningSchema.optional(),
 }) satisfies z.ZodType<Wire<ModelCatalogModel>>
 

@@ -41,11 +41,15 @@ export type { AgentPresetSeatInjected, AgentPresetSeatProps } from './AgentPrese
 export type { AgentPresetSectionInjected, AgentPresetSectionProps } from './AgentPresetSection.tsx'
 export type { AgentPresetSeatState, SeatSessionSummary } from './seat-store.ts'
 export {
-  addRow, composeBlocker, composeDirty, displayNameFor, draftBlocker, handoffBlocker,
-  insertRowAt, insertionIndexFor, moveRow, removeRow, rowIdFor,
+  composeBlocker, composeDirty, displayNameFor, draftBlocker, handoffBlocker, rowIdFor,
   type AgentPresetSectionState, type ComposeDraft, type ComposePalette, type CopyDraft,
   type ModuleSource, type PaletteModule, type PresetRow, type PresetView,
 } from './section-store.ts'
+export {
+  cascadePosition, chainAddModule, chainAgents, chainMoveIndex, chainMoveNode,
+  chainRemoveNode, chainReorder, compositionToRow, emptyChainGraph, graphLayoutEqual,
+  graphRows,
+} from './preset-graph.ts'
 export type { AgentPresetOption, AgentPresetSettingsState } from './settings-store.ts'
 export { AGENT_PRESET_SETTINGS_NS, writeDefaultPreset } from './settings-store.ts'
 
@@ -142,6 +146,16 @@ export function apply(ctx: ClientContext): void {
         }
     }, (sessionId, agentPreset) => {
       scope.sessions.noteAgentPreset(sessionId as never, agentPreset)
+    }, (agentPreset) => {
+      // The connect decides create vs reuse, so the staged preset binds there:
+      // a pick that creates a new session carries it instead of opening on the
+      // deployment default (the develop-mode workspace-pick bug).
+      scope.workspaces.notePendingAgentPreset(agentPreset)
+    }, () => {
+      // A settled stage must not ride a later unrelated connect: the pending
+      // preset the stage recorded is dropped the moment it is applied, dropped
+      // as unservable, or rejected.
+      scope.workspaces.clearPendingAgentPreset()
     })
 
     const seatInjected = (): AgentPresetSeatInjected => ({
@@ -230,10 +244,13 @@ export function apply(ctx: ClientContext): void {
     closeComposer: () => { section.closeComposer() },
     setComposerId: (id: string) => { section.setComposerId(id) },
     setComposerName: (name: string) => { section.setComposerName(name) },
-    addRow: (moduleName: string) => { section.addRow(moduleName) },
-    insertRowAt: (moduleName: string, index: number) => { section.insertRowAt(moduleName, index) },
+    addRow: (moduleName: string) => section.addRow(moduleName),
+    addNodeAt: (moduleName: string, position: { x: number; y: number }) => section.addNodeAt(moduleName, position),
     removeRow: (rowId: string) => { section.removeRow(rowId) },
+    removeNode: (nodeId: string) => { section.removeNode(nodeId) },
     moveRow: (from: number, to: number) => { section.moveRow(from, to) },
+    moveNode: (nodeId: string, position: { x: number; y: number }) => { section.moveNode(nodeId, position) },
+    reorderNode: (fromNodeId: string, toNodeId: string) => { section.reorderNode(fromNodeId, toNodeId) },
     confirmCompose: () => section.confirmCompose(),
     openLocation: (id: string) => section.openLocation(id),
     ...creatorDraft === undefined ? {} : { startCreatorDraft: creatorDraft },

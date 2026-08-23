@@ -24,6 +24,9 @@
       "path": "../ui-conversation"
     },
     {
+      "path": "../ui-flow-editor"
+    },
+    {
       "path": "../ui-primitives"
     },
     {
@@ -37,6 +40,9 @@
     },
     {
       "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
+      "path": "../../workflow/flow"
     }
   ]
 }

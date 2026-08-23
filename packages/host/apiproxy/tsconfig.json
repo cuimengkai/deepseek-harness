@@ -54,6 +54,9 @@
       "path": "../../insight/project-insight"
     },
     {
+      "path": "../../workflow/flow"
+    },
+    {
       "path": "../../core/session"
     },
     {

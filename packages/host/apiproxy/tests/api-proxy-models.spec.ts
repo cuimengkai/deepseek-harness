@@ -315,6 +315,41 @@ describe('Web session model selection', () => {
     await ctx.fiber.dispose()
   })
 
+  it('projects modality and role metadata from exact resolution into the catalog', async () => {
+    const { ctx, sessionId } = await harness()
+    ctx.llm.registerAdapter(['rich'], new class extends CatalogAdapter {
+      override listModels(): Promise<readonly LlmModelInfo[]> {
+        return Promise.resolve([{
+          provider: 'rich', id: 'vision', name: 'Vision',
+          inputModalities: ['text', 'image'], kinds: ['text'],
+        }])
+      }
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return Promise.resolve({
+          provider, id: model, name: model,
+          inputModalities: ['text', 'image'], kinds: ['text'],
+        })
+      }
+    }('Rich Provider', []))
+    const api = createApiProxy(ctx, {
+      defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }),
+      cwd: '/tmp',
+    })
+
+    const catalog = expectValue(await api.sessions.models(request({ sessionId })))
+    expect(catalog.groups.find(group => group.id === 'rich')).toEqual({
+      id: 'rich',
+      name: 'Rich Provider',
+      models: [{
+        id: 'vision',
+        name: 'Vision',
+        inputModalities: ['text', 'image'],
+        kinds: ['text'],
+      }],
+    })
+    await ctx.fiber.dispose()
+  })
+
   it('accepts an advisory-unlisted model, rejects an unavailable provider, and switches only after the next assembly', async () => {
     const { ctx, agent, sessionId } = await harness()
     const api = createApiProxy(ctx, { defaultModelSelection: () => ({ provider: 'deepseek-official', model: 'deepseek-chat' }), cwd: '/tmp' })

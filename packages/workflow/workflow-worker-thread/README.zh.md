@@ -27,7 +27,7 @@ worker 仍提供实用的隔离：
 
 在 worker 内，脚本会收到 `args` 以及以下钩子：
 
-- `agent(prompt, { label, phase, schema, model })` 启动一个宿主侧 subagent。提供 schema 时返回结构化值，否则返回最终文本。普通子 agent 失败会产生 `null`；
+- `agent(prompt, { label, phase, schema, model, modelKinds })` 启动一个宿主侧 subagent。提供 schema 时返回结构化值，否则返回最终文本。普通子 agent 失败会产生 `null`。`modelKinds` 把模型类型绑定到按类型的 provider/model 路由；路由会转发进子 `AgentOptions`，但请求路由尚未消费它们。
 - `parallel(thunks)` 在已配置的并发限制下运行 thunk；
 - `pipeline(items, ...stages)` 在没有跨阶段屏障的情况下传递 `(previous, item, index)`；
 - `phase(title)` 和 `log(message)` 发出观察器叙述。

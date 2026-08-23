@@ -6,6 +6,7 @@
  */
 
 import { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import {
   adoptSessionEvent,
   interruptedTurnClosers,

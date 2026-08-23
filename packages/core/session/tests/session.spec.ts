@@ -1356,6 +1356,25 @@ describe('SessionStore', () => {
     expect(observed).toBe(0)
   })
 
+  it('disposes a live session explicitly (inverse of enter, emits session/disposed)', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+
+    const disposed: Session[] = []
+    ctx.on('session/disposed', (session) => { disposed.push(session) })
+
+    const session = ctx.sessions.create(SessionId('droppable'))
+    expect(ctx.sessions.get(SessionId('droppable'))).toBe(session)
+
+    await expect(ctx.sessions.dispose(session)).resolves.toBe(true)
+    expect(ctx.sessions.get(SessionId('droppable'))).toBeUndefined()
+    expect(disposed.map(item => item.id)).toEqual(['droppable'])
+
+    // Already detached: idempotent false, no duplicate disposal edge.
+    await expect(ctx.sessions.dispose(session)).resolves.toBe(false)
+    expect(disposed).toHaveLength(1)
+  })
+
   it('pairs a partial session/created announcement with disposal during rollback', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

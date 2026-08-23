@@ -2,7 +2,7 @@
 
 English | [中文](README.zh.md)
 
-Cascade physical session deletion with a durable deletion ledger. `ctx.sessionDeletion.deleteSession(id)` removes a session's durable log together with its whole subagent descendant tree, refuses while any member is live, and records each deletion in a ledger domain.
+Cascade physical session deletion with a durable deletion ledger. `ctx.sessionDeletion.deleteSession(id)` removes a session's durable log together with its whole subagent descendant tree, disposes live members first (stop-then-delete), refuses only when a member remains live after disposal, and records each deletion in a ledger domain.
 
 ## Why deletion exists
 
@@ -11,7 +11,7 @@ Session persistence is event-sourced and append-only: a durable log is never rew
 ## Contract
 
 - `deleteSession(id, options?)` returns `{ deleted, notFound }` — the scope members whose durable logs were removed (root first) and the members that had no durable artifact.
-- **Live refusal**: if ANY scope member is live (`ctx.sessions.get(member)` resolves), the whole operation throws `SessionDeletionError` (`code: 'live'`) and nothing is removed. Live sessions re-materialize their log on the next flush, so a delete under them would be immediately undone.
+- **Stop-then-delete**: live scope members are disposed before their logs are removed — agent-owned sessions drain through the agent factory (`ctx.agents.disposeAgent`, whose composite teardown ends by detaching the session), bare live sessions detach directly via `ctx.sessions.dispose`. A member that remains live after disposal makes the whole operation throw `SessionDeletionError` (`code: 'live'`) and removes nothing: live sessions re-materialize their log on the next flush, so a delete under them would be immediately undone. The refusal is a defensive backstop, not the normal path — the host disposes used agents, so used sessions are no longer live at delete time.
 - **Cascade scope**: the root plus every header with `origin: 'subagent'` whose `parentSession` chain reaches it, in breadth-first pre-order (cycle-safe, sweeps already-orphaned children). Computed once from the merged live + persisted header corpus.
 - **Ledger**: when at least one member was deleted, a `DeletionRecord` is written to the `session_deletion` domain, keyed by the root id. The ledger is diagnostic — it answers "was this id deleted, and when", not "what happened to every session".
 - **Consumer cleanup**: after a successful delete, the optional `sessionProjectionCache.evict(id)` and `workspaceRegistry.forgetSession(id)` run per deleted member, so no stale projection row or workspace `sessionIds` membership survives. Absent consumers (no mount) are skipped.
@@ -36,7 +36,7 @@ Pair it with [`@deepseek-ai/dsh-command-session-delete`](../command-session-dele
 
 | Error | Condition |
 |---|---|
-| `SessionDeletionError` (`code: 'live'`) | A scope member is live; the whole operation refused. |
+| `SessionDeletionError` (`code: 'live'`) | A scope member is still live after disposal; the whole operation refused. |
 
 Absence is not an error: an unknown root id returns `{ deleted: [], notFound: [id] }` and writes no ledger record.
 

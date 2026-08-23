@@ -14,6 +14,7 @@ import type {
   LlmModelInfo,
   LlmProviderInfo,
   LlmResolvedModelInfo,
+  ModelKind,
   ModelModality,
   ResolvedRetryPolicy,
   StreamChunk,
@@ -42,6 +43,8 @@ export interface DeepSeekCatalogModel {
   maxTokens?: number
   /** Accepted request modalities; omission is text-only. */
   inputModalities?: ModelModality[]
+  /** Model roles this entry can serve; omission is text-only. */
+  kinds?: ModelKind[]
 }
 
 /**
@@ -123,6 +126,7 @@ function modelInfo(provider: string, model: DeepSeekCatalogModel): LlmModelInfo 
     name: model.name ?? model.id,
     ...model.description === undefined ? {} : { description: model.description },
     inputModalities: model.inputModalities ?? ['text'],
+    kinds: model.kinds ?? ['text'],
   }
 }
 
@@ -195,11 +199,11 @@ export class DeepSeekAdapter extends LlmAdapter {
     const contextWindow = configured?.contextWindow
       ?? connection.defaultContextWindow
     return Promise.resolve({
-      // An uncatalogued endpoint is safely treated as text-only. Declaring an
-      // unverified image capability would let the host persist input that the
-      // endpoint may reject on every later turn.
+      // An uncatalogued endpoint is safely treated as a text-only chat model.
+      // Declaring an unverified image capability would let the host persist
+      // input that the endpoint may reject on every later turn.
       ...configured === undefined
-        ? { provider, id: model, name: model, inputModalities: ['text' as const] }
+        ? { provider, id: model, name: model, inputModalities: ['text' as const], kinds: ['text' as const] }
         : modelInfo(provider, configured),
       context: { contextWindow },
       defaultMaxTokens: configured?.maxTokens ?? connection.maxTokens,

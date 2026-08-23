@@ -7,7 +7,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { Scoped } from '@deepseek-ai/dsh-scope'
-import type { LlmCallConfig, LlmFailure, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
+import type { LlmCallConfig, LlmFailure, ModelKind, ResolvedRetryPolicy } from '@deepseek-ai/dsh-llm'
 import type { AgentCancelCause, Session, SessionId, UserMessage } from '@deepseek-ai/dsh-session'
 export type { AgentCancelCause } from '@deepseek-ai/dsh-session'
 import type { Inbox } from './inbox.ts'
@@ -28,6 +28,13 @@ export interface AgentOptions {
   model?: string
   /** Maximum output tokens for each conversation-model request. */
   maxTokens?: number
+  /**
+   * Per-kind model routes. A kind listed here routes that kind's requests to
+   * the bound route (this agent's provider/model otherwise). Declaration only
+   * until request routing consumes kinds (a Phase B/C follow-on); carried so a
+   * flow-authored per-kind binding survives into the child's durable options.
+   */
+  modelKinds?: Partial<Record<ModelKind, { provider?: string; model?: string }>>
 }
 
 /** Options for {@link Agent.cancel}. */

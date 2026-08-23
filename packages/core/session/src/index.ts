@@ -35,10 +35,6 @@ export { canonicalHeader, foldRequestHeader, headerEquals } from './request-head
 export { KNOWN_SESSION_EVENT_TYPES } from './known-event-types.ts'
 
 declare module '@deepseek-ai/cordis' {
-  interface Context {
-    sessions: SessionStore
-  }
-
   interface Events {
     /**
      * Creation announcement during session publication. A synchronous throw vetoes and rolls
@@ -1004,6 +1000,27 @@ export class SessionStore extends Service {
     } catch (error: unknown) {
       this.ctx.logger.warn(`session "${entry.id}": session/disposed dispatch threw: ${String(error)}`)
     }
+  }
+
+  /**
+   * Dispose a live session: remove it from the store and emit its paired
+   * `session/disposed` so the persistence coordinator retires and final-flushes
+   * the session. The inverse of {@link enter} for a caller that owns the
+   * session but not an agent lifecycle (the cascade-deletion service).
+   * Durability is the caller's boundary — `persistence.delete` awaits that
+   * retirement (`waitForRetirement`) before removing the log.
+   * @param session - a live entered session to detach.
+   * @returns false when the session is already detached or unknown.
+   */
+  async dispose(session: Session): Promise<boolean> {
+    const entry = attachments.get(session)
+    if (entry === undefined || this.store.get(entry.id) !== entry) return false
+    if (entry.announcing || entry.appending) {
+      entry.detachRequested = true
+      return true
+    }
+    entry.detach()
+    return true
   }
 
   /**

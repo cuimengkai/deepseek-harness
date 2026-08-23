@@ -112,6 +112,34 @@ describe('ModelSelect reasoning effort', () => {
       .toEqual(['Default', 'Standard'])
   })
 
+  it('renders the declared role kinds as a tag on each model row', () => {
+    const directory = createSnapshotStore(state({
+      groups: [{
+        id: 'provider',
+        name: 'Provider',
+        models: [
+          { id: 'vision', name: 'Vision', inputModalities: ['text', 'image'], kinds: ['text'] },
+          { id: 'embed', name: 'Embed', inputModalities: ['text'], kinds: ['embedding'] },
+        ],
+      }],
+      current: { provider: 'provider', model: 'vision' },
+    }))
+    render(<ModelSelect
+      locked={false}
+      available
+      directory={directory}
+      load={vi.fn()}
+      select={vi.fn().mockResolvedValue(true)}
+      t={t}
+    />)
+
+    fireEvent.click(screen.getByRole('button', { name: '选择模型，当前 Vision' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: /模型/ }))
+    const rows = screen.getAllByRole('menuitemradio').map(item => item.textContent)
+    expect(rows[0]).toContain('text')
+    expect(rows[1]).toContain('embedding')
+  })
+
   it('prompts for a selection when the current model is no longer advertised', () => {
     const directory = createSnapshotStore(state({
       current: { provider: 'deepseek-official', model: 'removed-model' },

@@ -4,6 +4,7 @@
  */
 
 import { z } from 'zod'
+import { flowGraphSchema } from './flow.schema.ts'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import { sessionIdSchema } from './sessions.schema.ts'
@@ -111,3 +112,31 @@ export const agentPresetComposeRequestSchema = z.object({
 export const agentPresetComposeValueSchema = z.object({
   agentPreset: z.string(),
 }) satisfies z.ZodType<Wire<ResponseValue<'agentPreset.compose'>>>
+
+/** agentPreset.readGraph request payload. */
+export const agentPresetReadGraphRequestSchema = z.object({
+  agentPreset: z.string().min(1),
+}) satisfies z.ZodType<Wire<RequestPayload<'agentPreset.readGraph'>>>
+
+/** agentPreset.readGraph response value. */
+export const agentPresetReadGraphValueSchema = z.object({
+  agentPreset: z.string(),
+  trust: z.union([z.literal('system'), z.literal('user')]),
+  graph: flowGraphSchema,
+  name: z.string().optional(),
+  description: z.string().optional(),
+}) satisfies z.ZodType<Wire<ResponseValue<'agentPreset.readGraph'>>>
+
+/** agentPreset.saveGraph request payload. */
+export const agentPresetSaveGraphRequestSchema = z.object({
+  agentPreset: z.string().min(1),
+  graph: flowGraphSchema,
+  name: z.string().optional(),
+  description: z.string().optional(),
+  overwrite: z.boolean().optional(),
+}) satisfies z.ZodType<Wire<RequestPayload<'agentPreset.saveGraph'>>>
+
+/** agentPreset.saveGraph response value. */
+export const agentPresetSaveGraphValueSchema = z.object({
+  agentPreset: z.string(),
+}) satisfies z.ZodType<Wire<ResponseValue<'agentPreset.saveGraph'>>>

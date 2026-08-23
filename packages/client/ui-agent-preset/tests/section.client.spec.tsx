@@ -10,6 +10,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
+import { cascadePosition, chainAddModule, emptyChainGraph } from '../src/client/preset-graph.ts'
 import { AgentPresetSection } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionProps } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionState, ComposeDraft, ComposePalette, CopyDraft } from '../src/client/section-store.ts'
@@ -62,9 +64,12 @@ function renderSection(
     setComposerId: vi.fn(),
     setComposerName: vi.fn(),
     addRow: vi.fn(),
-    insertRowAt: vi.fn(),
+    addNodeAt: vi.fn(),
     removeRow: vi.fn(),
+    removeNode: vi.fn(),
     moveRow: vi.fn(),
+    moveNode: vi.fn(),
+    reorderNode: vi.fn(),
     confirmCompose: vi.fn(() => Promise.resolve(true)),
     openLocation: vi.fn(() => Promise.resolve()),
     confirmDelete: vi.fn(),
@@ -89,12 +94,24 @@ function rowFor(id: string): HTMLElement {
   return row
 }
 
+/** A chain graph over the given modules, in cascade layout, as the composer edits. */
+function chainGraph(id: string, name: string, ...modules: string[]): FlowGraph {
+  let graph = emptyChainGraph(id, name)
+  for (let index = 0; index < modules.length; index++) {
+    const module = modules[index]
+    if (module === undefined) continue
+    const added = chainAddModule(graph, module, cascadePosition(index))
+    if (added !== undefined) graph = added.graph
+  }
+  return graph
+}
+
 /** An open composer, unchanged from a blank draft, with one row assembled. */
 const COMPOSER_DRAFT: ComposeDraft = {
   id: 'my-agent', name: 'My agent',
-  rows: [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }],
+  graph: chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash'),
   saving: false, error: null,
-  original: { id: '', name: '', rows: [] },
+  original: { id: '', name: '', graph: emptyChainGraph('', '') },
 }
 
 /** A ready palette for an open composer; the handoff needs no modules. */
@@ -395,51 +412,73 @@ describe('the copy dialog', () => {
 })
 
 describe('the read-only canvas view', () => {
-  const ROWS = [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }]
+  const GRAPH = chainGraph('standard', '标准模式', '@deepseek-ai/dsh-tool-bash')
 
-  it('shows a shipped preset as a design page, rows on the canvas', () => {
-    renderSection({ view: { id: 'standard', title: '标准模式', rows: ROWS } })
+  it('shows a shipped preset as a design page, nodes on the canvas', () => {
+    renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH } })
 
     // The composer head names the preset under the view title, and the body is
-    // the pipeline canvas: the row renders as a node, not a dialog of YAML.
+    // the flow canvas: the chain renders as graph nodes — start, the plugin,
+    // end — not a dialog of YAML.
     expect(screen.getByRole('heading', { name: `${en.view} · ${en.presetStandardName}` })).toBeTruthy()
     expect(screen.getByText(en.compositionLabel)).toBeTruthy()
-    expect(document.querySelectorAll('[data-row-id]')).toHaveLength(ROWS.length)
-    expect(document.querySelector('[data-row-id="tool-bash"]')).toBeTruthy()
+    expect(document.querySelector('[data-node-id="start"]')).toBeTruthy()
+    expect(document.querySelector('[data-node-id="agent-1"]')).toBeTruthy()
+    expect(document.querySelector('[data-node-id="end"]')).toBeTruthy()
   })
 
   it('keeps the loaded title when the viewed row leaves the roster', () => {
-    renderSection({ view: { id: 'retired', title: 'Retired mode', rows: [] } })
+    renderSection({ view: { id: 'retired', title: 'Retired mode', graph: emptyChainGraph('retired', '') } })
 
     // The view carries its own title, so a row that vanished from the roster
     // does not degrade the design page into an empty shell.
     expect(screen.getByRole('heading', { name: `${en.view} · Retired mode` })).toBeTruthy()
   })
 
-  it('renders no edit affordance: no fields, palette, or save', () => {
-    renderSection({ view: { id: 'standard', title: '标准模式', rows: ROWS } })
+  it('renders no edit affordance: no fields, palette, save, or node actions', () => {
+    renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH } })
 
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('heading', { name: en.palette })).toBeNull()
     expect(screen.queryByRole('button', { name: en.save })).toBeNull()
-    expect(screen.queryByRole('button', { name: new RegExp(`^${en.removeRow}:`) })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.removeRow })).toBeNull()
   })
 
-  it('renders the nodes non-draggable', () => {
-    renderSection({ view: { id: 'standard', title: '标准模式', rows: ROWS } })
+  it('renders the chain legible but not editable', () => {
+    renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH } })
 
     // The shipped composition is the known-good copy source, so its chain is
-    // legible but cannot be reordered or removed from.
-    const node = document.querySelector('[data-row-id="tool-bash"]')
-    expect(node?.getAttribute('draggable')).toBe('false')
+    // legible but cannot be reordered or removed from. Selection still works —
+    // the inspector explains a node — but the editable affordances are gone:
+    // no connect ports, no palette, no footer.
+    expect(document.querySelector('[data-node-id="agent-1"]')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en.connectLabel })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.handoff })).toBeNull()
   })
 
   it('closes through the controller', () => {
-    const actions = renderSection({ view: { id: 'standard', title: '标准模式', rows: ROWS } })
+    const actions = renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH } })
 
     fireEvent.click(screen.getByRole('button', { name: en.back }))
 
     expect(actions.closeView).toHaveBeenCalledTimes(1)
+  })
+
+  it('offers edit as a copy on an authoring deployment', () => {
+    const actions = renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH } })
+
+    // A shipped preset is read-only by contract, so its edit affordance hands
+    // off to a copy instead of mutating the composition in place.
+    fireEvent.click(screen.getByRole('button', { name: en.editCopy }))
+
+    expect(actions.closeView).toHaveBeenCalledTimes(1)
+    expect(actions.beginCopy).toHaveBeenCalledWith('standard')
+  })
+
+  it('withholds the edit affordance when no preset can be written', () => {
+    renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH }, authorable: false })
+
+    expect(screen.queryByRole('button', { name: en.editCopy })).toBeNull()
   })
 })
 

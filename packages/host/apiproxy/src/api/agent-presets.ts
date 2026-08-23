@@ -14,6 +14,7 @@
  * plugin set the deployment can run.
  */
 
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RpcRequest, RpcResponse } from './rpc.ts'
 
@@ -147,6 +148,45 @@ export interface AgentPresetsApi {
   compose(request: RpcRequest<{
     agentPreset: string
     rows: readonly ComposeRow[]
+    name?: string
+    description?: string
+    overwrite?: boolean
+  }>): Promise<RpcResponse<{ agentPreset: string }>>
+
+  /**
+   * Read one preset's composition graph, for the graph-backed composer.
+   *
+   * Privileged for the same reason `read` is — the graph's agent nodes name
+   * the plugins a session runs. The graph is the AUTHORING source the canvas
+   * edits: each agent node carries the composition row it projects, and the
+   * Host regenerates it as a chain when the stored layout is absent or no
+   * longer matches the composition (a hand edit or a rows-composer write
+   * wins). Structure only — never composition text — crosses the wire.
+   */
+  readGraph(request: RpcRequest<{ agentPreset: string }>):
+  Promise<RpcResponse<{
+    agentPreset: string
+    trust: 'system' | 'user'
+    graph: FlowGraph
+    name?: string
+    description?: string
+  }>>
+
+  /**
+   * Create or replace a locally authored preset's composition AND companion
+   * graph from a preset composition graph.
+   *
+   * The graph composer. Rows are derived from the graph's agent nodes and
+   * validated exactly as `compose` validates them — non-empty, module-per-row,
+   * unique ids, every named module installed, and (for `overwrite`) a
+   * user-authored target — then one write commits both the composition and the
+   * graph beside it. Structure only, never composition text or a path, crosses
+   * the wire; `name`/`description` publish beside the composition and also
+   * become the stored graph's name so the roster and the canvas agree.
+   */
+  saveGraph(request: RpcRequest<{
+    agentPreset: string
+    graph: FlowGraph
     name?: string
     description?: string
     overwrite?: boolean

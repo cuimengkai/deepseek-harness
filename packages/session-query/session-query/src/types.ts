@@ -13,6 +13,7 @@ import type {
   SurfaceEvent,
 } from '@deepseek-ai/dsh-session'
 import type { SessionTitleSnapshot } from '@deepseek-ai/dsh-session-title'
+import type {} from '@deepseek-ai/dsh-session/context'
 import type { SessionSearchCursor } from './cursor.ts'
 
 export type { SessionSearchCursor } from './cursor.ts'

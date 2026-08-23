@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-08-19-session-deletion.md) | 中文
 
+删除操作的 live 拒绝契约已被[强制停止后删除](2026-08-23-stop-then-delete-session-deletion.zh.md)取代。
+
 ## 问题
 
 会话持久化是事件溯源 + append-only：持久化日志永不改写，所以会话与磁盘占用无界累积，没有官方清理入口。`SessionPersistence` 没有 delete 操作；唯一的"移除"是手动删文件——搜索索引已能反应（`persistentDeletes`），但没有任何官方入口触发它。

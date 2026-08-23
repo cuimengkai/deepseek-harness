@@ -4,6 +4,7 @@
  */
 
 import { Context, FiberState, Service, type Fiber } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import z from '@deepseek-ai/schemastery'
 import { z as zod } from 'zod'
 import type { Branded } from '@deepseek-ai/dsh-brand'

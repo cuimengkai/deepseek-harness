@@ -8,6 +8,7 @@ import { boot, healProfilesModuleFallback, loadOverlayPatches, loadProfile } fro
 import { provideCmdline } from '@deepseek-ai/dsh-cmdline'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { settingsNamespace } from '@deepseek-ai/dsh-settings'
@@ -39,6 +40,21 @@ const MINIMAL_BASH_DESCRIPTION = `Run commands in a bash shell
 * To inspect a particular line range of a file, e.g. lines 10-25, try 'sed -n 10,25p /path/to/the/file'.
 * Please avoid commands that may produce a very large amount of output.
 * Please run long lived commands in the background, e.g. 'sleep 10 &' or start a server in the background.`
+
+/** A minimal valid flow graph for the session-less save/list round-trip. */
+const FLOW_MOUNT_GRAPH: FlowGraph = {
+  id: 'flow-mount-smoke',
+  name: 'Flow mount smoke',
+  nodes: [
+    { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+    { id: 'main', type: 'agent', position: { x: 200, y: 0 }, prompt: 'work on it' },
+    { id: 'end', type: 'end', position: { x: 400, y: 0 } },
+  ],
+  edges: [
+    { id: 'e1', from: 'start', to: 'main' },
+    { id: 'e2', from: 'main', to: 'end' },
+  ],
+}
 
 /**
  * Boot the shipped Web composition, minus the rows that would bind a port,
@@ -189,6 +205,21 @@ describe('the shipped Web composition', () => {
     expect(toolNames(ctx)).toEqual([])
   })
 
+  it('mounts the flow engine on the host so the Flow tab is live', async () => {
+    // The Flow tab's save/get/run RPCs resolve `ctx.get('flowEngine')` on the
+    // host. Until the web bundle mounted the engine (the `flow` host row that
+    // must follow the enabled `workflow-worker-thread` row), the tab rendered
+    // a read-only notice; this asserts the engine is actually present and its
+    // session-less persistence surface round-trips.
+    const engine = ctx.get('flowEngine')
+    expect(engine).toBeDefined()
+    if (engine === undefined) return
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-flow-mount-'))
+    await engine.save(cwd, FLOW_MOUNT_GRAPH)
+    const listed = await engine.list(cwd)
+    expect(listed.map(flow => flow.id)).toContain(FLOW_MOUNT_GRAPH.id)
+  })
+
   it('keeps the token meter and its context-meter projections on the host plane', async () => {
     // Read before any preset in this file mounts, which is what makes this an
     // ownership assertion rather than a mount-order coincidence: a preset-side
@@ -216,10 +247,10 @@ describe('the shipped Web composition', () => {
     }
   })
 
-  it('supplies both shipped presets, and only those, from the system root', async () => {
+  it('supplies the shipped presets, and only those, from the system root', async () => {
     const listed = await ctx.agentPresets.list()
 
-    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'minimal', 'standard'])
+    expect(listed.map(preset => preset.id).sort()).toEqual(['code', 'cordis', 'develop', 'minimal', 'standard'])
     expect(listed.every(preset => preset.trust === 'system')).toBe(true)
     expect(ctx.agentPresets.defaultId).toBe('standard')
   })
@@ -825,6 +856,47 @@ describe('authoring a preset on the shipped composition', () => {
       // The same tools the shipped `minimal` composes, from a directory copied
       // through the service into a root outside the installed harness.
       expect(toolNames(authorCtx, handle.agent)).toEqual(['bash', 'str_replace_editor'])
+    } finally {
+      await handle.dispose()
+    }
+  })
+
+  it('composes a preset from a graph and a session really mounts it', async () => {
+    const graph: FlowGraph = {
+      id: 'graph-composed', name: '我的图',
+      nodes: [
+        { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+        {
+          id: 'agent-1', type: 'agent', position: { x: 220, y: 0 }, prompt: '',
+          composition: { id: 'todo', module: '@deepseek-ai/dsh-tool-todo', config: { allowParallelInProgress: true } },
+        },
+        { id: 'end', type: 'end', position: { x: 440, y: 0 } },
+      ],
+      edges: [
+        { id: 'e-start', from: 'start', to: 'agent-1' },
+        { id: 'e-end', from: 'agent-1', to: 'end' },
+      ],
+    }
+
+    await authorCtx.agentPresets.composeGraph('graph-composed', graph, { name: '我的图' },
+      { overwrite: false, assertResolvable: () => [] })
+
+    // The stored layout round-trips as authored — a graph whose rows still
+    // equal the composition is served, not regenerated — and the rows beside
+    // it are exactly the composition that mounts.
+    expect(await authorCtx.agentPresets.readGraph('graph-composed')).toEqual(graph)
+    expect(await authorCtx.agentPresets.readRows('graph-composed')).toEqual([
+      { id: 'todo', name: '@deepseek-ai/dsh-tool-todo', config: { allowParallelInProgress: true } },
+    ])
+
+    const handle = await authorCtx.agents.create({
+      sessionId: SessionId('preset-graph-composed'),
+      setup: agentCtx => authorCtx.agentPresets.mount(agentCtx, 'graph-composed').then(() => undefined),
+    })
+    try {
+      // The graph-derived composition mounts the same tool the direct rows
+      // composer's `derived-mine` mounts: graph authoring is rows authoring.
+      expect(toolNames(authorCtx, handle.agent)).toEqual(['todo_write'])
     } finally {
       await handle.dispose()
     }

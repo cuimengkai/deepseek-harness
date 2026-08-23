@@ -64,6 +64,16 @@
     - 'button "复制: 创造模式"':
       - img
       - text: 复制
+  - listitem:
+    - 'button "设为默认: 开发模式"':
+      - text: 开发模式 内置 具备 code 模式的全部能力，并在进入项目工作区时自动扫描项目，提供模块依赖拓扑、组件依赖、技术栈、组件、提示词与 agent 相关技术的洞察。
+      - code: develop
+    - 'button "查看: 开发模式"':
+      - img
+      - text: 查看
+    - 'button "复制: 开发模式"':
+      - img
+      - text: 复制
 - heading "自定义" [level=3]
 - button "新建 Agent":
   - img

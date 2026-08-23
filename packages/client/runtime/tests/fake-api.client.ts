@@ -257,6 +257,34 @@ export class FakeApiClient implements IApiClient {
     read: (payload, signal) => this.record('projectInsight.read', payload, this.onProjectInsightRead(payload, signal)),
   }
 
+  onFlowList: IApiClient['flow']['list'] =
+    () => Promise.resolve(ok({ flows: [] }))
+  onFlowGet: IApiClient['flow']['get'] =
+    () => Promise.resolve(ok({ id: 'fake-flow', name: 'Fake Flow', nodes: [], edges: [] }))
+  onFlowSave: IApiClient['flow']['save'] =
+    payload => Promise.resolve(ok({ id: payload.graph.id }))
+  onFlowDelete: IApiClient['flow']['delete'] =
+    () => Promise.resolve(ok({}))
+  onFlowRun: IApiClient['flow']['run'] =
+    () => Promise.resolve(ok({ runId: 'fake-flow-run' }))
+  onFlowGetRun: IApiClient['flow']['getRun'] =
+    () => Promise.resolve(ok({ run: null }))
+  onFlowListRuns: IApiClient['flow']['listRuns'] =
+    () => Promise.resolve(ok({ runs: [] }))
+  onFlowStop: IApiClient['flow']['stop'] =
+    () => Promise.resolve(ok({}))
+
+  readonly flow: IApiClient['flow'] = {
+    list: (payload, signal) => this.record('flow.list', payload, this.onFlowList(payload, signal)),
+    get: (payload, signal) => this.record('flow.get', payload, this.onFlowGet(payload, signal)),
+    save: (payload, signal) => this.record('flow.save', payload, this.onFlowSave(payload, signal)),
+    delete: (payload, signal) => this.record('flow.delete', payload, this.onFlowDelete(payload, signal)),
+    run: (payload, signal) => this.record('flow.run', payload, this.onFlowRun(payload, signal)),
+    getRun: (payload, signal) => this.record('flow.getRun', payload, this.onFlowGetRun(payload, signal)),
+    listRuns: (payload, signal) => this.record('flow.listRuns', payload, this.onFlowListRuns(payload, signal)),
+    stop: (payload, signal) => this.record('flow.stop', payload, this.onFlowStop(payload, signal)),
+  }
+
   readonly skills: IApiClient['skills'] = {
     list: (payload: unknown) => this.record('skill.list', payload, this.onSkillList(payload)),
   }

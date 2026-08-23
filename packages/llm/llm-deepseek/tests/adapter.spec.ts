@@ -763,9 +763,9 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmDeepSeek, { baseURL: 'http://127.0.0.1:1' })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', inputModalities: ['text'] },
-      { provider: 'deepseek-official', id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', inputModalities: ['text'] },
-      { provider: 'deepseek-official', id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'] },
+      { provider: 'deepseek-official', id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', inputModalities: ['text'], kinds: ['text'] },
+      { provider: 'deepseek-official', id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', inputModalities: ['text'], kinds: ['text'] },
+      { provider: 'deepseek-official', id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'], kinds: ['text'] },
     ])
     await expect(ctx.llm.resolveModelInfo('deepseek-official', 'deepseek-v4-flash'))
       .resolves.toMatchObject({
@@ -790,6 +790,8 @@ describe('plugin registration and config', () => {
         id: 'deepseek-v4-flash-vision-exp',
         name: 'DeepSeek-V4-Flash-Vision-Exp',
         inputModalities: ['text', 'image'],
+        // A vision-capable chat model is still the text generation kind.
+        kinds: ['text'],
         context: { contextWindow: 1_000_000 },
         defaultMaxTokens: 256_000,
       })
@@ -870,9 +872,9 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmRuntime)
     LlmDeepSeek.apply(ctx, { baseURL: 'http://127.0.0.1:1' })
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', inputModalities: ['text'] },
-      { provider: 'deepseek-official', id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', inputModalities: ['text'] },
-      { provider: 'deepseek-official', id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'] },
+      { provider: 'deepseek-official', id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash', inputModalities: ['text'], kinds: ['text'] },
+      { provider: 'deepseek-official', id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', inputModalities: ['text'], kinds: ['text'] },
+      { provider: 'deepseek-official', id: 'deepseek-v4-flash-vision-exp', name: 'DeepSeek-V4-Flash-Vision-Exp', inputModalities: ['text', 'image'], kinds: ['text'] },
     ])
   })
 
@@ -888,6 +890,7 @@ describe('plugin registration and config', () => {
       id: 'adapter-model',
       name: 'adapter-model',
       inputModalities: ['text'],
+      kinds: ['text'],
     }])
   })
 
@@ -908,8 +911,8 @@ describe('plugin registration and config', () => {
       ],
     })
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
-      { provider: 'deepseek-official', id: 'private-fast', name: 'private-fast', inputModalities: ['text'] },
-      { provider: 'deepseek-official', id: 'private-reasoner', name: 'Private Reasoner', description: 'Higher reasoning budget', inputModalities: ['text', 'image'] },
+      { provider: 'deepseek-official', id: 'private-fast', name: 'private-fast', inputModalities: ['text'], kinds: ['text'] },
+      { provider: 'deepseek-official', id: 'private-reasoner', name: 'Private Reasoner', description: 'Higher reasoning budget', inputModalities: ['text', 'image'], kinds: ['text'] },
     ])
     await expect(ctx.llm.resolveModelInfo('deepseek-official', 'private-fast'))
       .resolves.toMatchObject({ context: { contextWindow: 32_000 } })
@@ -967,6 +970,12 @@ describe('plugin registration and config', () => {
       id: 'm',
       inputModalities: ['audio'] as unknown as NonNullable<LlmDeepSeek.DeepSeekCatalogModel['inputModalities']>,
     }], /expected "text" \| "image"/],
+    [[{ id: 'm', kinds: [] }], /kinds/],
+    [[{ id: 'm', kinds: ['text', 'text'] }], /kinds must not contain duplicates/],
+    [[{
+      id: 'm',
+      kinds: ['image-generation'] as unknown as NonNullable<LlmDeepSeek.DeepSeekCatalogModel['kinds']>,
+    }], /expected "text" \| "image" \| "audio" \| "embedding"/],
     [[{ id: 'm' }, { id: 'm' }], /duplicate catalog model/],
   ]
 
@@ -986,6 +995,12 @@ describe('plugin registration and config', () => {
       id: 'm',
       inputModalities: ['audio'] as unknown as NonNullable<LlmDeepSeek.DeepSeekCatalogModel['inputModalities']>,
     }], /inputModalities must contain only "text" and "image"/],
+    [[{ id: 'm', kinds: [] }], /kinds must not be empty/],
+    [[{
+      id: 'm',
+      kinds: ['image-generation'] as unknown as NonNullable<LlmDeepSeek.DeepSeekCatalogModel['kinds']>,
+    }], /kinds must contain only text, image, audio, embedding/],
+    [[{ id: 'm', kinds: ['text', 'text'] }], /kinds must not contain duplicates/],
   ]
 
   it.each(invalidProgrammaticModalities)('rejects programmatic modality config that bypasses the schema', (models, message) => {

@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from 'node:crypto'
+import type {} from '@deepseek-ai/dsh-session/context'
 import { stat } from 'node:fs/promises'
 import { basename } from 'node:path'
 import { Context, Service } from '@deepseek-ai/cordis'

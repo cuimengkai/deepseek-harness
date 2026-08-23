@@ -6,6 +6,7 @@
  */
 
 import { Context, FiberState, Service } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import { randomUUID } from 'node:crypto'
 import z from '@deepseek-ai/schemastery'
 import { emitAgentEvent } from '@deepseek-ai/dsh-agent'
@@ -42,6 +43,7 @@ class FactoryOwnership {
   private readonly teardown = new AbortController()
   private readonly inactive = Promise.withResolvers<void>()
   private readonly liveAgents = new Set<() => Promise<void>>()
+  private readonly byId = new Map<SessionId, () => Promise<void>>()
   private startupTasks = new Set<Promise<void>>()
 
   constructor(private readonly fiber: Context['fiber']) {}
@@ -55,10 +57,37 @@ class FactoryOwnership {
     return this.accepting && !INACTIVE_STATES.has(this.fiber.state)
   }
 
-  /** Track one live agent's shared teardown until it has run. */
-  track(dispose: () => Promise<void>): () => void {
+  /**
+   * Track one live agent's shared teardown until it has run. The entry is also
+   * recorded by id so the factory can dispose one agent on demand; the returned
+   * untrack removes it from both stores, so a completed or failed dispose can
+   * never be re-awaited by a later same-id lifecycle.
+   */
+  track(dispose: () => Promise<void>, id: SessionId): () => void {
     this.liveAgents.add(dispose)
-    return () => { this.liveAgents.delete(dispose) }
+    this.byId.set(id, dispose)
+    return () => {
+      this.liveAgents.delete(dispose)
+      // Guard against a stale untrack deleting a later same-id lifecycle that
+      // reused the id while this entry was draining.
+      if (this.byId.get(id) === dispose) this.byId.delete(id)
+    }
+  }
+
+  /**
+   * Dispose one live agent by its shared id. Awaits the agent's memoized
+   * composite teardown (cancel → quiesce → unregister → unwind scope); the
+   * memoization makes concurrent callers share one drain and double-dispose
+   * safe. The map entry outlives the await so a racing caller still resolves
+   * true; `untrack` removes it from the composite teardown's `finally`.
+   * @param id - the shared agent/session id to dispose.
+   * @returns false when no live agent has that id.
+   */
+  async disposeAgent(id: SessionId): Promise<boolean> {
+    const dispose = this.byId.get(id)
+    if (dispose === undefined) return false
+    await dispose()
+    return true
   }
 
   /** Join config startup work that begins before an agent exists. */
@@ -518,7 +547,7 @@ export class AgentLoop extends Service implements AgentFactory {
         }
       }
     })())
-    const untrack = this.ownership.track(dispose)
+    const untrack = this.ownership.track(dispose, id)
     let unfollowOwner: () => Promise<void> | void
     try {
       unfollowOwner = ownerCtx.effect(() => () => {
@@ -656,6 +685,17 @@ export class AgentLoop extends Service implements AgentFactory {
       throw new Error('cannot resume: session persistence is not configured (load a dsh-session-persistence backend)')
     }
     return this.resumeWith(ownerCtx, persistence, options)
+  }
+
+  /**
+   * Dispose a live agent by its shared agent/session id. Drains the agent's
+   * in-flight turn, unregisters it, removes its session, and unwinds its
+   * scope — the same composite teardown an {@link AgentHandle} owner runs.
+   * @param id - the shared agent/session id of the live agent to dispose.
+   * @returns false when no live agent has that id.
+   */
+  async disposeAgent(id: SessionId): Promise<boolean> {
+    return this.ownership.disposeAgent(id)
   }
 
   /** Resume through an explicit persistence handle used by the deferred config path. */

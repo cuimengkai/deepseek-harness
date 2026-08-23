@@ -1,6 +1,7 @@
 /** Serialized Team transactions over the exact live Lead Session log. */
 
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type {} from '@deepseek-ai/dsh-session/context'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionEventMap, SessionId } from '@deepseek-ai/dsh-session'
 import { foldTeam } from './fold.ts'

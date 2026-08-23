@@ -33,13 +33,17 @@ export interface SessionsPort {
   readonly list: ObservableSnapshot<SessionsPortList>
   /**
    * Create or explicitly adopt a session on the host.
-   * @param opts - target workspace and optional confirmed blank-reuse id.
+   * @param opts - target workspace, an optional confirmed blank-reuse id, and
+   *   an optional preset the host composes the created session under (create
+   *   arm only; a reuse arm must not send it — the host refuses a preset
+   *   conflict on an existing blank).
    * @returns the created or adopted session id.
    */
   create(opts: {
     workspaceId: WorkspaceId
     sessionId?: SessionId
     reuseWorkspaceBlank?: true
+    agentPreset?: string
   }): Promise<SessionId>
   /**
    * Select a session as current.

@@ -14,7 +14,7 @@ import { createScope } from '@deepseek-ai/dsh-client-runtime/client'
 import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ModelProviderGroup, ModelSelection } from '@deepseek-ai/dsh-api-remotes/client'
 import type { CommandContribution, SelectOption } from '@deepseek-ai/dsh-client-ui-commands/client'
 import type { ModelSelectInjected } from '../src/client/slots.ts'
 import { apply, inject } from '../src/client/index.ts'
@@ -54,7 +54,7 @@ const GROUPS = [{
 }]
 
 /** Boot the plugin over fake faces + a stateful fake host (current moves on selectModel). */
-async function bench() {
+async function bench(groups: ModelProviderGroup[] = GROUPS) {
   const ctx = new Context()
   let current: ModelSelection = { provider: 'deepseek-official', model: 'deepseek-v4-flash' }
   const calls = { models: 0, select: 0 }
@@ -62,7 +62,7 @@ async function bench() {
     models: () => {
       calls.models += 1
       return Promise.resolve({
-        result: { ok: true as const, value: { current, routable, groups: GROUPS, failures: [] } },
+        result: { ok: true as const, value: { current, routable, groups, failures: [] } },
       })
     },
     selectModel: (payload: { provider: string; model: string; reasoningEffort?: string }) => {
@@ -158,6 +158,21 @@ describe('ui-model-selection dual entry', () => {
     expect(options.map((o: SelectOption) => o.label)).toEqual(['DeepSeek-V4-Flash', 'DeepSeek-V4-Pro'])
     expect(options[0]).toMatchObject({ active: true, detail: 'DeepSeek' })
     expect(options[1]?.active).toBeUndefined()
+  })
+
+  it('appends the declared role kinds to a model row detail', async () => {
+    const rich: ModelProviderGroup[] = [{
+      id: 'provider',
+      name: 'Provider',
+      models: [
+        { id: 'chat', name: 'Chat', inputModalities: ['text', 'image'], kinds: ['text'] },
+        { id: 'embed', name: 'Embed', inputModalities: ['text'], kinds: ['embedding'] },
+      ],
+    }]
+    const b = await bench(rich)
+    b.mint('s1')
+    const options = await b.contribution().ui.options(projection('s1'), new AbortController().signal)
+    expect(options.map((o: SelectOption) => o.detail)).toEqual(['Provider · text', 'Provider · embedding'])
   })
 
   it('a seat selection is the current the popup marks active next — one shared state', async () => {

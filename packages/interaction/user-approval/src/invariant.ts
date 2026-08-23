@@ -1,6 +1,7 @@
 /** Package-owned approval audit-stream invariants. @module @deepseek-ai/dsh-user-approval/invariant */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-invariants'
 import type { ApprovalRequestId } from './index.ts'

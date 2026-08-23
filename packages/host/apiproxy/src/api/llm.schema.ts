@@ -7,7 +7,7 @@ import { z } from 'zod'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import type { ConfigurableProviderView, DiscoveredModelView } from './llm.ts'
-import { modelCatalogFailureSchema, modelProviderGroupSchema } from './sessions.schema.ts'
+import { modelCatalogFailureSchema, modelKindSchema, modelModalitySchema, modelProviderGroupSchema } from './sessions.schema.ts'
 
 /** ConfigurableProviderView row of llm.providers. */
 export const configurableProviderViewSchema = z.object({
@@ -42,6 +42,8 @@ export const discoveredModelViewSchema = z.object({
   name: z.string().min(1).optional(),
   contextWindow: z.number().int().positive().optional(),
   maxTokens: z.number().int().positive().optional(),
+  inputModalities: z.array(modelModalitySchema).min(1).optional(),
+  kinds: z.array(modelKindSchema).min(1).optional(),
 }) satisfies z.ZodType<Wire<DiscoveredModelView>>
 
 /** llm.discoverModels request payload. */

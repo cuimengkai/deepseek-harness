@@ -4,6 +4,7 @@
  */
 
 import { Buffer } from 'node:buffer'
+import type {} from '@deepseek-ai/dsh-session/context'
 import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import s from '@deepseek-ai/schemastery'

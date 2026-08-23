@@ -90,6 +90,9 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/client/ui-plan': { kind: 'indirect', reason: 'The chip dispatches /plan off; dsh-plan-mode owns the model-visible policy, exit tool, and logged state.' },
   'packages/client/ui-user-questions': { kind: 'indirect', reason: 'The package mounts dsh-tool-ask-user; that tool owns the model-visible schema and answer rendering.' },
   'packages/client/ui-trajectory': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
+  'packages/client/ui-project-insight': { kind: 'none', reason: 'Browser-side read-only renderer of the committed insight document; registers nothing model-facing.' },
+  'packages/client/ui-flow-editor': { kind: 'indirect', reason: 'The graphs the canvas authors and runs compile into the sub-agent prompts dsh-flow assembles; the canvas itself contributes no prompt content.' },
+  'packages/insight/project-insight': { kind: 'indirect', reason: 'The scan_project tool it registers returns a module/component summary the model consumes; the full document stays off the wire.' },
   'packages/client/ui-workspace': { kind: 'none', reason: 'Browser-side UI plugin layer; registers nothing model-facing.' },
   'packages/client/ui-directory-picker-browse': { kind: 'none', reason: 'Browser-side directory-browsing surface; registers nothing model-facing.' },
   'packages/client/ui-directory-picker-native': { kind: 'none', reason: 'Browser-side surface driving the host OS chooser; registers nothing model-facing.' },
@@ -171,6 +174,7 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/web/web-fetch-http': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
   'packages/web/web-search-exa': { kind: 'indirect', reason: 'The provider backend delegates model rendering to dsh-tool-web.' },
   'packages/workflow/workflow': { kind: 'indirect', reason: 'The service delegates parent and child model rendering to its consumer and engine.' },
+  'packages/workflow/flow': { kind: 'indirect', reason: 'The engine compiles flow graphs into dsh-workflow scripts; the child-agent requests its agent() calls create own the model-visible effect.' },
   'packages/experimental/engine-isolation': { kind: 'indirect', reason: 'The engine seam delegates agent running to the in-process runner and the process-out child assembly, which own every model-facing registration the drive makes visible.' },
 }
 

@@ -287,6 +287,57 @@ describe('WorkspaceRuntime', () => {
     await expect(workspaces.connectWorkspace(wid('alpha'))).resolves.toBe('s-fresh-2')
   })
 
+  it('a staged agent preset rides the create arm and is consumed by it', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    // beta has no blank member session, so every connect here CREATES — the
+    // arm the develop-mode pick-bug fix carries the preset on.
+    api.onWorkspaceList = () => Promise.resolve(ok({ items: [workspace('beta')] as never[] }))
+    api.onList = () => Promise.resolve(ok({ items: [] as never[] }))
+    api.onCreate = () => Promise.resolve(ok({ sessionId: sid('s-fresh') }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    await Promise.resolve()
+
+    // The hero stages the preset before the connect; a connect that must
+    // create carries it in the wire payload instead of opening the new
+    // session on the deployment default.
+    workspaces.notePendingAgentPreset('develop')
+    await expect(workspaces.connectWorkspace(wid('beta'))).resolves.toBe('s-fresh')
+    expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'beta', agentPreset: 'develop' }])
+
+    // The stage is consumed: the next create omits the field, so that session
+    // starts from the deployment default again (matching the workspace picker).
+    api.onCreate = () => Promise.resolve(ok({ sessionId: sid('s-fresh-2') }))
+    await expect(workspaces.connectWorkspace(wid('beta'))).resolves.toBe('s-fresh-2')
+    expect(api.callsOf('session.create')).toEqual([
+      { workspaceId: 'beta', agentPreset: 'develop' },
+      { workspaceId: 'beta' },
+    ])
+  })
+
+  it('a cleared pending agent preset omits the field on the next connect', async () => {
+    const ctx = new Context()
+    const api = new FakeApiClient()
+    const sessions = new SessionRuntime(ctx, api, fakeRemote())
+    const workspaces = new WorkspaceRuntime(ctx, api, sessions)
+    api.onWorkspaceList = () => Promise.resolve(ok({ items: [workspace('beta')] as never[] }))
+    api.onList = () => Promise.resolve(ok({ items: [] as never[] }))
+    api.onCreate = () => Promise.resolve(ok({ sessionId: sid('s-fresh') }))
+    await Promise.all([workspaces.refresh(), sessions.refresh()])
+    await Promise.resolve()
+
+    // The seat staged a preset, then its stage settled without a connect — the
+    // session was dropped as unservable or the apply was rejected. The pending
+    // must not ride an unrelated connect that happens to follow.
+    workspaces.notePendingAgentPreset('develop')
+    workspaces.clearPendingAgentPreset()
+    await expect(workspaces.connectWorkspace(wid('beta'))).resolves.toBe('s-fresh')
+
+    expect(api.callsOf('session.create')).toEqual([{ workspaceId: 'beta' }])
+  })
+
   it('a rejected first prompt keeps the blank session eligible for connectWorkspace reuse', async () => {
     const ctx = new Context()
     const api = new FakeApiClient()

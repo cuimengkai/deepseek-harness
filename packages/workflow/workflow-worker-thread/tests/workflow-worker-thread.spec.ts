@@ -234,6 +234,36 @@ describe('dsh-workflow-worker-thread', () => {
       expect(provider.runs[0]!.request.agentOptions).toEqual({ provider: 'openai' })
     })
 
+    it('agent({modelKinds}) forwards per-kind routes across the thread', async () => {
+      const { ctx, parent, provider } = await setup()
+      const result = await run(ctx, parent, scripted(`
+        return await agent('route kinds', { modelKinds: { image: { provider: 'dify', model: 'gpt-v' } } })
+      `))
+
+      expect(result.value).toBe('stub reply')
+      expect(provider.runs[0]!.request.agentOptions).toEqual({
+        modelKinds: { image: { provider: 'dify', model: 'gpt-v' } },
+      })
+    })
+
+    it('validates a modelKinds bag before starting a child', async () => {
+      const cases: Array<[string, string]> = [
+        ['[]', 'must be an object keyed by model kind'],
+        ['{ image: "gpt-v" }', 'entry "image" must be an object'],
+        ['{ image: { foo: "x" } }', 'entry "image" only accepts provider and model'],
+        ['{ image: { model: "" } }', 'entry "image" model must be a non-empty string'],
+        ['{ image: {} }', 'entry "image" binds nothing'],
+      ]
+      for (const [bag, expected] of cases) {
+        const { ctx, parent } = await setup()
+        const result = await run(ctx, parent, scripted(
+          `return await agent('x', { modelKinds: ${bag} })`,
+        ))
+        expect(result.stopReason).toBe('error')
+        expect(result.error).toContain(expected)
+      }
+    })
+
     it('a start-request provider override selects every child without changing the engine default', async () => {
       const { ctx, parent, provider } = await setup()
       const selected = new StubProvider('selected', () => text('selected reply'))

@@ -8,10 +8,12 @@
  */
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
+import { cascadePosition, chainAddModule, emptyChainGraph } from '../src/client/preset-graph.ts'
 import { AgentPresetLabel } from '../src/client/AgentPresetLabel.tsx'
 import type { AgentPresetLabelProps } from '../src/client/AgentPresetLabel.tsx'
 import { AgentPresetRow } from '../src/client/AgentPresetRow.tsx'
@@ -26,6 +28,28 @@ import type { AgentPresetSeatState } from '../src/client/seat-store.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
+
+// jsdom has no pointer capture; the flow canvas's capture calls must be no-ops
+// so the drag/pan handlers run, and its DragEvent is not constructible, so
+// testing-library builds drop events from plain Event and loses clientX/Y.
+// MouseEvent is the browser's DragEvent base and carries the coordinates.
+beforeEach(() => {
+  Element.prototype.setPointerCapture = () => {}
+  Element.prototype.releasePointerCapture = () => {}
+  Object.defineProperty(window, 'DragEvent', { configurable: true, value: window.MouseEvent })
+})
+
+/** A chain graph over the given modules, in cascade layout, as the composer edits. */
+function chainGraph(id: string, name: string, ...modules: string[]): FlowGraph {
+  let graph = emptyChainGraph(id, name)
+  for (let index = 0; index < modules.length; index++) {
+    const module = modules[index]
+    if (module === undefined) continue
+    const added = chainAddModule(graph, module, cascadePosition(index))
+    if (added !== undefined) graph = added.graph
+  }
+  return graph
+}
 
 /** The composer palette fixture: three annotated installed modules. */
 const PALETTE: ComposePalette = {
@@ -427,9 +451,9 @@ describe('the session-header label', () => {
 describe('the drag-and-drop composer', () => {
   const draft = (over: Partial<ComposeDraft> = {}): ComposeDraft => ({
     id: 'my-agent', name: 'My agent',
-    rows: [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }],
+    graph: chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash'),
     saving: false, error: null,
-    original: { id: '', name: '', rows: [] },
+    original: { id: '', name: '', graph: emptyChainGraph('', '') },
     ...over,
   })
 
@@ -441,6 +465,21 @@ describe('the drag-and-drop composer', () => {
       effectAllowed: 'none',
       dropEffect: 'none',
     }
+  }
+
+  /** The shared flow canvas's background, where drops and deselects land. */
+  function canvasBackground(): HTMLElement {
+    const content = document.querySelector('[data-view-x]')
+    const canvas = content?.parentElement ?? null
+    if (canvas === null) throw new Error('no flow canvas')
+    return canvas
+  }
+
+  /** One node wrapper by its canvas id. */
+  function nodeOf(id: string): HTMLElement {
+    const node = document.querySelector(`[data-node-id="${id}"]`)
+    if (node === null) throw new Error(`no node ${id}`)
+    return node as HTMLElement
   }
 
   function renderComposer(
@@ -455,9 +494,12 @@ describe('the drag-and-drop composer', () => {
       setComposerId: vi.fn(),
       setComposerName: vi.fn(),
       addRow: vi.fn(),
-      insertRowAt: vi.fn(),
+      addNodeAt: vi.fn(),
       removeRow: vi.fn(),
+      removeNode: vi.fn(),
       moveRow: vi.fn(),
+      moveNode: vi.fn(),
+      reorderNode: vi.fn(),
       confirmCompose: vi.fn(() => Promise.resolve(true)),
       ...creatorDraft === undefined ? {} : { startCreatorDraft: creatorDraft },
     }
@@ -488,8 +530,8 @@ describe('the drag-and-drop composer', () => {
     expect(within(palette).getByText('Read')).toBeTruthy()
     expect(within(palette).getByText('Web Search')).toBeTruthy()
     // The composition renders the module already in the draft as one node on
-    // the pipeline canvas, in chain order.
-    const node = screen.getByTitle(en.reorderHint)
+    // the flow canvas, in chain order.
+    const node = nodeOf('agent-1')
     expect(within(node).getByText('Bash')).toBeTruthy()
     expect(within(node).getByText('@deepseek-ai/dsh-tool-bash')).toBeTruthy()
 
@@ -500,7 +542,7 @@ describe('the drag-and-drop composer', () => {
   })
 
   it('titles an in-place edit as such', () => {
-    renderComposer({ id: 'mine', original: { id: 'mine', name: 'mine', rows: draft().rows } })
+    renderComposer({ id: 'mine', original: { id: 'mine', name: 'mine', graph: draft().graph } })
 
     expect(screen.getByRole('heading', { name: en.composeTitle })).toBeTruthy()
     expect(screen.getByText(en.overwriteWarning)).toBeTruthy()
@@ -530,48 +572,52 @@ describe('the drag-and-drop composer', () => {
     expect(data.effectAllowed).toBe('copy')
   })
 
-  it('inserts a dropped palette module at the slot under the pointer', () => {
+  it('drops a palette module on the canvas to append it', () => {
     const actions = renderComposer()
     const data = dragData()
     data.getData.mockReturnValue('@deepseek-ai/dsh-web-search')
 
-    // jsdom lays nothing out, so every midpoint is 0 and a drop past the end
-    // lands in the last slot — the end of the one-row chain.
-    fireEvent.drop(screen.getByTitle(en.reorderHint), { clientX: 20, dataTransfer: data })
+    fireEvent.drop(canvasBackground(), { clientX: 280, clientY: 40, dataTransfer: data })
 
-    expect(actions.insertRowAt).toHaveBeenCalledWith('@deepseek-ai/dsh-web-search', 1)
+    // The drop IS the add: the surface appends the module at the graph point
+    // it landed on, and the store selects the new node for the inspector.
+    expect(actions.addNodeAt).toHaveBeenCalledWith('@deepseek-ai/dsh-web-search', { x: 280, y: 40 })
   })
 
-  it('reorders the composition when a row is dragged to a new slot', () => {
-    const actions = renderComposer({
-      rows: [
-        { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' },
-        { id: 'tool-read', name: '@deepseek-ai/dsh-tool-read' },
-      ],
-    })
-    const data = dragData()
-    const nodes = screen.getAllByTitle(en.reorderHint)
+  it('connects a port to run the dropped node after the source', () => {
+    const actions = renderComposer({ graph: chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-read') })
+    const portOf = (nodeId: string): HTMLElement => {
+      const port = screen.getAllByRole('button', { name: en.connectLabel })
+        .find(candidate => candidate.closest('[data-node-id]')?.getAttribute('data-node-id') === nodeId)
+      if (port === undefined) throw new Error(`no port on ${nodeId}`)
+      return port
+    }
 
-    fireEvent.dragStart(nodes[0]!, { dataTransfer: data })
-    // jsdom lays nothing out, so every midpoint is 0 and a drop past the end
-    // lands in the last slot.
-    fireEvent.drop(nodes[0]!, { clientX: 100, dataTransfer: data })
+    fireEvent.pointerDown(portOf('agent-1'), { pointerId: 1, clientX: 220, clientY: 30 })
+    fireEvent.pointerUp(nodeOf('agent-2'), { pointerId: 1, clientX: 440, clientY: 30 })
 
-    expect(actions.moveRow).toHaveBeenCalledWith(0, 2)
+    // The connect gesture IS the reorder: the chain relinks so the node the
+    // gesture ended on runs right after the node the port came from.
+    expect(actions.reorderNode).toHaveBeenCalledWith('agent-1', 'agent-2')
   })
 
-  it('removes a row through the × action', () => {
+  it('removes the selected node through the delete key', () => {
     const actions = renderComposer()
+    fireEvent.pointerDown(nodeOf('agent-1'), { pointerId: 1 })
+    fireEvent.pointerUp(nodeOf('agent-1'), { pointerId: 1 })
 
-    fireEvent.click(screen.getByRole('button', { name: `${en.removeRow}: @deepseek-ai/dsh-tool-bash` }))
+    fireEvent.keyDown(window, { key: 'Delete' })
 
-    expect(actions.removeRow).toHaveBeenCalledWith('tool-bash')
+    expect(actions.removeNode).toHaveBeenCalledWith('agent-1')
   })
 
-  it('keeps the drop hint when the composition is empty', () => {
-    renderComposer({ rows: [] })
+  it('renders an empty composition as the bare chain', () => {
+    renderComposer({ graph: emptyChainGraph('', '') })
 
-    expect(screen.getByText(en.compositionEmpty)).toBeTruthy()
+    // Nothing composed yet: the canvas holds the start and end terminals only.
+    expect(nodeOf('start')).toBeTruthy()
+    expect(nodeOf('end')).toBeTruthy()
+    expect(document.querySelector('[data-node-id="agent-1"]')).toBeNull()
   })
 
   it('shows the selected node\'s details in the inspector', () => {
@@ -580,7 +626,8 @@ describe('the drag-and-drop composer', () => {
     // out over the canvas only while a node is selected.
     expect(screen.queryByRole('heading', { name: en.inspectorTitle })).toBeNull()
 
-    fireEvent.click(screen.getByTitle(en.reorderHint))
+    fireEvent.pointerDown(nodeOf('agent-1'), { pointerId: 1 })
+    fireEvent.pointerUp(nodeOf('agent-1'), { pointerId: 1 })
     const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
     expect(within(inspector).getByText(en.rowId)).toBeTruthy()
     expect(within(inspector).getByText('tool-bash')).toBeTruthy()
@@ -588,13 +635,9 @@ describe('the drag-and-drop composer', () => {
   })
 
   it('moves the selected node through the inspector', () => {
-    const actions = renderComposer({
-      rows: [
-        { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' },
-        { id: 'tool-read', name: '@deepseek-ai/dsh-tool-read' },
-      ],
-    })
-    fireEvent.click(screen.getAllByTitle(en.reorderHint)[1]!)
+    const actions = renderComposer({ graph: chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-read') })
+    fireEvent.pointerDown(nodeOf('agent-2'), { pointerId: 1 })
+    fireEvent.pointerUp(nodeOf('agent-2'), { pointerId: 1 })
     const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
     // The last node cannot move down; moving it up is the point.
     const moveDown = within(inspector).getByRole('button', { name: en.moveDown })
@@ -607,7 +650,8 @@ describe('the drag-and-drop composer', () => {
 
   it('removes the selected node through the inspector', () => {
     const actions = renderComposer()
-    fireEvent.click(screen.getByTitle(en.reorderHint))
+    fireEvent.pointerDown(nodeOf('agent-1'), { pointerId: 1 })
+    fireEvent.pointerUp(nodeOf('agent-1'), { pointerId: 1 })
     const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
 
     fireEvent.click(within(inspector).getByRole('button', { name: en.removeRow }))
@@ -617,15 +661,15 @@ describe('the drag-and-drop composer', () => {
 
   it('deselects on a canvas-background click', () => {
     renderComposer()
-    fireEvent.click(screen.getByTitle(en.reorderHint))
+    fireEvent.pointerDown(nodeOf('agent-1'), { pointerId: 1 })
+    fireEvent.pointerUp(nodeOf('agent-1'), { pointerId: 1 })
     const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
     expect(within(inspector).getByText('tool-bash')).toBeTruthy()
 
     // A click on the canvas background, not on a node, is an explicit deselect
-    // and the inspector floats away again. The head label now sits above the
-    // canvas, so reach the background by its data attribute, not a heading's
-    // ancestor.
-    fireEvent.click(document.querySelector<HTMLElement>('[data-canvas]')!)
+    // and the inspector floats away again.
+    fireEvent.pointerDown(canvasBackground(), { pointerId: 2 })
+    fireEvent.pointerUp(canvasBackground(), { pointerId: 2 })
 
     expect(screen.queryByRole('heading', { name: en.inspectorTitle })).toBeNull()
   })
@@ -739,7 +783,7 @@ describe('the drag-and-drop composer', () => {
 
   it('hands an untouched preset to Creator mode without saving', async () => {
     const actions = renderComposer(
-      { original: { id: 'my-agent', name: 'My agent', rows: draft().rows } },
+      { original: { id: 'my-agent', name: 'My agent', graph: draft().graph } },
       PALETTE, ROSTER, { handoff: true },
     )
     const creatorDraft = actions.startCreatorDraft as unknown as Mock
@@ -755,9 +799,9 @@ describe('the read-only composer (a shipped preset\'s view)', () => {
   /** A view draft, mirroring what the section derives from a shipped preset. */
   const viewDraft = (over: Partial<ComposeDraft> = {}): ComposeDraft => ({
     id: 'standard', name: '标准模式',
-    rows: [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }],
+    graph: chainGraph('standard', '标准模式', '@deepseek-ai/dsh-tool-bash'),
     saving: false, error: null,
-    original: { id: 'standard', name: '标准模式', rows: [] },
+    original: { id: 'standard', name: '标准模式', graph: emptyChainGraph('standard', '标准模式') },
     ...over,
   })
 
@@ -767,9 +811,12 @@ describe('the read-only composer (a shipped preset\'s view)', () => {
       setComposerId: vi.fn(),
       setComposerName: vi.fn(),
       addRow: vi.fn(),
-      insertRowAt: vi.fn(),
+      addNodeAt: vi.fn(),
       removeRow: vi.fn(),
+      removeNode: vi.fn(),
       moveRow: vi.fn(),
+      moveNode: vi.fn(),
+      reorderNode: vi.fn(),
       confirmCompose: vi.fn(() => Promise.resolve(false)),
     }
     render(<AgentPresetComposer
@@ -787,12 +834,12 @@ describe('the read-only composer (a shipped preset\'s view)', () => {
     renderView()
 
     // The head names the preset under the view title; the body is the same
-    // pipeline canvas an edit shows, with the row as one chain node.
+    // flow canvas an edit shows, with the chain as start, the plugin, and end.
     expect(screen.getByRole('heading', { name: `${en.view} · 标准模式` })).toBeTruthy()
     expect(screen.getByText(en.compositionLabel)).toBeTruthy()
-    const node = document.querySelector<HTMLElement>('[data-row-id="tool-bash"]')
+    const node = document.querySelector('[data-node-id="agent-1"]')
     expect(node).toBeTruthy()
-    expect(within(node!).getByText('Bash')).toBeTruthy()
+    expect(within(node as HTMLElement).getByText('Bash')).toBeTruthy()
   })
 
   it('renders no palette, fields, or footer', () => {
@@ -805,18 +852,21 @@ describe('the read-only composer (a shipped preset\'s view)', () => {
     expect(screen.queryByRole('button', { name: en.cancel })).toBeNull()
   })
 
-  it('renders the nodes non-draggable with no remove control', () => {
+  it('renders the chain legible but not editable: no ports, no node actions', () => {
     renderView()
 
-    const node = document.querySelector('[data-row-id="tool-bash"]')
-    expect(node?.getAttribute('draggable')).toBe('false')
-    expect(screen.queryByRole('button', { name: new RegExp(`^${en.removeRow}:`) })).toBeNull()
+    // The shipped composition is the known-good copy source, so its chain is
+    // legible but cannot be reordered or removed from. Selection still works —
+    // the inspector explains a node — but the editable affordances are gone.
+    expect(document.querySelector('[data-node-id="agent-1"]')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en.connectLabel })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.removeRow })).toBeNull()
   })
 
   it('explains a selected node without the edit actions', () => {
     renderView()
 
-    fireEvent.click(document.querySelector<HTMLElement>('[data-row-id="tool-bash"]')!)
+    fireEvent.pointerDown(document.querySelector('[data-node-id="agent-1"]') as HTMLElement, { pointerId: 1 })
     const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
     expect(within(inspector).getByText(en.rowId)).toBeTruthy()
     expect(within(inspector).queryByRole('button', { name: en.moveUp })).toBeNull()

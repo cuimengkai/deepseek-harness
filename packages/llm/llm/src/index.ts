@@ -17,6 +17,7 @@ import type {
   LlmModelInfo,
   LlmResolvedModelInfo,
   LlmProviderInfo,
+  ModelKind,
   ModelModality,
   StreamChunk,
 } from './types.ts'
@@ -548,11 +549,15 @@ export class LlmRuntime extends Service {
     for (const model of discovered) {
       if (typeof model.id !== 'string' || model.id.length === 0 || seen.has(model.id)) continue
       seen.add(model.id)
+      const inputModalities = this.detachedModalities(model.inputModalities)
+      const kinds = this.detachedKinds(model.kinds)
       models.push({
         id: model.id,
         ...model.name === undefined ? {} : { name: model.name },
         ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
         ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+        ...inputModalities === undefined ? {} : { inputModalities },
+        ...kinds === undefined ? {} : { kinds },
       })
     }
     return models
@@ -570,6 +575,11 @@ export class LlmRuntime extends Service {
   /** Detach typed adapter-owned modality metadata. */
   private detachedModalities(modalities: readonly ModelModality[] | undefined): ModelModality[] | undefined {
     return modalities === undefined ? undefined : [...modalities]
+  }
+
+  /** Detach typed adapter-owned role metadata. */
+  private detachedKinds(kinds: readonly ModelKind[] | undefined): ModelKind[] | undefined {
+    return kinds === undefined ? undefined : [...kinds]
   }
 
   /**
@@ -597,12 +607,14 @@ export class LlmRuntime extends Service {
       }
       seen.add(model.id)
       const inputModalities = this.detachedModalities(model.inputModalities)
+      const kinds = this.detachedKinds(model.kinds)
       return {
         provider: model.provider,
         id: model.id,
         name: model.name,
         ...model.description === undefined ? {} : { description: model.description },
         ...inputModalities === undefined ? {} : { inputModalities },
+        ...kinds === undefined ? {} : { kinds },
       }
     })
   }
@@ -655,6 +667,7 @@ export class LlmRuntime extends Service {
     // Capability metadata rides through: an explicit modality omission is
     // negative capability downstream preflights act on (image admission).
     const inputModalities = this.detachedModalities(resolved.inputModalities)
+    const kinds = this.detachedKinds(resolved.kinds)
     const defaultMaxTokens = resolved.defaultMaxTokens
     if (defaultMaxTokens !== undefined
       && (!Number.isSafeInteger(defaultMaxTokens) || defaultMaxTokens <= 0)) {
@@ -669,6 +682,7 @@ export class LlmRuntime extends Service {
       name: resolved.name,
       ...resolved.description === undefined ? {} : { description: resolved.description },
       ...inputModalities === undefined ? {} : { inputModalities },
+      ...kinds === undefined ? {} : { kinds },
       ...context === undefined ? {} : { context: { contextWindow: context.contextWindow } },
       ...defaultMaxTokens === undefined ? {} : { defaultMaxTokens },
     }
