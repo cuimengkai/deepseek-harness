@@ -12,6 +12,9 @@ import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
+// Type-only: brings the `ctx.projectInsight` service merge into this program
+// (read is served over the optional `ctx.get('projectInsight')` boundary).
+import type {} from '@deepseek-ai/dsh-project-insight'
 // Type-only: brings the `ctx.pluginInventory` service merge into this program
 // (the gateway is a Typert remote, but the compose handler proves installed
 // modules against its in-process projection, not over the wire).
@@ -3214,6 +3217,41 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           return ok(request, { agentPreset })
         } catch (error: unknown) {
           return err(request, presetError(agentPreset, error))
+        }
+      },
+    },
+
+    projectInsight: {
+      // Reading a stored workspace document is reconnaissance (see
+      // PRIVILEGED_METHODS in dsh-client-connection). No scan is triggered
+      // here: the host-plane auto-scan hook owns that, and the client learns
+      // of completion through the forwarded `project-insight/updated` event,
+      // so a stale result is the caller's signal to wait or re-open.
+      async read(request, signal) {
+        const projectInsight = ctx.get('projectInsight')
+        if (projectInsight === undefined) {
+          return err(request, {
+            code: 'internal',
+            message: 'project-insight service is absent: this deployment does not mount @deepseek-ai/dsh-project-insight in its composition',
+            details: {},
+          })
+        }
+        try {
+          const result = await projectInsight.read(request.payload.cwd, signal)
+          return ok(request, result)
+        } catch (error: unknown) {
+          if (isAborted(signal)) {
+            return err(request, {
+              code: 'cancelled',
+              message: 'project-insight read was aborted',
+              details: {},
+            })
+          }
+          return err(request, {
+            code: 'internal',
+            message: `project-insight read failed: ${error instanceof Error ? error.message : String(error)}`,
+            details: {},
+          })
         }
       },
     },

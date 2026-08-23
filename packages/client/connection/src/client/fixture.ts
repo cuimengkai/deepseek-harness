@@ -30,6 +30,10 @@ import type {
 // wire-fabrication boundary (the schema layer's one-cast-point posture).
 import type { CommandId } from '@deepseek-ai/dsh-commands/brand'
 import type { CommandDescriptor, CommandExecution, CommandResult } from '@deepseek-ai/dsh-commands/types'
+// Type-only from the schema subpath: the doc vocabulary is pure types + caps
+// (no Node runtime), so the fixture names a wire document without importing the
+// scanner into the browser bundle.
+import type { ProjectInsightDoc } from '@deepseek-ai/dsh-project-insight/src/schema.ts'
 import { deriveEventMessage, foldSurface } from '@deepseek-ai/dsh-session/surface'
 import type {
   ApiProxy, ClientRequest, ClientResponse, HistoryEntry, HostFrame, MuxFrame, RpcReceipt,
@@ -1521,13 +1525,57 @@ export function createFixtureFaces(options: FixtureOptions = {}): FixtureWorld {
   return createFixtureWorld(options)
 }
 
+/**
+ * The committed project-insight document the fixture serves for develop-mode
+ * sessions: a small deterministic sample exercising every section so the six
+ * insight tabs render real rows. Typed as the doc vocabulary so the wire
+ * literals stay narrow against the contract unions.
+ */
+const FIXTURE_INSIGHT_DOC: ProjectInsightDoc = {
+  formatVersion: 1,
+  rootName: 'fixture',
+  contentFingerprint: 'fixture-content-fingerprint',
+  scannedAt: 0,
+  sections: {
+    techStack: {
+      manifests: [{ kind: 'package.json', path: 'package.json' }],
+      dependencies: [{ name: 'vue', category: 'dependencies' }],
+      runtimes: [{ name: 'node' }],
+      files: [{ path: 'src/App.vue', language: 'vue', lines: 42 }],
+    },
+    moduleTopology: {
+      files: [{ path: 'src/App.vue', imports: ['src/Header.vue', 'external:vue'] }],
+      internalRoots: ['src'],
+      aliases: [{ key: '@', value: 'src' }],
+      externalCount: 1,
+    },
+    componentDependencies: {
+      components: [{ path: 'src/App.vue', imports: ['src/Header.vue'] }],
+      cycles: [],
+    },
+    components: {
+      components: [{ path: 'src/App.vue', name: 'App', kind: 'vue', defaultExport: true, hasProps: false }],
+      count: 1,
+    },
+    prompts: {
+      files: [{ path: 'AGENTS.md', title: 'Harness Rules', bytes: 1024 }],
+      count: 1,
+    },
+    agentTech: {
+      files: [{ path: 'AGENTS.md', kind: 'instructions' }],
+      tools: [{ name: 'bash', path: 'AGENTS.md' }],
+      count: 1,
+    },
+  },
+}
+
 /** Build the fixture's legacy API and Remote RPC faces over one state graph. */
 function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   // The resident fixture sessions all carry history, so none of them is blank.
   const sessions: SessionSummary[] = options.empty ? [] : [
     { sessionId: sid('fx-alpha'), updatedAt: Date.now(), running: true, blank: false, cwd: '/tmp/fixture' },
     { sessionId: sid('fx-beta'), updatedAt: Date.now() - 60_000, running: false, blank: false, parentSessionId: sid('fx-alpha'), cwd: '/tmp/fixture' },
-    { sessionId: sid('fx-gamma'), updatedAt: Date.now() - 120_000, running: false, blank: false, cwd: '/tmp/fixture' },
+    { sessionId: sid('fx-gamma'), updatedAt: Date.now() - 120_000, running: false, blank: false, cwd: '/tmp/fixture', agentPreset: 'develop' },
   ]
   const logs = new Map<SessionId, SessionEvent[]>([[sid('fx-alpha'), buildAlphaLog()]])
   const modelSelections = new Map<SessionId, ModelSelection>(sessions.map(session => [
@@ -1559,6 +1607,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     ['standard', { trust: 'system', content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n", rows: [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }] }],
     ['minimal', { trust: 'system', content: "- id: tool-web-search\n  name: '@deepseek-ai/dsh-tool-web-search'\n", rows: [{ id: 'tool-web-search', name: '@deepseek-ai/dsh-tool-web-search' }] }],
     ['my-agent', { trust: 'user', content: "- id: tool-read\n  name: '@deepseek-ai/dsh-tool-read'\n", rows: [{ id: 'tool-read', name: '@deepseek-ai/dsh-tool-read' }] }],
+    ['develop', { trust: 'system', content: "- id: tool-project-insight\n  name: '@deepseek-ai/dsh-project-insight/tool'\n", rows: [{ id: 'tool-project-insight', name: '@deepseek-ai/dsh-project-insight/tool' }] }],
   ])
   let fixtureDefaultPreset = 'standard'
   const nextTurn = new Map<SessionId, number>([[sid('fx-alpha'), 75]])
@@ -2931,6 +2980,16 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       },
     },
 
+    projectInsight: {
+      // Deterministic fresh doc for any cwd so develop-mode insight tabs render
+      // without a scan; a real host resolves the root and may report none/stale.
+      read: request => ok(request, {
+        status: 'fresh' as const,
+        root: 'fixture',
+        doc: FIXTURE_INSIGHT_DOC,
+      }),
+    },
+
     skills: {
       list: (request) => {
         const missing = requireSession(request)
@@ -3272,6 +3331,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'agentPreset.openDocument': return this.api.agentPresets.openDocument(request, new AbortController().signal)
       case 'agentPreset.remove': return this.api.agentPresets.remove(request)
       case 'agentPreset.compose': return this.api.agentPresets.compose(request)
+      case 'projectInsight.read': return this.api.projectInsight.read(request, signal)
       case 'goal.create': return this.api.goals.create(request)
       case 'goal.edit': return this.api.goals.edit(request)
       case 'goal.pause': return this.api.goals.pause(request)

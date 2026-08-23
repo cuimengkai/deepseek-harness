@@ -206,6 +206,7 @@ export const SPINE_META: Readonly<Record<string, SpineMetaEntry>> = {
   '@deepseek-ai/dsh-client-ui-plan': { category: 'ui', description: 'Plan-mode seat' },
   '@deepseek-ai/dsh-client-ui-user-questions': { category: 'ui', description: 'Ask-user views' },
   '@deepseek-ai/dsh-client-ui-trajectory': { category: 'ui', description: 'Trajectory views' },
+  '@deepseek-ai/dsh-client-ui-project-insight': { category: 'ui', description: 'Develop-mode project insight tabs' },
 }
 
 /**

@@ -234,6 +234,14 @@
       config:
         maxBytes: 65536
 
+    # The deterministic project scanner. Host-plane because every profile shares
+    # the one service (the browser reads the committed doc through the RPC
+    # domain), but inert outside develop: the auto-scan hook only fires when a
+    # session's resolved preset is in `autoScanPresets` (default `['develop']`).
+    # Its model-facing tool is mounted per-preset instead, in agent.cordis.yml.
+    - id: project-insight
+      name: '@deepseek-ai/dsh-project-insight'
+
     - id: skill
       name: '@deepseek-ai/dsh-skill'
 

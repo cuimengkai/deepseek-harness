@@ -498,6 +498,15 @@ export type KindOptions<
        * ui-layout 'page' slot's pages source; ordinary list slots ignore it.
        */
       path?: string
+      /**
+       * Optional per-session visibility filter: the agent preset ids that may
+       * show this entry. Absent = always shown (chat, trajectory); present =
+       * shown only while the session's resolved preset is a member — the
+       * develop-mode insight tabs ride this. Read by the owning slot's ledger
+       * projection (ui-conversation's view tab ring), never by the slot
+       * machinery itself.
+       */
+      modes?: readonly string[]
       /** Cell shadowing rank (ascending, default 0, lowest renders; same id + same priority throws — see {@link SlotCore.register}). */
       priority?: number
     }
@@ -563,7 +572,7 @@ type BaseOptions<
  */
 export interface StoredEntry {
   component: unknown
-  options: { key?: string; id?: string; order?: number; label?: SlotLabel; priority?: number; path?: string }
+  options: { key?: string; id?: string; order?: number; label?: SlotLabel; priority?: number; path?: string; modes?: readonly string[] }
   /** Chain routing selector (type-erased like `inject`; present exactly on chain-slot entries). */
   select?: ((owner: never) => unknown) | undefined
   /** Registrant business face; positional params derive from the declaration (sessionId?, actions?). */
@@ -604,6 +613,7 @@ interface ErasedOptions {
   select?: ((owner: never) => unknown) | undefined
   priority?: number | undefined
   path?: string | undefined
+  modes?: readonly string[] | undefined
   children?: Record<string, SlotSpec<SlotEntryDef>> | undefined
   store?: StoreDecl | undefined
   locale?: string | undefined
@@ -859,6 +869,7 @@ export class SlotCore {
         ...(options.label !== undefined ? { label: options.label } : {}),
         ...(options.priority !== undefined ? { priority: options.priority } : {}),
         ...(options.path !== undefined ? { path: options.path } : {}),
+        ...(options.modes !== undefined ? { modes: options.modes } : {}),
       },
       ...(options.select !== undefined ? { select: options.select } : {}),
       ...(options.inject !== undefined ? { inject: options.inject } : {}),

@@ -225,7 +225,7 @@ export async function writeComposition(
   const dir = join(root, id)
   if (await occupied(dir)) throw new PresetExistsError(id)
   try {
-    await mkdir(dir, { mode: 0o700 })
+    await mkdir(dir, { recursive: true, mode: 0o700 })
     await writeFileAtomic(
       join(dir, COMPOSITION_FILE),
       yaml.dump([...rows], { schema: entryListSchema, lineWidth: -1 }),

@@ -109,6 +109,12 @@ const PRIVILEGED_METHODS = new Set([
   'agentPreset.openDocument',
   'agentPreset.remove',
   'agentPreset.compose',
+  // Reading a stored workspace document resolves the project root from the
+  // payload cwd and walks the tree for the freshness check — reconnaissance,
+  // the same posture as the authoring methods above. The browser never
+  // triggers a scan through this pin: the host-plane auto-scan hook owns
+  // that, and a fresh read just forwards the committed document.
+  'projectInsight.read',
   'host.pickDirectory',
   'host.openPath',
   'settings.describe',

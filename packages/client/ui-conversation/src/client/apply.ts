@@ -1,6 +1,6 @@
 /** Registers the conversation components, shared store, and service callbacks. */
 import type { Context } from '@deepseek-ai/cordis'
-import { resolveSlotLabel, type BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
+import type { BoundActions } from '@deepseek-ai/dsh-client-ui-slots'
 import {
   resolveWorkspacePath, type ISessions, type SessionId,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -38,6 +38,7 @@ import { DetailsPanel } from './skeleton/DetailsPanel.tsx'
 import { en, NS, zh, type ConversationKey } from './locales.ts'
 import { registerConversationNodes } from './conversation-nodes/register.ts'
 import { registerChatNodeRenderers } from './chat/register-node-renderers.ts'
+import { filterViewTabs } from './view-filter.ts'
 import { CONVERSATION_SETTINGS_NAMESPACE, type ConversationSettings } from '../submission-settings.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -150,19 +151,29 @@ export async function apply(ctx: Context): Promise<void> {
   // persisted: a fresh page load keeps the open-jump-to-bottom default.
   const chatScrollPositions = new Map<SessionId, ChatScrollPosition>()
 
-  const viewTabs = (): ViewTab[] => {
-    const tabs: ViewTab[] = []
-    for (const entry of slots.entries('conversation.view')) {
-      /* v8 ignore next -- unreachable: list registration validates id at load. */
-      if (entry.options.id === undefined) continue
-      tabs.push({ id: entry.options.id, label: resolveSlotLabel(entry.options.label) ?? entry.options.id })
+  // The view tab ring is a per-session projection: chat/trajectory always
+  // show, while a mode-gated tab (the develop-mode insight tabs) appears only
+  // while the session's resolved agent preset is a member. The ledger's own
+  // subscribe cannot see a preset-only change (sessions.list carries the
+  // preset), so the fan-out subscribes both — a preset switch re-renders the
+  // ring. The injected face is cached per (entry x session), so these closures
+  // stay identity-stable for the life of one session occurrence and each
+  // uSES consumer's combined unsubscribe self-cleans on unmount.
+  const viewsFor = (sessionId: SessionId) => {
+    const list = (): ViewTab[] => {
+      const summary = sessions.list.getSnapshot().byId[sessionId]
+      return filterViewTabs(slots.entries('conversation.view'), summary?.agentPreset)
     }
-    return tabs
-  }
-  const views = {
-    list: viewTabs,
-    subscribe: (fn: () => void) => slots.subscribe('conversation.view', fn),
-    version: () => slots.getVersion('conversation.view'),
+    let revision = 0
+    return {
+      list,
+      subscribe: (fn: () => void) => {
+        const stopSlots = slots.subscribe('conversation.view', () => { revision += 1; fn() })
+        const stopSessions = sessions.list.subscribe(() => { revision += 1; fn() })
+        return () => { stopSlots(); stopSessions() }
+      },
+      version: () => revision,
+    }
   }
 
   // The per-session input machine registry (SessionInputResolver face; published as
@@ -246,7 +257,7 @@ export async function apply(ctx: Context): Promise<void> {
     inject: (sessionId: SessionId, _actions: BoundActions<typeof chatStore>): ConversationSessionInjected => {
       const conversation = concreteConversation(ctx)
       return {
-        views,
+        views: viewsFor(sessionId),
         releaseSessionImages: (id) => { conversation.releaseSessionImages(id) },
         bindDraftMirror: write => inputHub.shell(sessionId).bindMirror(write),
       }
@@ -264,8 +275,8 @@ export async function apply(ctx: Context): Promise<void> {
       'conversation.session.header.utilities': { kind: 'list', scope: 'session' },
     },
     store: chatStore,
-    inject: (): ConversationSessionHeaderInjected => ({
-      views,
+    inject: (sessionId: SessionId): ConversationSessionHeaderInjected => ({
+      views: viewsFor(sessionId),
       open: (id) => { sessions.open(id) },
     }),
   }, ConversationSessionHeader)

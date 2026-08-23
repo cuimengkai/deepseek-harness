@@ -250,6 +250,13 @@ export class FakeApiClient implements IApiClient {
       this.record('agentPreset.compose', payload, Promise.resolve(ok({ agentPreset: payload.agentPreset }))),
   }
 
+  onProjectInsightRead: IApiClient['projectInsight']['read'] =
+    () => Promise.resolve(ok({ status: 'none', root: 'fake-root' }))
+
+  readonly projectInsight: IApiClient['projectInsight'] = {
+    read: (payload, signal) => this.record('projectInsight.read', payload, this.onProjectInsightRead(payload, signal)),
+  }
+
   readonly skills: IApiClient['skills'] = {
     list: (payload: unknown) => this.record('skill.list', payload, this.onSkillList(payload)),
   }

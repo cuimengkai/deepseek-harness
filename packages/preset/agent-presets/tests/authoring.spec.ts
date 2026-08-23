@@ -238,7 +238,11 @@ describe('a deployment with no writable root', () => {
 })
 
 describe('a user root that does not exist yet', () => {
-  it('is created by the first copy', async () => {
+  /**
+   * A context whose `user` root is absent on disk until the first authoring
+   * call creates it — the state of a fresh harness home on first ever write.
+   */
+  async function freshAbsentRoot(): Promise<{ ctx: Context; absent: string }> {
     const absent = join(await mkdtemp(join(tmpdir(), 'dsh-preset-absent-')), 'nested', 'preset')
     const fresh = new Context()
     fresh.baseUrl = pathToFileURL(FIXTURES).href + '/'
@@ -252,11 +256,38 @@ describe('a user root that does not exist yet', () => {
       ],
       includeUserRoot: false,
     })
+    return { ctx: fresh, absent }
+  }
 
-    await fresh.agentPresets.copy('standard', 'mine')
+  it('is created by the first copy', async () => {
+    const { ctx, absent } = await freshAbsentRoot()
+
+    await ctx.agentPresets.copy('standard', 'mine')
 
     expect(await readFile(join(absent, 'mine', COMPOSITION_FILE), 'utf8'))
-      .toBe(await fresh.agentPresets.read('standard'))
+      .toBe(await ctx.agentPresets.read('standard'))
+  })
+
+  it('is created by the first write', async () => {
+    const { ctx, absent } = await freshAbsentRoot()
+
+    await ctx.agentPresets.write('assembled', [
+      { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'base persona' } },
+    ])
+
+    expect(await readFile(join(absent, 'assembled', COMPOSITION_FILE), 'utf8'))
+      .toBe(await ctx.agentPresets.read('assembled'))
+  })
+
+  it('is created by the first compose', async () => {
+    const { ctx, absent } = await freshAbsentRoot()
+
+    await ctx.agentPresets.compose('composed', [
+      { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'base persona' } },
+    ], undefined, { overwrite: false, assertResolvable: () => [] })
+
+    expect(await readFile(join(absent, 'composed', COMPOSITION_FILE), 'utf8'))
+      .toBe(await ctx.agentPresets.read('composed'))
   })
 })
 

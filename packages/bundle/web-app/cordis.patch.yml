@@ -313,6 +313,13 @@
     - id: ui-trajectory
       name: '@deepseek-ai/dsh-client-ui-trajectory'
 
+    # The develop-mode insight tabs: six conversation view entries (module
+    # topology, component dependency, tech stack, components, prompts, agent
+    # tech) gated to the develop agent preset. Absent develop sessions they
+    # register inertly and render nothing.
+    - id: ui-project-insight
+      name: '@deepseek-ai/dsh-client-ui-project-insight'
+
 # ── the agent plane moves behind agent presets ─────────────────────────────
 #
 # Every row below composes what ONE agent contributes to the host registries:

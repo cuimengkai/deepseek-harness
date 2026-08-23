@@ -1,0 +1,42 @@
+# Keyless project-insight demo: one `scan_project` round trip against a fixture
+# workspace. The `develop` mode's deterministic scanner is the subject — the
+# service row and its model-facing tool row mount on the shared root, while
+# agent-spine mounts a single `main` agent whose `cwd` points at the fixture
+# project the test seeds (resolved through `DSH_DEMO_PROJECT_DIR`). The first
+# mock stream emits the tool call; the tool resolves the workspace and commits
+# `<fixture>/fixture-project/.dsh/project-insight.json`. Nothing here touches
+# the network or reads a credential.
+- id: project-insight-mock-llm
+  name: './project-insight-mock-llm.ts'
+
+# The service row must precede the tool row: the tool resolves it through
+# `ctx.get` and fails loud at mount when it is absent.
+- id: project-insight
+  name: '@deepseek-ai/dsh-project-insight'
+
+- id: tool-project-insight
+  name: '@deepseek-ai/dsh-project-insight/tool'
+
+# The default agent spine bundles the LLM runtime, session store, tool registry,
+# and loop. Bash is disabled so the catalog contains only `scan_project` plus
+# the spine's own read-only consumers; the demo never needs an executor.
+- id: agent-spine
+  name: '@deepseek-ai/dsh-agent-spine-demo'
+  config:
+    agents:
+      - id: main
+        provider: insight-mock
+        model: insight-mock
+        cwd: !!js process.env.DSH_DEMO_PROJECT_DIR ?? process.cwd()
+    workspaceContext: false
+    dshHome: './.dsh-home'
+    skills:
+      filesystem:
+        agentsHome: './.agents-home'
+    persona: 'Keyless project-insight demo.'
+    toolBash: false
+
+- id: persistence
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: './.sessions'

@@ -50,6 +50,7 @@ import {
   agentPresetOpenDocumentRequestSchema, agentPresetReadRequestSchema, agentPresetRemoveRequestSchema,
   agentPresetSelectRequestSchema,
 } from '../api/agent-presets.schema.ts'
+import { projectInsightReadRequestSchema } from '../api/project-insight.schema.ts'
 import {
   goalCreateRequestSchema,
   goalEditRequestSchema,
@@ -127,6 +128,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'agentPreset.openDocument': { schema: agentPresetOpenDocumentRequestSchema, invoke: (api, r, signal) => api.agentPresets.openDocument(r, signal) },
   'agentPreset.remove': { schema: agentPresetRemoveRequestSchema, invoke: (api, r) => api.agentPresets.remove(r) },
   'agentPreset.compose': { schema: agentPresetComposeRequestSchema, invoke: (api, r) => api.agentPresets.compose(r) },
+  'projectInsight.read': { schema: projectInsightReadRequestSchema, invoke: (api, r, signal) => api.projectInsight.read(r, signal) },
   'goal.create': { schema: goalCreateRequestSchema, invoke: (api, r) => api.goals.create(r) },
   'goal.edit': { schema: goalEditRequestSchema, invoke: (api, r) => api.goals.edit(r) },
   'goal.pause': { schema: goalPauseRequestSchema, invoke: (api, r) => api.goals.pause(r) },

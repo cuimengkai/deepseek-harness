@@ -51,6 +51,9 @@
       "path": "../../preset/agent-presets"
     },
     {
+      "path": "../../insight/project-insight"
+    },
+    {
       "path": "../../core/session"
     },
     {

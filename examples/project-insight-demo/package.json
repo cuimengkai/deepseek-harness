@@ -1,0 +1,7 @@
+{
+  "name": "project-insight-demo-example",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Runnable demo: the develop mode's deterministic project scanner, one keyless scan_project round trip against a fixture workspace (keyless)"
+}

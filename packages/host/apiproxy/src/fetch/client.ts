@@ -47,6 +47,7 @@ import {
   agentPresetOpenDocumentValueSchema, agentPresetReadValueSchema, agentPresetRemoveValueSchema,
   agentPresetSelectValueSchema,
 } from '../api/agent-presets.schema.ts'
+import { projectInsightReadValueSchema } from '../api/project-insight.schema.ts'
 import {
   goalCreateValueSchema,
   goalEditValueSchema,
@@ -136,6 +137,9 @@ export interface IApiClient {
     remove(payload: RequestPayload<'agentPreset.remove'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.remove'>>>
     compose(payload: RequestPayload<'agentPreset.compose'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'agentPreset.compose'>>>
   }
+  projectInsight: {
+    read(payload: RequestPayload<'projectInsight.read'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'projectInsight.read'>>>
+  }
   events: {
     mux(payload: Parameters<ApiProxy['events']['mux']>[0]['payload'], signal: AbortSignal, onOpen?: () => void): AsyncIterable<RpcRequest<MuxFrame>>
     host(payload: Parameters<ApiProxy['events']['host']>[0]['payload'], signal: AbortSignal, onOpen?: () => void): AsyncIterable<RpcRequest<HostFrame>>
@@ -211,6 +215,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'agentPreset.openDocument': agentPresetOpenDocumentValueSchema,
   'agentPreset.remove': agentPresetRemoveValueSchema,
   'agentPreset.compose': agentPresetComposeValueSchema,
+  'projectInsight.read': projectInsightReadValueSchema,
   'goal.create': goalCreateValueSchema,
   'goal.edit': goalEditValueSchema,
   'goal.pause': goalPauseValueSchema,
@@ -477,6 +482,10 @@ export abstract class AbstractApiClient implements IApiClient {
     openDocument: (payload, signal) => this.callUnary('agentPreset.openDocument', payload, signal),
     remove: (payload, signal) => this.callUnary('agentPreset.remove', payload, signal),
     compose: (payload, signal) => this.callUnary('agentPreset.compose', payload, signal),
+  }
+
+  readonly projectInsight: IApiClient['projectInsight'] = {
+    read: (payload, signal) => this.callUnary('projectInsight.read', payload, signal),
   }
 
   readonly goals: IApiClient['goals'] = {

@@ -40,6 +40,9 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../insight/project-insight"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {
