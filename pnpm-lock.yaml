@@ -159,6 +159,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-cordis':
         specifier: workspace:^
         version: link:../../packages/extensions/ui-cordis
+      '@deepseek-ai/dsh-client-ui-flow-editor':
+        specifier: workspace:^
+        version: link:../../packages/client/ui-flow-editor
       '@deepseek-ai/dsh-cmdline':
         specifier: workspace:^
         version: link:../../packages/boot/cmdline
