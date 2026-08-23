@@ -88,10 +88,13 @@ export const Config: z<ConnectionConfig> = z.object({
  */
 const PRIVILEGED_METHODS = new Set([
   // A preset composition names the plugins a session runs, so reading one is
-  // reconnaissance; copy and remove rearrange what the deployment offers, and
-  // openDocument drives the host desktop — all more than the roster beside
-  // them. (Authoring is copy-only, so no method here accepts composition text
-  // or a path; the pin is about who may manage the roster at all.)
+  // reconnaissance; copy, compose, and remove rearrange what the deployment
+  // offers, and openDocument drives the host desktop — all more than the roster
+  // beside them. (Authoring is rows-only: no method here accepts composition
+  // text or a path, and the Host validates a rows payload three ways — the
+  // inventory proof that every named module is installed, the preset domain's
+  // row invariants, and a user-authored overwrite target — so the pin is about
+  // who may manage the roster at all.)
   //
   // CHOOSING one is not pinned, and `agentPreset.list` is not either. Picking a
   // preset looks like escalation — one of them mounts the toolset that edits the
@@ -105,6 +108,7 @@ const PRIVILEGED_METHODS = new Set([
   'agentPreset.copy',
   'agentPreset.openDocument',
   'agentPreset.remove',
+  'agentPreset.compose',
   'host.pickDirectory',
   'host.openPath',
   'settings.describe',

@@ -52,9 +52,12 @@ export const inject = ['inputTriggers', 'sessions', 'remote', 'remote.commands',
  * into the input overlay once its declarer is up.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export async function apply(ctx: ClientContext): Promise<void> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-commands: dictionaries')
-  ctx.plugin(CommandUiRuntime)
+  // Keep the entry LOADING until `commandUi` is strict-resolvable: the model
+  // selection and permission rows inject it, and an entry that activated
+  // before its service left them PENDING at the boot audit.
+  await ctx.plugin(CommandUiRuntime)
   ctx.inject(['slots', 'commandUi', 'sessions'], (scope: ClientContext) => {
     const command = scope.commandUi
     const sessions = scope.sessions

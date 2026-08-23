@@ -1,4 +1,4 @@
-/* Models settings section, in the settings-panel design language: 14/22 body,
+/* Models settings section, in the settings page design language: 14/22 body,
  * 12/18 caption, capsule controls (h36 r18; h28 r14 where a row is dense),
  * 32px fields, and `border-l2` hairlines — the vocabulary GeneralSection and
  * the Button/Input primitives already use.
@@ -12,7 +12,9 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 720px;
+  /* Fills the settings content area, like the General page: providers and the
+     model catalog are not a narrow column pinned to a reading width. */
+  width: 100%;
   color: var(--dsw-alias-label-primary);
 }
 

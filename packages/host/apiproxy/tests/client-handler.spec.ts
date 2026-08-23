@@ -94,10 +94,11 @@ function scriptedApi(overrides: {
     agentPresets: {
       list: r => ok(r, { presets: [], authorable: false, hasDocument: false }),
       select: r => ok(r, { agentPreset: r.payload.agentPreset }),
-      read: r => ok(r, { agentPreset: r.payload.agentPreset, trust: 'user' as const, content: '' }),
+      read: r => ok(r, { agentPreset: r.payload.agentPreset, trust: 'user' as const, content: '', rows: [] }),
       copy: r => ok(r, { agentPreset: r.payload.agentPreset }),
       openDocument: r => ok(r, { opened: true as const }),
       remove: r => ok(r, {}),
+      compose: r => ok(r, { agentPreset: r.payload.agentPreset }),
       ...overrides.agentPresets,
     },
     goals: {

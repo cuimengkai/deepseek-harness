@@ -124,11 +124,17 @@ export class AppWebEntry {
     const rows = this.manifest.plugins.map(row => row.id)
     this.page.setTotal(rows.length)
     await prefetching
-    await Promise.all(rows.map(async (name) => {
+    // Creates run in manifest order, one at a time. The composition is
+    // topologically sorted — a row's providers precede its consumers — so a
+    // provider's service settles before the next consumer row starts. Parallel
+    // creates raced this: a consumer fiber created while its provider's service
+    // was still loading went PENDING, and loader.await() skips PENDING entries
+    // (they carry no inertia), so the activation audit then failed the boot.
+    for (const name of rows) {
       this.page.setState(name, 'loading')
       const id = await loader.create({ name })
       if (loader.resolve(id).fiber === undefined) this.page.setState(name, 'failed')
-    }))
+    }
 
     await loader.await()
     this.assertEntriesActive(ctx)

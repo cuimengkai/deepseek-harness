@@ -7,7 +7,7 @@ import { z } from 'zod'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 import { sessionIdSchema } from './sessions.schema.ts'
-import type { AgentPresetEntry } from './agent-presets.ts'
+import type { AgentPresetEntry, ComposeRow } from './agent-presets.ts'
 
 /** AgentPresetEntry row of agentPreset.list. */
 export const agentPresetEntrySchema = z.object({
@@ -18,6 +18,16 @@ export const agentPresetEntrySchema = z.object({
   description: z.string().optional(),
   broken: z.string().min(1).optional(),
 }) satisfies z.ZodType<Wire<AgentPresetEntry>>
+
+/** One composition row carried by agentPreset.read / agentPreset.compose. */
+export const agentPresetComposeRowSchema = z.object({
+  id: z.string().min(1).optional(),
+  name: z.string().min(1),
+  config: z.unknown().optional(),
+  group: z.boolean().nullable().optional(),
+  disabled: z.unknown().optional(),
+  inject: z.unknown().optional(),
+}) satisfies z.ZodType<Wire<ComposeRow>>
 
 /** agentPreset.list request payload. */
 export const agentPresetListRequestSchema = z.object({
@@ -51,6 +61,7 @@ export const agentPresetReadValueSchema = z.object({
   agentPreset: z.string(),
   trust: z.union([z.literal('system'), z.literal('user')]),
   content: z.string(),
+  rows: z.array(agentPresetComposeRowSchema),
   name: z.string().optional(),
   description: z.string().optional(),
 }) satisfies z.ZodType<Wire<ResponseValue<'agentPreset.read'>>>
@@ -86,3 +97,17 @@ export const agentPresetRemoveRequestSchema = z.object({
 /** agentPreset.remove response value. */
 export const agentPresetRemoveValueSchema = z.object({
 }) satisfies z.ZodType<Wire<ResponseValue<'agentPreset.remove'>>>
+
+/** agentPreset.compose request payload. */
+export const agentPresetComposeRequestSchema = z.object({
+  agentPreset: z.string().min(1),
+  rows: z.array(agentPresetComposeRowSchema).min(1),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  overwrite: z.boolean().optional(),
+}) satisfies z.ZodType<Wire<RequestPayload<'agentPreset.compose'>>>
+
+/** agentPreset.compose response value. */
+export const agentPresetComposeValueSchema = z.object({
+  agentPreset: z.string(),
+}) satisfies z.ZodType<Wire<ResponseValue<'agentPreset.compose'>>>

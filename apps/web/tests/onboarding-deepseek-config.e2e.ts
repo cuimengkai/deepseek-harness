@@ -96,7 +96,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     // The ordinary Models surface reuses the refreshed join and exposes the
     // configured write-only placeholder without a reload.
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    const settings = page.getByRole('dialog', { name: '设置' })
+    const settings = page.locator('[data-settings-page]')
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
     const deepSeekRow = settings.getByText('DeepSeek', { exact: true }).first()
@@ -117,7 +117,11 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     expect(await page.getByRole('dialog', { name: '添加一个 API Key 开始使用' }).count()).toBe(0)
 
     // An old acknowledgement means materially revised copy: welcome returns,
-    // while the already-configured provider step remains complete.
+    // while the already-configured provider step remains complete. Leave the
+    // settings route first (Escape steps back to the app root): the routed
+    // page suppresses the onboarding dialogs while it covers the app, so a
+    // reload at /settings would never surface the welcome again.
+    await page.keyboard.press('Escape')
     await scaffold.ctx.settings.mutate(settingsNamespace(WELCOME_NOTICE_SETTINGS_NAMESPACE), [{
       op: 'set', path: [WELCOME_NOTICE_ACK_FIELD], value: 'previous-copy-version',
     }])
@@ -196,7 +200,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     // Opened here rather than inherited: the credential test reloads the page
     // after configuring the key, so nothing carries an open dialog across.
     await page.getByRole('button', { name: '设置', exact: true }).click()
-    const settings = page.getByRole('dialog', { name: '设置' })
+    const settings = page.locator('[data-settings-page]')
     await settings.waitFor({ timeout: 10_000 })
     await settings.getByRole('button', { name: '模型' }).click()
     const deepSeek = settings.getByText('DeepSeek', { exact: true }).first()
@@ -213,7 +217,7 @@ describe.skipIf(MODE === 'record')('web e2e: first-run DeepSeek credential setup
     await settings.getByLabel('上下文窗口 3').fill('131072')
     await settings.getByLabel('最大输出 token 数 3').fill('64K')
 
-    const modelEditor = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
+    const modelEditor = await captureStableAria(page, '[data-settings-page]', scaffold.workspaceCwd)
     await compareOrRefreshGolden(MODELS_EXPECTED, modelEditor, MODE)
     await settings.getByRole('button', { name: '保存', exact: true }).click()
     await customModelId.waitFor({ state: 'detached', timeout: 15_000 })

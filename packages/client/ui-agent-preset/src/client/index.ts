@@ -31,6 +31,7 @@ import type { AgentPresetSectionInjected } from './AgentPresetSection.tsx'
 import { AgentPresetSeatController } from './seat-store.ts'
 import type { SeatSessionSummary } from './seat-store.ts'
 import { AgentPresetSectionController } from './section-store.ts'
+import { displayNameFor, type ModuleSource, type PaletteModule } from './section-store.ts'
 import { en, zh } from './locales.ts'
 import { AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController } from './settings-store.ts'
 
@@ -40,13 +41,16 @@ export type { AgentPresetSeatInjected, AgentPresetSeatProps } from './AgentPrese
 export type { AgentPresetSectionInjected, AgentPresetSectionProps } from './AgentPresetSection.tsx'
 export type { AgentPresetSeatState, SeatSessionSummary } from './seat-store.ts'
 export {
-  draftBlocker, type AgentPresetSectionState, type CopyDraft, type PresetRow, type PresetView,
+  addRow, composeBlocker, composeDirty, displayNameFor, draftBlocker, handoffBlocker,
+  insertRowAt, insertionIndexFor, moveRow, removeRow, rowIdFor,
+  type AgentPresetSectionState, type ComposeDraft, type ComposePalette, type CopyDraft,
+  type ModuleSource, type PaletteModule, type PresetRow, type PresetView,
 } from './section-store.ts'
 export type { AgentPresetOption, AgentPresetSettingsState } from './settings-store.ts'
 export { AGENT_PRESET_SETTINGS_NS, writeDefaultPreset } from './settings-store.ts'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'settingsScope']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.pluginInventory', 'settingsScope']
 
 /**
  * Mount the General-settings row.
@@ -58,10 +62,35 @@ export function apply(ctx: ClientContext): void {
   // One roster, four surfaces. The chip is registered in a later scope, so it
   // subscribes here rather than being reached from this one.
   const rosterReaders = new Set<() => void>()
+  // The composer palette reads the deployment's installed plugins through the
+  // generated Remote; a host that mounts no inventory makes the call fail and
+  // the palette degrades to "unavailable" without touching an edit in flight.
+  const modules: ModuleSource = {
+    list: async () => {
+      const result = await ctx.remote.pluginInventory.list()
+      if (!result.ok) {
+        throw new Error(`pluginInventory.list failed: ${result.error.code}: ${result.error.message}`)
+      }
+      // The inventory is entry-ordered, and the same module can be shipped by
+      // more than one Loader entry; the palette is a set of installable
+      // plugins, and duplicate moduleNames would collide as React list keys.
+      const byName = new Map<string, PaletteModule>()
+      for (const entry of result.value.entries) {
+        if (byName.has(entry.moduleName)) continue
+        byName.set(entry.moduleName, {
+          moduleName: entry.moduleName,
+          displayName: displayNameFor(entry.moduleName),
+          ...entry.category === undefined ? {} : { category: entry.category },
+          ...entry.description === undefined ? {} : { description: entry.description },
+        })
+      }
+      return [...byName.values()]
+    },
+  }
   const section = new AgentPresetSectionController(api, () => {
     void controller.load()
     for (const read of rosterReaders) read()
-  })
+  }, modules)
 
   ctx.effect(() => ctx.locale.register('settings.agentPreset', { zh, en }), 'ui-agent-preset: settings row dictionaries')
 
@@ -197,6 +226,15 @@ export function apply(ctx: ClientContext): void {
     setCopyId: (id: string) => { section.setCopyId(id) },
     setCopyName: (name: string) => { section.setCopyName(name) },
     confirmCopy: () => section.confirmCopy(),
+    beginCompose: (id: string | null) => section.beginCompose(id),
+    closeComposer: () => { section.closeComposer() },
+    setComposerId: (id: string) => { section.setComposerId(id) },
+    setComposerName: (name: string) => { section.setComposerName(name) },
+    addRow: (moduleName: string) => { section.addRow(moduleName) },
+    insertRowAt: (moduleName: string, index: number) => { section.insertRowAt(moduleName, index) },
+    removeRow: (rowId: string) => { section.removeRow(rowId) },
+    moveRow: (from: number, to: number) => { section.moveRow(from, to) },
+    confirmCompose: () => section.confirmCompose(),
     openLocation: (id: string) => section.openLocation(id),
     ...creatorDraft === undefined ? {} : { startCreatorDraft: creatorDraft },
     confirmDelete: (id: string | null) => { section.confirmDelete(id) },

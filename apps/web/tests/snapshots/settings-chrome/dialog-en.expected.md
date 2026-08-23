@@ -1,45 +1,48 @@
-- dialog "Settings":
-  - navigation:
-    - text: Settings
-    - button "General":
-      - img
-      - text: General
-    - button "Models":
-      - img
-      - text: Models
-    - button "Plugins":
-      - img
-      - text: Plugins
-    - button "Agent presets":
-      - img
-      - text: Agent presets
+- banner:
+  - button "Back":
+    - img
+    - text: Back
+  - heading "Settings" [level=1]
   - button "Open configuration file"
   - button "Close":
     - img
     - text: Close
-  - text: Agent preset Applies to sessions you start from now on. Running sessions keep the preset they began with.
-  - button "Standard mode":
-    - text: Standard mode
+- navigation "Settings navigation":
+  - button "General":
     - img
-  - text: Permission Choose the default permission mode for new sessions
-  - button "Workspace Write":
-    - text: Workspace Write
+    - text: General
+  - button "Models":
     - img
-  - text: Language
-  - button "English":
-    - text: English
+    - text: Models
+  - button "Plugins":
     - img
-  - text: Appearance
-  - button "Light":
+    - text: Plugins
+  - button "Agent presets":
     - img
-    - text: Light
-  - button "Dark":
-    - img
-    - text: Dark
-  - button "System" [pressed]:
-    - img
-    - text: System
-  - text: Enter behavior while busy Busy only; Cmd/Ctrl+Enter uses the other behavior
-  - button "Queue":
-    - text: Queue
-    - img
+    - text: Agent presets
+- text: Agent preset Applies to sessions you start from now on. Running sessions keep the preset they began with.
+- button "Standard mode":
+  - text: Standard mode
+  - img
+- text: Permission Choose the default permission mode for new sessions
+- button "Workspace Write":
+  - text: Workspace Write
+  - img
+- text: Language
+- button "English":
+  - text: English
+  - img
+- text: Appearance
+- button "Light":
+  - img
+  - text: Light
+- button "Dark":
+  - img
+  - text: Dark
+- button "System" [pressed]:
+  - img
+  - text: System
+- text: Enter behavior while busy Busy only; Cmd/Ctrl+Enter uses the other behavior
+- button "Queue":
+  - text: Queue
+  - img

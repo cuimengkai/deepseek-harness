@@ -37,6 +37,12 @@
     },
     {
       "path": "../ui-sidebar"
+    },
+    {
+      "path": "../ui-layout"
+    },
+    {
+      "path": "../ui-router"
     }
   ]
 }

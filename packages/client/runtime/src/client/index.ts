@@ -185,8 +185,11 @@ export const inject = ['connection', 'typert', 'remote', 'remote.commands']
 /** Mounts the browser runtime services and connection stream.
  * @param ctx - Client Cordis context.
  */
-export function apply(ctx: Context): void {
-  ctx.plugin(SlotRegistry)
+export async function apply(ctx: Context): Promise<void> {
+  // Await the slots service fiber so the entry stays LOADING until `slots` is
+  // strict-resolvable: nearly every client row injects it, and an entry that
+  // activated before its service left them PENDING at the boot audit.
+  await ctx.plugin(SlotRegistry)
   const conversation = {
     events: new ConversationEventRegistry(ctx),
     views: new ConversationViewRegistry(ctx),

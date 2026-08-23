@@ -117,3 +117,24 @@
 .overlayLayer > * {
   pointer-events: auto;
 }
+
+/* The app grid stays direct frame grid items while a page is active: display:
+   contents flattens the wrapper, so inert (the DOM-level focus/pointer guard)
+   is what freezes the app, not a box. */
+.appRegion {
+  display: contents;
+}
+
+/* The active page covers the whole window above every column and the overlay.
+   Opaque and interactive (unlike the click-through overlay): it is the
+   full-viewport page surface, and it owns focus because the app region below
+   is inert. */
+.pageLayer {
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-base);
+  overflow: hidden;
+}

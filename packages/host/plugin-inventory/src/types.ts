@@ -1,5 +1,18 @@
 import type { Branded } from '@deepseek-ai/dsh-brand'
 
+declare module '@deepseek-ai/cordis' {
+  interface Events {
+    /**
+     * The Loader plugin projection changed. Emitted after one frame of
+     * `loader/entry-init`, `loader/partial-dispose`, `internal/plugin`, and
+     * `internal/status` events coalesces and the recomputed projection differs
+     * from the last one emitted; the client re-reads `pluginInventory/list`.
+     * @mode emit
+     */
+    'plugin-inventory/changed'(): void
+  }
+}
+
 /** Stable Loader-tree identity of one configured plugin entry. */
 export type PluginEntryId = Branded<'PluginEntryId'>
 
@@ -20,6 +33,10 @@ export interface PluginInventoryEntry {
   /** Effective Loader enablement, including disabled ancestor groups. */
   readonly enabled: boolean
   readonly fiberPhase: PluginFiberPhase
+  /** Harness-native category from the spine metadata table, when known. */
+  readonly category?: string
+  /** One-line purpose from the spine metadata table, when known. */
+  readonly description?: string
 }
 
 /** Point-in-time inventory returned by the plugin inventory Remote. */

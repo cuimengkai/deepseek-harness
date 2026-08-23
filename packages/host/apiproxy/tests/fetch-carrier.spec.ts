@@ -207,7 +207,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
         return Promise.resolve({ rpcId: request.rpcId, result: { ok: true as const, value } })
       },
       read(request: RpcRequest<{ agentPreset: string }>) {
-        const value = { agentPreset: request.payload.agentPreset, trust: 'user' as const, content: '' }
+        const value = { agentPreset: request.payload.agentPreset, trust: 'user' as const, content: '', rows: [] }
         return Promise.resolve({ rpcId: request.rpcId, result: { ok: true as const, value } })
       },
       copy(request: RpcRequest<{ from: string; agentPreset: string }>) {
@@ -219,6 +219,10 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
       },
       remove(request: RpcRequest<{ agentPreset: string }>) {
         return Promise.resolve({ rpcId: request.rpcId, result: { ok: true as const, value: {} } })
+      },
+      compose(request: RpcRequest<{ agentPreset: string }>) {
+        const value = { agentPreset: request.payload.agentPreset }
+        return Promise.resolve({ rpcId: request.rpcId, result: { ok: true as const, value } })
       },
     },
     skills: {
@@ -383,10 +387,15 @@ describe('unary round trip (handler ⇄ client, no network)', () => {
     expect((await c.agentPresets.select({ sessionId: 's' as never, agentPreset: 'minimal' })).result)
       .toEqual({ ok: true, value: { agentPreset: 'minimal' } })
     expect((await c.agentPresets.read({ agentPreset: 'mine' })).result).toEqual({
-      ok: true, value: { agentPreset: 'mine', trust: 'user', content: '' },
+      ok: true, value: { agentPreset: 'mine', trust: 'user', content: '', rows: [] },
     })
     expect((await c.agentPresets.copy({ from: 'standard', agentPreset: 'mine' })).result)
       .toEqual({ ok: true, value: { agentPreset: 'mine' } })
+    expect((await c.agentPresets.compose({
+      agentPreset: 'mine',
+      overwrite: true,
+      rows: [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }],
+    })).result).toEqual({ ok: true, value: { agentPreset: 'mine' } })
     expect((await c.agentPresets.openDocument({ agentPreset: 'mine' })).result)
       .toEqual({ ok: true, value: { opened: true } })
     expect((await c.agentPresets.remove({ agentPreset: 'mine' })).result).toEqual({ ok: true, value: {} })

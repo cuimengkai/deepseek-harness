@@ -4,7 +4,9 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 760px;
+  /* Fills the settings content area, like the General page: the plugin tabs
+     and their card lists are not a narrow column pinned to a reading width. */
+  width: 100%;
   color: var(--dsw-alias-label-primary);
 }
 

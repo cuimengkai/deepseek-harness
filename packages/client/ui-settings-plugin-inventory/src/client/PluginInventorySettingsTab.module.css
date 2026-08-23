@@ -2,8 +2,9 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  /* Fills the settings content area, like the General page: the grouped
+     catalog is not a narrow column pinned to a reading width. */
   width: 100%;
-  max-width: 760px;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -43,11 +44,18 @@
   gap: 12px;
 }
 
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .search {
   position: relative;
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   align-items: center;
-  width: 100%;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -99,9 +107,186 @@
   font-variant-numeric: tabular-nums;
 }
 
-.cards {
+.refreshButton {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.refreshButton:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.refreshButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.refreshButton:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+/* Category filter trigger: shares the toolbar button shape, ellipsizes the
+   selected category while the chevron stays fixed. */
+.categoryButton {
+  display: inline-flex;
+  flex: none;
+  max-width: 140px;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 0 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.categoryButton span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.categoryButton:hover {
+  border-color: var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.categoryButton:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.sourceStatuses {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sourceStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 2px 2px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.sourceId {
+  flex: none;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.sourceKind {
+  flex: none;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.sourceState {
+  flex: none;
+}
+
+.sourceState[data-state='ok'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.sourceState[data-state='error'],
+.sourceState[data-state='offline'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.sourceState[data-state='stale'] {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.sourceCount {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.sourceFiltered {
+  flex: none;
+  border-radius: 4px;
+  padding: 0 5px;
+  background: color-mix(in srgb, var(--dsw-alias-state-warn-primary) 12%, transparent);
+  color: var(--dsw-alias-state-warn-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sourceErrorDetail {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-state-error-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One group per category: a head with name and count above the card grid. */
+.groups {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.groupHead {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.groupCount {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.rows {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* The catalog fills the full-width pane with as many readable card columns
+     as fit (320px floor), rather than two stretched ones: a wide settings
+     pane gets three or four columns instead of a dead right margin. */
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   align-items: start;
   gap: 10px;
   margin: 0;
@@ -109,6 +294,8 @@
   list-style: none;
 }
 
+/* Unified plugin card: disclosure button and action button as siblings, so the
+   detail panel never nests interactive controls. */
 .card {
   min-width: 0;
   overflow: hidden;
@@ -122,16 +309,23 @@
   box-shadow: var(--dsw-shadow-lv1);
 }
 
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .cardContent {
   box-sizing: border-box;
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  width: 100%;
-  min-height: 52px;
+  min-height: 56px;
   border: 0;
-  padding: 12px 14px;
+  padding: 10px 6px 10px 14px;
   background: transparent;
   color: inherit;
   font: inherit;
@@ -140,13 +334,61 @@
 }
 
 .cardContent:hover,
-.card[data-open='true'] > .cardContent {
+.card[data-open='true'] .cardContent {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .cardContent:focus-visible {
   outline: 2px solid var(--dsw-alias-state-business-primary);
   outline-offset: -2px;
+}
+
+.cardMain {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.cardBadges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sourceBadge,
+.categoryBadge,
+.harnessBadge,
+.tamperedBadge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 18px;
+  border-radius: 4px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.sourceBadge {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 10%, transparent);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.categoryBadge {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.harnessBadge {
+  border: 1px solid var(--dsw-alias-border-l2);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.tamperedBadge {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 12%, transparent);
+  color: var(--dsw-alias-state-error-primary);
 }
 
 .cardTitle {
@@ -188,7 +430,7 @@
   background: var(--dsw-alias-state-business-primary);
 }
 
-.configTag {
+.statusTag {
   display: inline-flex;
   align-items: center;
   min-height: 20px;
@@ -201,7 +443,7 @@
   white-space: nowrap;
 }
 
-.configTag[data-enabled='true'] {
+.statusTag[data-state='installed'] {
   background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent);
   color: var(--dsw-alias-state-success-primary);
 }
@@ -213,6 +455,64 @@
 
 .card[data-open='true'] .chevron {
   transform: rotate(180deg);
+}
+
+.cardAction {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  padding-right: 14px;
+}
+
+.installAction {
+  flex: none;
+  min-width: 64px;
+  height: 28px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 6px;
+  padding: 0 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.installAction:hover:not(:disabled) {
+  border-color: var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.installAction:focus-visible {
+  outline: 2px solid var(--dsw-alias-state-business-primary);
+  outline-offset: 1px;
+}
+
+.installAction:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.browseOnly {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  min-height: 20px;
+  border-radius: 5px;
+  padding: 1px 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.installError {
+  margin: 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 20px;
 }
 
 .cardDetails {
@@ -232,7 +532,7 @@
 
 .details {
   display: grid;
-  grid-template-columns: 76px minmax(0, 1fr);
+  grid-template-columns: 88px minmax(0, 1fr);
   gap: 6px 10px;
   margin: 8px 0 0;
 }
@@ -256,6 +556,162 @@
   line-height: 17px;
 }
 
+.details code {
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.marketMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.stars {
+  color: var(--dsw-alias-state-warn-primary);
+  font-size: 11px;
+  line-height: 17px;
+  font-variant-numeric: tabular-nums;
+}
+
+.repoLink {
+  color: var(--dsw-alias-state-business-primary);
+  font-size: 11px;
+  line-height: 17px;
+  text-decoration: none;
+}
+
+.repoLink:hover {
+  text-decoration: underline;
+}
+
+.harnessNote {
+  margin: 8px 0 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.integrityDetail {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+/* Network-install trust confirmation dialog. */
+.confirmation {
+  width: min(440px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+}
+
+.confirmationContent {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+@supports (height: 100dvh) {
+  .confirmation {
+    max-height: calc(100dvh - 48px);
+  }
+}
+
+.warning {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.warning p {
+  margin: 0;
+}
+
+.warningIcon {
+  flex: none;
+  margin-top: 2px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.confirmDetails {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 6px 10px;
+  margin: 16px 0 0;
+}
+
+.confirmDetails div {
+  display: contents;
+}
+
+.confirmDetails dt {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.confirmDetails dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.confirmDetails code {
+  font-family: var(--ds-font-family-code);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.scriptCheckbox,
+.acknowledgement {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 16px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.scriptCheckbox input,
+.acknowledgement input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 3px 0 0;
+  accent-color: var(--dsw-alias-button-primary-fill);
+  cursor: pointer;
+}
+
+.scriptCheckbox input:focus-visible,
+.acknowledgement input:focus-visible {
+  outline: 2px solid var(--dsw-alias-border-l4);
+  outline-offset: 2px;
+}
+
+.sandboxNotice {
+  margin: 12px 0 0;
+  color: var(--dsw-alias-state-error-primary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.modalAction {
+  min-width: 72px;
+}
+
+.confirmAction {
+  min-width: 136px;
+}
+
 .visuallyHidden {
   position: absolute;
   width: 1px;
@@ -273,7 +729,7 @@
 }
 
 @media (max-width: 680px) {
-  .cards {
+  .rows {
     grid-template-columns: minmax(0, 1fr);
   }
 }

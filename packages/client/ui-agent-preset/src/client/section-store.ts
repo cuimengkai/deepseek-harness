@@ -1,20 +1,23 @@
 /**
  * Agent-preset management controller: the roster as a list, a copy dialog as
- * the only way a preset is created, and a read-only viewer over the shipped
- * compositions.
+ * one way a preset is created, a drag-and-drop composer as the other, and a
+ * read-only canvas view over the shipped compositions.
  *
- * The browser edits no composition text. A new preset is a host-side copy of
- * an existing one (`{ from, id, name? }` is all that crosses the wire), and
- * everything after creation happens in the preset's own files — which is why
- * the page's other job is getting the user TO those files: open the directory
- * where the host has a desktop, show its path where it does not.
+ * The browser writes no composition text. Creation is either a host-side copy
+ * of an existing preset (`{ from, id, name? }` is all that crosses the wire) or
+ * a validated ROW LIST the composer assembles — each row names an installed
+ * plugin module, the host re-checks that against its own inventory, and an
+ * overwrite is refused for presets that ship with the deployment. Everything
+ * else happens in the preset's own files, which is why the page's other job is
+ * getting the user TO those files: open the directory where the host has a
+ * desktop, show its path where it does not.
  *
  * The host stays the single fact source. Every mutation writes through the
- * wire and the page re-reads the roster afterwards, because a copy changes
- * more than the row it targeted.
+ * wire and the page re-reads the roster afterwards, because a copy or a
+ * composition changes more than the row it targeted.
  */
 
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { IApiClient, ComposeRow } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { beginRosterRead, messageOf, writeDefaultPreset } from './settings-store.ts'
 
@@ -58,14 +61,68 @@ export interface CopyDraft {
   error: string | null
 }
 
-/** The read-only composition viewer over one shipped preset. */
+/** The read-only composition view over one shipped preset, on the canvas. */
 export interface PresetView {
   /** The preset whose composition is shown. */
   id: string
-  /** Display name, for the dialog title. */
+  /** Display name, for the composer head. */
   title: string
-  /** Composition text exactly as stored. */
-  content: string
+  /** The composition's rows, in chain order. */
+  rows: ComposeRow[]
+}
+
+/**
+ * The drag-and-drop composer: an agent as a list of plugin rows. Editing an
+ * existing user preset keeps the full wire rows (so a preserved `config` or
+ * `disabled` survives an overwrite); rows added from the palette carry none.
+ */
+export interface ComposeDraft {
+  /** Target preset id; a free id creates, a roster id overwrites. */
+  id: string
+  /** Display name being typed; empty falls back to the id. */
+  name: string
+  /** The composition being built, in display order. */
+  rows: ComposeRow[]
+  /** Whether the compose is in flight. */
+  saving: boolean
+  /** The last compose failure, cleared by the next edit. */
+  error: string | null
+  /** What the composer opened with, so an untouched draft disables Save. */
+  original: { id: string; name: string; rows: ComposeRow[] }
+}
+
+/**
+ * One installed plugin the composer palette offers, annotated with what the
+ * host inventory knows about it. The display name is derived client-side; the
+ * `category`/`description` come over the wire for the deployment's built-in
+ * spine modules and are absent for anything else.
+ */
+export interface PaletteModule {
+  /** The exact module specifier the row mounts. */
+  moduleName: string
+  /** Human-readable display name derived from the module name. */
+  displayName: string
+  /** Spine taxonomy category, when the inventory knows one. */
+  category?: string
+  /** One sentence on what the module does, when the inventory knows one. */
+  description?: string
+}
+
+/** The composer's palette: the deployment's installed plugin modules. */
+export interface ComposePalette {
+  status: 'loading' | 'ready' | 'unavailable'
+  /** Installed modules, when the inventory answered. */
+  modules: readonly PaletteModule[]
+}
+
+/** Installed-plugin source for the composer palette (host inventory over RPC). */
+export interface ModuleSource {
+  /**
+   * Installed modules in catalog order. Throws when the deployment mounts no
+   * plugin inventory, so the palette degrades gracefully without disturbing an
+   * edit already in progress.
+   */
+  list(): Promise<readonly PaletteModule[]>
 }
 
 /** Page snapshot. */
@@ -83,6 +140,10 @@ export interface AgentPresetSectionState {
   copy: CopyDraft | null
   /** The open read-only viewer, or null. */
   view: PresetView | null
+  /** The open drag-and-drop composer, or null. */
+  composer: ComposeDraft | null
+  /** The composer palette's last load; null while the composer is closed. */
+  palette: ComposePalette | null
   /** The preset awaiting delete confirmation. */
   pendingDelete: string | null
   /** Whether a delete is in flight. */
@@ -102,6 +163,8 @@ const INITIAL: AgentPresetSectionState = {
   rows: [],
   copy: null,
   view: null,
+  composer: null,
+  palette: null,
   pendingDelete: null,
   deleting: false,
   revealedPaths: {},
@@ -127,6 +190,177 @@ export function draftBlocker(
   return undefined
 }
 
+/**
+ * Derive a composition row id from an installed module name: strip the
+ * `@deepseek-ai/` and `dsh-` prefixes (so `@deepseek-ai/dsh-tool-bash` reads
+ * as `tool-bash`), then append `-2`/`-3` until the id is free.
+ * @param moduleName - the exact module specifier the row mounts.
+ * @param rows - the rows already in the composition, for the conflict check.
+ * @returns an id no row in the composition already uses.
+ */
+export function rowIdFor(moduleName: string, rows: readonly ComposeRow[]): string {
+  const base = moduleName.replace(/^@deepseek-ai\//, '').replace(/^dsh-/, '')
+  const used = new Set(rows.map(row => row.id))
+  if (!used.has(base)) return base
+  for (let n = 2; ; n++) {
+    const candidate = `${base}-${String(n)}`
+    if (!used.has(candidate)) return candidate
+  }
+}
+
+/**
+ * Derive a plugin module's display name from its specifier: strip any `@scope/`
+ * prefix and the `dsh-`/`tool-` prefixes, then split on `-` and title-case each
+ * word. A subpath keeps its `/` (`dsh-web-app/startup` → `Web App/Startup`); an
+ * empty result means nothing recognizable remained, and the call site falls
+ * back to the module name.
+ * @param moduleName - the exact module specifier.
+ * @returns the display name, or '' when nothing remains after stripping.
+ */
+export function displayNameFor(moduleName: string): string {
+  const stem = moduleName.replace(/^@[^/]+\//, '').replace(/^dsh-/, '').replace(/^tool-/, '')
+  return stem
+    .split('-')
+    .filter(word => word !== '')
+    .map(word => word.replace(/[^/]+/g, segment => segment.charAt(0).toUpperCase() + segment.slice(1)))
+    .join(' ')
+}
+
+/**
+ * Insert a plugin module into the composition at a slot. A module already in
+ * the composition is refused — one agent runs one instance of a plugin.
+ * @param rows - the rows before the insertion.
+ * @param moduleName - the module being dropped from the palette.
+ * @param index - the slot it lands in, clamped to the list bounds.
+ * @returns the rows with the new row inserted, or the same rows on a duplicate.
+ */
+export function insertRowAt(rows: readonly ComposeRow[], moduleName: string, index: number): ComposeRow[] {
+  if (rows.some(row => row.name === moduleName)) return rows as ComposeRow[]
+  const next = [...rows]
+  next.splice(Math.min(Math.max(index, 0), rows.length), 0, {
+    id: rowIdFor(moduleName, rows),
+    name: moduleName,
+  })
+  return next
+}
+
+/**
+ * Add a plugin module to the composition, at the end. A module already in the
+ * composition is refused — one agent runs one instance of a plugin.
+ * @param rows - the rows before the addition.
+ * @param moduleName - the module being dragged in from the palette.
+ * @returns the rows with the new row appended, or the same rows on a duplicate.
+ */
+export function addRow(rows: readonly ComposeRow[], moduleName: string): ComposeRow[] {
+  return insertRowAt(rows, moduleName, rows.length)
+}
+
+/**
+ * Remove a row from the composition.
+ * @param rows - the rows before the removal.
+ * @param id - the row id being removed.
+ * @returns the rows without that id.
+ */
+export function removeRow(rows: readonly ComposeRow[], id: string): ComposeRow[] {
+  return rows.filter(row => row.id !== id)
+}
+
+/**
+ * Reorder the composition: move one row so it lands before the element
+ * originally at `toIndex` (or at the end when `toIndex` is past the last one).
+ * @param rows - the rows before the move.
+ * @param fromIndex - the row being dragged.
+ * @param toIndex - the target slot, clamped to the list bounds.
+ * @returns the reordered rows, or the same rows when `fromIndex` is out of range.
+ */
+export function moveRow(rows: readonly ComposeRow[], fromIndex: number, toIndex: number): ComposeRow[] {
+  if (fromIndex < 0 || fromIndex >= rows.length) return rows as ComposeRow[]
+  const next = [...rows]
+  // fromIndex was range-checked above, so the removal yields exactly one row.
+  const moved = next.splice(fromIndex, 1)[0]
+  if (moved === undefined) return rows as ComposeRow[]
+  next.splice(Math.min(Math.max(toIndex, 0), next.length), 0, moved)
+  return next
+}
+
+/**
+ * Map a drop's coordinate along an axis to an insertion slot: before the first
+ * element whose midpoint lies past the pointer on that axis, or at the end. The
+ * axis is the caller's — the component measures either `rect.top + height/2`
+ * (the old vertical list) or `rect.left + width/2` (the pipeline canvas).
+ * @param point - the pointer's client coordinate along the axis at drop time.
+ * @param midpoints - each element's midpoint along the same axis, in display order.
+ * @returns the slot the dragged row lands in.
+ */
+export function insertionIndexFor(point: number, midpoints: readonly number[]): number {
+  for (let i = 0; i < midpoints.length; i++) {
+    const midpoint = midpoints[i]
+    if (midpoint !== undefined && point < midpoint) return i
+  }
+  return midpoints.length
+}
+
+/** Whether two compositions differ in the fields the composer edits. */
+function rowsEqual(a: readonly ComposeRow[], b: readonly ComposeRow[]): boolean {
+  if (a.length !== b.length) return false
+  // a.length === b.length, so every index over `a` is defined in `b`.
+  return a.every((row, index) => {
+    const other = b[index]
+    return other !== undefined && row.id === other.id && row.name === other.name
+  })
+}
+
+/** Whether the draft differs from what the composer opened with. */
+export function composeDirty(draft: ComposeDraft): boolean {
+  const { original } = draft
+  return draft.id !== original.id
+    || draft.name !== original.name
+    || !rowsEqual(draft.rows, original.rows)
+}
+
+/**
+ * Why this composition cannot be saved yet, as a locale key, or undefined when
+ * it can. Client-side only: the host re-checks the id, the row structure, and
+ * module installability, and its answer is what the composer reports.
+ * @param draft - the open composer.
+ * @param rows - the roster, for the create/id-collision check.
+ * @returns the blocking reason's locale key, or undefined when submittable.
+ */
+export function composeBlocker(
+  draft: ComposeDraft,
+  rows: readonly PresetRow[],
+): 'idRequired' | 'idInvalid' | 'noRows' | 'idTaken' | 'unchanged' | undefined {
+  if (draft.id === '') return 'idRequired'
+  if (!PRESET_ID.test(draft.id)) return 'idInvalid'
+  if (draft.rows.length === 0) return 'noRows'
+  if (!composeDirty(draft)) return 'unchanged'
+  // A create must not land on an id the roster already supplies. Editing an
+  // existing preset keeps its own id (which is on the roster by definition),
+  // so the check only fires when the id was changed onto a live one.
+  if (draft.original.id !== draft.id && rows.some(row => row.id === draft.id)) return 'idTaken'
+  return undefined
+}
+
+/**
+ * Why a composition cannot yet be handed to Creator mode, as a locale key, or
+ * undefined when it can. Unlike {@link composeBlocker}, an unchanged existing
+ * preset is handoff-ready: it is already saved, so the handoff skips the save
+ * and starts the draft directly.
+ * @param draft - the open composer.
+ * @param rows - the roster, for the create/id-collision check.
+ * @returns the blocking reason's locale key, or undefined when handoff-ready.
+ */
+export function handoffBlocker(
+  draft: ComposeDraft,
+  rows: readonly PresetRow[],
+): 'idRequired' | 'idInvalid' | 'noRows' | 'idTaken' | undefined {
+  if (draft.id === '') return 'idRequired'
+  if (!PRESET_ID.test(draft.id)) return 'idInvalid'
+  if (draft.rows.length === 0) return 'noRows'
+  if (draft.original.id !== draft.id && rows.some(row => row.id === draft.id)) return 'idTaken'
+  return undefined
+}
+
 /** Reads the roster and drives the copy dialog, viewer, and location reveals. */
 export class AgentPresetSectionController {
   /** Page snapshot the renderer subscribes to. */
@@ -143,6 +377,8 @@ export class AgentPresetSectionController {
      * offer now exists.
      */
     private readonly rosterChanged: () => void = () => {},
+    /** The deployment's installed plugin modules, for the composer palette. */
+    private readonly modules: ModuleSource = { list: () => Promise.resolve([]) },
   ) {}
 
   private set(patch: Partial<AgentPresetSectionState>): void {
@@ -153,6 +389,24 @@ export class AgentPresetSectionController {
     const { copy } = this.store.getSnapshot()
     if (copy === null) return
     this.set({ copy: { ...copy, ...patch } })
+  }
+
+  private patchComposer(patch: Partial<ComposeDraft>): void {
+    const { composer } = this.store.getSnapshot()
+    if (composer === null) return
+    this.set({ composer: { ...composer, ...patch } })
+  }
+
+  /** Load the composer palette from the host inventory, degrading to unavailable. */
+  private async loadPalette(): Promise<void> {
+    try {
+      const modules = await this.modules.list()
+      this.set({ palette: { status: 'ready', modules } })
+    } catch {
+      // The palette is an offering, not a gate: an edit already in the
+      // composer keeps its rows, and only new drags lose the list.
+      this.set({ palette: { status: 'unavailable', modules: [] } })
+    }
   }
 
   /**
@@ -186,28 +440,169 @@ export class AgentPresetSectionController {
   }
 
   /**
-   * Open one shipped preset's composition in the read-only viewer.
+   * Open one shipped preset's composition in the read-only canvas view. The
+   * palette loads too, so the nodes carry the same badges and descriptions an
+   * editable composition shows.
    * @param id - the preset to view.
    * @returns once the composition loaded or the failure is on the page.
    */
   async view(id: string): Promise<void> {
-    this.set({ error: null })
+    this.set({ error: null, copy: null, composer: null })
+    void this.loadPalette()
     try {
       const response = await this.api.agentPresets.read({ agentPreset: id })
       if (!response.result.ok) {
         this.set({ error: response.result.error.message })
         return
       }
-      const { name, content } = response.result.value
-      this.set({ view: { id, title: name ?? id, content } })
+      const { name, rows } = response.result.value
+      this.set({ view: { id, title: name ?? id, rows: [...rows] } })
     } catch (error) {
       this.set({ error: messageOf(error) })
     }
   }
 
-  /** Close the read-only viewer. */
+  /** Close the read-only composition view. */
   closeView(): void {
-    this.set({ view: null })
+    this.set({ view: null, palette: null })
+  }
+
+  /**
+   * Open the drag-and-drop composer. A null id starts a new preset from an
+   * empty composition; an id opens that preset's rows for in-place editing.
+   * Either way the palette starts loading and any other overlay closes.
+   * @param id - the user preset to edit, or null to create.
+   * @returns once an existing preset's rows loaded or the failure is on the page.
+   */
+  async beginCompose(id: string | null): Promise<void> {
+    this.set({ error: null, copy: null, view: null, palette: { status: 'loading', modules: [] } })
+    void this.loadPalette()
+    if (id === null) {
+      this.set({ composer: { id: '', name: '', rows: [], saving: false, error: null, original: { id: '', name: '', rows: [] } } })
+      return
+    }
+    const row = this.store.getSnapshot().rows.find(candidate => candidate.id === id)
+    try {
+      const response = await this.api.agentPresets.read({ agentPreset: id })
+      if (!response.result.ok) {
+        this.set({ error: response.result.error.message })
+        return
+      }
+      const { name, rows } = response.result.value
+      const title = name ?? row?.name ?? id
+      this.set({
+        composer: {
+          id,
+          name: title,
+          rows: [...rows],
+          saving: false,
+          error: null,
+          original: { id, name: title, rows: [...rows] },
+        },
+      })
+    } catch (error) {
+      this.set({ error: messageOf(error) })
+    }
+  }
+
+  /** Close the composer, discarding whatever was assembled. */
+  closeComposer(): void {
+    this.set({ composer: null, palette: null })
+  }
+
+  /**
+   * Name the preset the composition lands on. Free ids create, ids already on
+   * the roster overwrite.
+   * @param id - the id typed into the composer.
+   */
+  setComposerId(id: string): void {
+    this.patchComposer({ id, error: null })
+  }
+
+  /**
+   * Name the composed preset's display name.
+   * @param name - the display name typed into the composer.
+   */
+  setComposerName(name: string): void {
+    this.patchComposer({ name, error: null })
+  }
+
+  /**
+   * Add a plugin to the composition from the palette. A module already in the
+   * composition is refused (see {@link addRow}).
+   * @param moduleName - the module dragged in.
+   */
+  addRow(moduleName: string): void {
+    const composer = this.store.getSnapshot().composer
+    if (composer === null) return
+    this.patchComposer({ rows: addRow(composer.rows, moduleName), error: null })
+  }
+
+  /**
+   * Insert a plugin into the composition from the palette at a slot. A module
+   * already in the composition is refused (see {@link insertRowAt}).
+   * @param moduleName - the module dropped onto the canvas.
+   * @param index - the slot it lands in.
+   */
+  insertRowAt(moduleName: string, index: number): void {
+    const composer = this.store.getSnapshot().composer
+    if (composer === null) return
+    this.patchComposer({ rows: insertRowAt(composer.rows, moduleName, index), error: null })
+  }
+
+  /**
+   * Remove one row from the composition.
+   * @param id - the row id being removed.
+   */
+  removeRow(id: string): void {
+    const composer = this.store.getSnapshot().composer
+    if (composer === null) return
+    this.patchComposer({ rows: removeRow(composer.rows, id), error: null })
+  }
+
+  /**
+   * Reorder the composition in place.
+   * @param fromIndex - the row being dragged.
+   * @param toIndex - where it lands.
+   */
+  moveRow(fromIndex: number, toIndex: number): void {
+    const composer = this.store.getSnapshot().composer
+    if (composer === null) return
+    this.patchComposer({ rows: moveRow(composer.rows, fromIndex, toIndex), error: null })
+  }
+
+  /**
+   * Save the composition, re-read the roster, and announce the directory
+   * change. A free id creates the preset; an id already on the roster
+   * overwrites it in place.
+   * @returns true when the composition saved, false when it was blocked,
+   * failed, or no composer is open.
+   */
+  async confirmCompose(): Promise<boolean> {
+    const draft = this.store.getSnapshot().composer
+    if (draft === null || draft.saving) return false
+    if (composeBlocker(draft, this.store.getSnapshot().rows) !== undefined) return false
+    this.patchComposer({ saving: true, error: null })
+    try {
+      const name = draft.name.trim()
+      const response = await this.api.agentPresets.compose({
+        agentPreset: draft.id,
+        rows: draft.rows,
+        ...name === '' ? {} : { name },
+        overwrite: this.store.getSnapshot().rows.some(row => row.id === draft.id),
+      })
+      if (!response.result.ok) {
+        this.patchComposer({ saving: false, error: response.result.error.message })
+        return false
+      }
+      this.set({ composer: null, palette: null })
+      await this.load()
+      this.rosterChanged()
+      return true
+    } catch (error) {
+      this.patchComposer({ saving: false, error: messageOf(error) })
+      return false
+    }
   }
 
   /**

@@ -21,6 +21,9 @@
       "path": "../ui-theme"
     },
     {
+      "path": "../ui-router"
+    },
+    {
       "path": "../ui-primitives"
     },
     {

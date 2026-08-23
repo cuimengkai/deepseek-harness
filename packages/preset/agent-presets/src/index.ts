@@ -31,9 +31,11 @@ import { settingsNamespace, type SettingsScope, type default as SettingsService 
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import { discoverPresets, USER_PRESET_DIR } from './discovery.ts'
-import { copyComposition, deleteComposition, readComposition, writableRoot, writeComposition } from './authoring.ts'
+import {
+  ComposeModuleError, copyComposition, deleteComposition, parseComposition, PresetExistsError,
+  PresetNotWritableError, readComposition, replaceComposition, writableRoot, writeComposition,
+} from './authoring.ts'
 import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
-import { PresetExistsError } from './authoring.ts'
 import type { PresetMetadata } from './metadata.ts'
 import { PresetMountError, UnknownPresetError, type AgentPreset, type Config, type PresetRoot } from './preset.ts'
 import type {} from './types.ts'
@@ -52,6 +54,32 @@ export const AgentPresetSettingsSchema: z<AgentPresetSettings> = z.object({
   default: z.string(),
 })
 
+/**
+ * One composition row the composer authors.
+ *
+ * The JSON-safe subset of a loader entry that may cross the wire: `config`,
+ * `disabled`, and `inject` pass through as structured values rather than being
+ * edited, so arbitrary plugin config and a platform-conditional `!!js`
+ * expression (`{ __jsExpr }`) round-trip unchanged. `group` is carried so a
+ * group row survives editing. `id` is required by the composer (every row it
+ * writes has one), but stays optional here because a shipped composition read
+ * back for editing may contain an id-less row.
+ */
+export interface ComposeRow {
+  /** Stable id inside the preset; unique across the rows of one preset. */
+  id?: string
+  /** Module specifier imported by the entry. */
+  name: string
+  /** Config passed to the plugin, carried verbatim. */
+  config?: unknown
+  /** Marks this row as a nested group, carried verbatim. */
+  group?: boolean | null
+  /** Enablement, carried verbatim (`!!js` expressions as `{ __jsExpr }`). */
+  disabled?: unknown
+  /** Required-service override, carried verbatim so an overwrite never drops it. */
+  inject?: unknown
+}
+
 export { COMPOSITION_FILE, discoverPresets, scanRoot } from './discovery.ts'
 export {
   METADATA_FILE, readPresetMetadata, renderPresetMetadata, type PresetMetadata,
@@ -61,8 +89,9 @@ export {
   type JoinedPresetMount, type PresetMount,
 } from './mount.ts'
 export {
-  copyComposition, deleteComposition, InvalidPresetIdError, PresetExistsError,
-  PresetNotWritableError, readComposition, writableRoot,
+  ComposeModuleError, copyComposition, deleteComposition, InvalidPresetIdError,
+  parseComposition, PresetExistsError, PresetNotWritableError, readComposition,
+  replaceComposition, writableRoot, writeComposition,
 } from './authoring.ts'
 export { resolveSessionPreset, type PresetBearingSession } from './session.ts'
 export { PresetMountError, UnknownPresetError } from './preset.ts'
@@ -415,6 +444,98 @@ export class AgentPresets extends Service {
       throw new PresetExistsError(id)
     }
     await writeComposition(writableRoot(this.resolvedRoots), id, rows, meta)
+    // A settled mount under this id can only be stale; the fresh preset must
+    // not inherit it. Every session already joined keeps its generation.
+    this.standing.delete(id)
+  }
+
+  /**
+   * Read one preset's composition as rows, for the composer.
+   *
+   * The structured twin of `read`: the same composition, parsed with the
+   * loader's own YAML dialect so a `!!js` `disabled` row survives. The browser
+   * receives rows rather than YAML text because editing is a row operation —
+   * parsing stays on the host.
+   * @param id - the preset id.
+   * @returns the composition's entry rows.
+   * @throws when no configured root supplies that id or the composition does
+   * not parse as an entry list.
+   */
+  async readRows(id: string): Promise<ComposeRow[]> {
+    return await parseComposition(await readComposition(await this.resolve(id)))
+  }
+
+  /**
+   * Write a locally authored preset's composition from rows, creating it or
+   * replacing it in place.
+   *
+   * The browser-facing authoring write. Unlike `write` (rows accepted as given
+   * by a trusted in-process caller), this method enforces the composition
+   * invariants the preset domain owns — a non-empty row list, a plugin module
+   * per row, unique row ids — and the "only installed plugins may be composed"
+   * rule through a REQUIRED resolvability proof: `assertResolvable` returns
+   * the module names the rows reference that are not installed, and a non-empty
+   * answer refuses the whole composition with {@link ComposeModuleError}. The
+   * wire layer supplies the inventory-backed proof, so no caller can bypass
+   * it. `overwrite` selects replace-in-place over create: replacing refuses a
+   * preset that ships with the deployment, because only a locally authored
+   * preset is the user's to overwrite.
+   * The write is NOT mounted to validate; loader-level checks (`inactiveRows`
+   * / `leakedServices`) run at mount, as they do for every authored preset.
+   * @param id - the preset id, which becomes its directory name.
+   * @param rows - the composition rows to persist.
+   * @param meta - display metadata to publish beside the composition.
+   * @param options - create-vs-replace choice and the resolvability proof.
+   * @throws when the id is unusable, the rows violate a composition invariant,
+   * a module does not resolve, the deployment configures no writable root, or
+   * (replacing) the preset does not exist or ships with the deployment.
+   */
+  async compose(
+    id: string,
+    rows: readonly ComposeRow[],
+    meta: PresetMetadata | undefined,
+    options: {
+      /** Whether to replace an existing preset in place (false = create). */
+      overwrite: boolean
+      /**
+       * Prove every module a row names is installed. Returns the unresolved
+       * module names; a non-empty result refuses the composition.
+       */
+      assertResolvable: (rows: readonly ComposeRow[]) => readonly string[]
+    },
+  ): Promise<void> {
+    if (rows.length === 0) {
+      throw new PresetNotWritableError(id, 'a composition needs at least one plugin row')
+    }
+    const seen = new Set<string>()
+    for (const row of rows) {
+      if (typeof row.name !== 'string' || row.name === '') {
+        throw new PresetNotWritableError(id, 'every row must name a plugin module')
+      }
+      if (row.id !== undefined) {
+        if (row.id === '') throw new PresetNotWritableError(id, 'every row id must be non-empty')
+        if (seen.has(row.id)) throw new PresetNotWritableError(id, `row id "${row.id}" is repeated`)
+        seen.add(row.id)
+      }
+    }
+    const unresolved = options.assertResolvable(rows)
+    if (unresolved.length > 0) throw new ComposeModuleError(id, unresolved)
+    // The composition rows are the JSON-safe subset of a loader entry; the
+    // YAML dump reads exactly the fields that subset carries.
+    const entryRows = rows as readonly EntryOptions[]
+    if (options.overwrite) {
+      const preset = await this.resolve(id)
+      if (preset.trust !== 'user') {
+        throw new PresetNotWritableError(id, 'only a locally authored preset may be overwritten')
+      }
+      await replaceComposition(writableRoot(this.resolvedRoots), id, entryRows, meta)
+    } else {
+      // The roster check refuses ids any root supplies, mirroring `write`.
+      if ((await this.list()).some(preset => preset.id === id)) {
+        throw new PresetExistsError(id)
+      }
+      await writeComposition(writableRoot(this.resolvedRoots), id, entryRows, meta)
+    }
     // A settled mount under this id can only be stale; the fresh preset must
     // not inherit it. Every session already joined keeps its generation.
     this.standing.delete(id)

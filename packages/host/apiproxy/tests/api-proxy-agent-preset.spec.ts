@@ -16,7 +16,8 @@ import UserQuestionService from '@deepseek-ai/dsh-user-questions'
 import { RpcId, type RpcRequest } from '../src/api/rpc.ts'
 import type { HostFrame } from '../src/api/events.ts'
 import {
-  InvalidPresetIdError, PresetExistsError, resolveSessionPreset, UnknownPresetError,
+  ComposeModuleError, InvalidPresetIdError, PresetExistsError, PresetNotWritableError,
+  resolveSessionPreset, UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
 import { GoalId } from '@deepseek-ai/dsh-goal'
@@ -40,15 +41,28 @@ function stubAgent(session: Session): Agent {
  * ship with the deployment.
  */
 function roster(ids: readonly string[], userIds: readonly string[] = []): unknown {
-  const trustOf = (id: string): 'system' | 'user' => (userIds.includes(id) ? 'user' : 'system')
-  const presetOf = (id: string): object =>
-    ({ id, trust: trustOf(id), path: `/presets/${id}/agent.cordis.yml` })
+  /** Presets the double's `compose` minted, so `list`/`resolve` surface them like disk writes would. */
+  const composed = new Map<string, { rows: unknown[]; name?: string; description?: string }>()
+  const trustOf = (id: string): 'system' | 'user' =>
+    (composed.has(id) || userIds.includes(id) ? 'user' : 'system')
+  const presetOf = (id: string): object => {
+    const meta = composed.get(id)
+    return {
+      id,
+      trust: trustOf(id),
+      path: `/presets/${id}/agent.cordis.yml`,
+      ...meta?.name === undefined ? {} : { name: meta.name },
+      ...meta?.description === undefined ? {} : { description: meta.description },
+    }
+  }
   return {
     defaultId: ids[0],
-    list: () => Promise.resolve(ids.map(presetOf)),
+    list: () => Promise.resolve([...ids, ...composed.keys()].map(presetOf)),
     resolve: (id?: string) => {
       const wanted = id ?? ids[0] ?? ''
-      if (!ids.includes(wanted)) return Promise.reject(new UnknownPresetError(wanted, ids))
+      if (!ids.includes(wanted) && !composed.has(wanted)) {
+        return Promise.reject(new UnknownPresetError(wanted, ids))
+      }
       return Promise.resolve(presetOf(wanted))
     },
     mount: (_ctx: Context, id?: string) => Promise.resolve(presetOf(id ?? ids[0] ?? '')),
@@ -61,6 +75,12 @@ function roster(ids: readonly string[], userIds: readonly string[] = []): unknow
     },
     authorable: true,
     read: (id: string) => Promise.resolve(`# ${id}\n- id: x\n  name: y\n`),
+    readRows: (id: string) => {
+      const written = composed.get(id)
+      if (written !== undefined) return Promise.resolve(written.rows)
+      if (!ids.includes(id)) return Promise.reject(new UnknownPresetError(id, ids))
+      return Promise.resolve([{ id: 'x', name: 'y' }])
+    },
     copy: (from: string, id: string) => {
       if (!ids.includes(from)) return Promise.reject(new UnknownPresetError(from, ids))
       if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return Promise.reject(new InvalidPresetIdError(id))
@@ -69,6 +89,26 @@ function roster(ids: readonly string[], userIds: readonly string[] = []): unknow
     },
     remove: (id: string) => {
       if (!ids.includes(id)) return Promise.reject(new UnknownPresetError(id, ids))
+      return Promise.resolve()
+    },
+    compose: (id: string, rows: unknown[], meta: { name?: string; description?: string }, options: {
+      overwrite: boolean
+      assertResolvable: (rows: readonly unknown[]) => readonly string[]
+    }) => {
+      if (!/^[a-z0-9][a-z0-9-]*$/.test(id)) return Promise.reject(new InvalidPresetIdError(id))
+      const unresolved = options.assertResolvable(rows)
+      if (unresolved.length > 0) return Promise.reject(new ComposeModuleError(id, unresolved))
+      if (ids.includes(id) || composed.has(id)) {
+        if (options.overwrite !== true) return Promise.reject(new PresetExistsError(id))
+        if (trustOf(id) === 'system') {
+          return Promise.reject(new PresetNotWritableError(id, 'only a locally authored preset may be overwritten'))
+        }
+      }
+      composed.set(id, {
+        rows: [...rows],
+        ...meta.name === undefined ? {} : { name: meta.name },
+        ...meta.description === undefined ? {} : { description: meta.description },
+      })
       return Promise.resolve()
     },
     recompose: (_ctx: Context, id: string) => {
@@ -104,7 +144,11 @@ const services = new Map<string, Record<string, unknown>>()
 async function harness(
   presets?: readonly string[],
   persistence?: unknown,
-  options: { userIds?: readonly string[]; defaults?: Record<string, unknown> } = {},
+  options: {
+    userIds?: readonly string[]
+    inventory?: readonly string[]
+    defaults?: Record<string, unknown>
+  } = {},
 ) {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'dsh-apiproxy-preset-')))
   const ctx = new Context()
@@ -113,6 +157,12 @@ async function harness(
   await ctx.plugin(UserQuestionService)
   ctx.provide('sessionPersistence', (persistence ?? { list: () => Promise.resolve([]) }) as never)
   if (presets !== undefined) ctx.provide('agentPresets', roster(presets, options.userIds) as never)
+  const inventory = options.inventory
+  if (inventory !== undefined) {
+    ctx.provide('pluginInventory', {
+      list: () => ({ entries: inventory.map(moduleName => ({ moduleName })) }),
+    } as never)
+  }
 
   const factory: AgentFactory = {
     async createAgent(_ownerCtx, options) {
@@ -479,6 +529,9 @@ describe('authoring over the wire', () => {
     // starts from, and trust is what tells a surface to say so.
     expect(response.result.value.trust).toBe('system')
     expect(response.result.value.content).toContain('- id: x')
+    // The structured rows ride beside the viewer text so a composer never
+    // parses YAML itself.
+    expect(response.result.value.rows).toEqual([{ id: 'x', name: 'y' }])
   })
 
   it('copies a preset under a new id', async () => {
@@ -537,6 +590,125 @@ describe('authoring over the wire', () => {
     const { api } = await harness(['standard'])
 
     const response = await api.agentPresets.remove(request({ agentPreset: 'never-existed' }))
+
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('unreachable')
+    expect(response.result.error.code).toBe('agent-preset-not-found')
+  })
+})
+
+describe('composing a preset over the wire', () => {
+  const TOOL_BASH = '@deepseek-ai/dsh-tool-bash'
+  const TOOL_READ = '@deepseek-ai/dsh-tool-read'
+
+  it('creates a preset from rows under a free id', async () => {
+    const { api } = await harness(['standard'], undefined, { inventory: [TOOL_BASH] })
+
+    const response = await api.agentPresets.compose(request({
+      agentPreset: 'mine',
+      name: '我的组合',
+      description: 'built by dragging',
+      rows: [{ id: 'tool-bash', name: TOOL_BASH }],
+    }))
+
+    expect(response.result.ok).toBe(true)
+    if (!response.result.ok) throw new Error('unreachable')
+    expect(response.result.value.agentPreset).toBe('mine')
+    // The composed set is what read now serves, rows beside the viewer text.
+    const read = await api.agentPresets.read(request({ agentPreset: 'mine' }))
+    expect(read.result.ok).toBe(true)
+    if (!read.result.ok) throw new Error('unreachable')
+    expect(read.result.value.trust).toBe('user')
+    expect(read.result.value.rows).toEqual([{ id: 'tool-bash', name: TOOL_BASH }])
+  })
+
+  it('refuses a composition that names an uninstalled module', async () => {
+    const { api } = await harness(['standard'], undefined, { inventory: [TOOL_BASH] })
+
+    const response = await api.agentPresets.compose(request({
+      agentPreset: 'mine',
+      rows: [{ id: 'tool-read', name: TOOL_READ }],
+    }))
+
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('unreachable')
+    expect(response.result.error.code).toBe('agent-preset-invalid')
+    expect(response.result.error.message).toMatch(/uninstalled/)
+    expect((response.result.error.details as { reason?: string } | undefined)?.reason).toContain(TOOL_READ)
+  })
+
+  it('refuses to overwrite a preset that ships with the deployment', async () => {
+    const { api } = await harness(['standard'], undefined, { inventory: [TOOL_BASH] })
+
+    const response = await api.agentPresets.compose(request({
+      agentPreset: 'standard',
+      overwrite: true,
+      rows: [{ id: 'tool-bash', name: TOOL_BASH }],
+    }))
+
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('unreachable')
+    expect(response.result.error.code).toBe('agent-preset-read-only')
+    expect(response.result.error.message).toMatch(/locally authored/)
+  })
+
+  it('refuses a create whose id the roster already supplies', async () => {
+    const { api } = await harness(['standard', 'minimal'], undefined, { inventory: [TOOL_BASH] })
+
+    const response = await api.agentPresets.compose(request({
+      agentPreset: 'minimal',
+      rows: [{ id: 'tool-bash', name: TOOL_BASH }],
+    }))
+
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('unreachable')
+    expect(response.result.error.code).toBe('agent-preset-invalid')
+    expect(response.result.error.message).toMatch(/already exists/)
+  })
+
+  it('refuses to prove module installability when no inventory is mounted', async () => {
+    const { api } = await harness(['standard'])
+
+    const response = await api.agentPresets.compose(request({
+      agentPreset: 'mine',
+      rows: [{ id: 'tool-bash', name: TOOL_BASH }],
+    }))
+
+    expect(response.result.ok).toBe(false)
+    if (response.result.ok) throw new Error('unreachable')
+    expect(response.result.error.code).toBe('internal')
+    expect(response.result.error.message).toMatch(/no plugin inventory/)
+  })
+
+  it('overwrites a locally authored preset in place', async () => {
+    const { api } = await harness(['standard', 'my-preset'], undefined, {
+      userIds: ['my-preset'],
+      inventory: [TOOL_BASH, TOOL_READ],
+    })
+
+    const response = await api.agentPresets.compose(request({
+      agentPreset: 'my-preset',
+      overwrite: true,
+      name: '换过',
+      rows: [{ id: 'tool-read', name: TOOL_READ }],
+    }))
+
+    expect(response.result.ok).toBe(true)
+    if (!response.result.ok) throw new Error('unreachable')
+    const read = await api.agentPresets.read(request({ agentPreset: 'my-preset' }))
+    expect(read.result.ok).toBe(true)
+    if (!read.result.ok) throw new Error('unreachable')
+    expect(read.result.value.name).toBe('换过')
+    expect(read.result.value.rows).toEqual([{ id: 'tool-read', name: TOOL_READ }])
+  })
+
+  it('reports a deployment that composes no presets', async () => {
+    const { api } = await harness(undefined, undefined, { inventory: [TOOL_BASH] })
+
+    const response = await api.agentPresets.compose(request({
+      agentPreset: 'mine',
+      rows: [{ id: 'tool-bash', name: TOOL_BASH }],
+    }))
 
     expect(response.result.ok).toBe(false)
     if (response.result.ok) throw new Error('unreachable')

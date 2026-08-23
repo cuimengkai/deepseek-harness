@@ -74,6 +74,8 @@ interface ErasedRegisterOptions {
   id?: string
   order?: number
   label?: string
+  /** Route path making a list entry a routable page (see ui-slots `KindOptions`). */
+  path?: string
   /** Chain-slot routing selector (pure; the core validates presence for chain targets). */
   select?: (owner: never) => unknown
   /** Chain-slot explicit ordering override (ascending; registration order otherwise). */

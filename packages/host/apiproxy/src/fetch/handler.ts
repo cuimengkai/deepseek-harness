@@ -46,8 +46,9 @@ import {
 } from '../api/workspace.schema.ts'
 import { skillListRequestSchema } from '../api/skills.schema.ts'
 import {
-  agentPresetCopyRequestSchema, agentPresetListRequestSchema, agentPresetOpenDocumentRequestSchema,
-  agentPresetReadRequestSchema, agentPresetRemoveRequestSchema, agentPresetSelectRequestSchema,
+  agentPresetComposeRequestSchema, agentPresetCopyRequestSchema, agentPresetListRequestSchema,
+  agentPresetOpenDocumentRequestSchema, agentPresetReadRequestSchema, agentPresetRemoveRequestSchema,
+  agentPresetSelectRequestSchema,
 } from '../api/agent-presets.schema.ts'
 import {
   goalCreateRequestSchema,
@@ -125,6 +126,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'agentPreset.copy': { schema: agentPresetCopyRequestSchema, invoke: (api, r) => api.agentPresets.copy(r) },
   'agentPreset.openDocument': { schema: agentPresetOpenDocumentRequestSchema, invoke: (api, r, signal) => api.agentPresets.openDocument(r, signal) },
   'agentPreset.remove': { schema: agentPresetRemoveRequestSchema, invoke: (api, r) => api.agentPresets.remove(r) },
+  'agentPreset.compose': { schema: agentPresetComposeRequestSchema, invoke: (api, r) => api.agentPresets.compose(r) },
   'goal.create': { schema: goalCreateRequestSchema, invoke: (api, r) => api.goals.create(r) },
   'goal.edit': { schema: goalEditRequestSchema, invoke: (api, r) => api.goals.edit(r) },
   'goal.pause': { schema: goalPauseRequestSchema, invoke: (api, r) => api.goals.pause(r) },

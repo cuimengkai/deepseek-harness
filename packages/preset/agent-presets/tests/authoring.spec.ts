@@ -20,7 +20,7 @@ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import * as yaml from 'js-yaml'
 import { beforeEach, describe, expect, it } from 'vitest'
 import AgentPresets, {
-  COMPOSITION_FILE, copyComposition, METADATA_FILE,
+  ComposeModuleError, COMPOSITION_FILE, copyComposition, METADATA_FILE, parseComposition,
 } from '@deepseek-ai/dsh-agent-presets'
 
 const FIXTURES = join(dirname(fileURLToPath(import.meta.url)), 'fixtures')
@@ -366,5 +366,88 @@ describe('writing a preset from rows', () => {
     await expect(ctx.agentPresets.write('assembled', [{ id: 'q', name: 'y' }])).rejects.toThrow(/already exists/)
     // A shipped preset id is refused by the roster check, like copy.
     await expect(ctx.agentPresets.write('standard', [{ id: 'p', name: 'x' }])).rejects.toThrow(/already exists/)
+  })
+})
+
+describe('composing a preset from rows', () => {
+  it('creates a preset the roster and readRows read back', async () => {
+    await ctx.agentPresets.compose('composed', [
+      { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'base' } },
+      { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' },
+    ], undefined, { overwrite: false, assertResolvable: () => [] })
+
+    const preset = (await ctx.agentPresets.list()).find(candidate => candidate.id === 'composed')
+    expect(preset?.trust).toBe('user')
+    expect(await ctx.agentPresets.readRows('composed')).toEqual([
+      { id: 'persona', name: '@deepseek-ai/dsh-persona', config: { text: 'base' } },
+      { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' },
+    ])
+  })
+
+  it('round-trips a `!!js` disabled node and a group row', async () => {
+    await ctx.agentPresets.compose('composed-group', [
+      {
+        id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash',
+        disabled: { __jsExpr: "process.platform === 'win32'" } as unknown as boolean,
+      },
+      { id: 'tools', name: 'tools-group', group: true, config: [{ id: 'a', name: 'x' }] },
+    ], undefined, { overwrite: false, assertResolvable: () => [] })
+
+    const text = await ctx.agentPresets.read('composed-group')
+    expect(text).toContain("!!js process.platform === 'win32'")
+    expect(await ctx.agentPresets.readRows('composed-group')).toEqual([
+      { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash', disabled: { __jsExpr: "process.platform === 'win32'" } },
+      { id: 'tools', name: 'tools-group', group: true, config: [{ id: 'a', name: 'x' }] },
+    ])
+  })
+
+  it('replaces a user preset in place and leaves its directory otherwise intact', async () => {
+    await seedPreset(userRoot, 'mine', { composition: '- id: a\n  name: x\n', extras: { 'skill.md': 'keep' } })
+
+    await ctx.agentPresets.compose('mine', [{ id: 'persona', name: '@deepseek-ai/dsh-persona' }],
+      { name: 'Mine' }, { overwrite: true, assertResolvable: () => [] })
+
+    expect(await ctx.agentPresets.readRows('mine')).toEqual([{ id: 'persona', name: '@deepseek-ai/dsh-persona' }])
+    expect(await readFile(join(userRoot, 'mine', COMPOSITION_FILE), 'utf8')).toContain('name: \'@deepseek-ai/dsh-persona\'')
+    expect(await readFile(join(userRoot, 'mine', METADATA_FILE), 'utf8')).toContain('name: Mine')
+    // The directory's other contents survive; only the composition changed.
+    expect(existsSync(join(userRoot, 'mine', 'skill.md'))).toBe(true)
+  })
+
+  it('refuses an uninstalled module through the resolvability proof', async () => {
+    await expect(ctx.agentPresets.compose('composed-bad', [{ id: 'p', name: '@deepseek-ai/dsh-missing' }],
+      undefined, { overwrite: false, assertResolvable: () => ['@deepseek-ai/dsh-missing'] }))
+      .rejects.toThrow(ComposeModuleError)
+    expect(existsSync(join(userRoot, 'composed-bad'))).toBe(false)
+  })
+
+  it('refuses an empty or duplicate-id composition', async () => {
+    await expect(ctx.agentPresets.compose('composed-empty', [], undefined,
+      { overwrite: false, assertResolvable: () => [] })).rejects.toThrow(/at least one plugin row/)
+    await expect(ctx.agentPresets.compose('composed-dupe', [
+      { id: 'p', name: 'x' }, { id: 'p', name: 'y' },
+    ], undefined, { overwrite: false, assertResolvable: () => [] })).rejects.toThrow(/repeated/)
+  })
+
+  it('refuses to overwrite a shipped preset and to create over an occupied id', async () => {
+    await expect(ctx.agentPresets.compose('standard', [{ id: 'p', name: 'x' }], undefined,
+      { overwrite: true, assertResolvable: () => [] })).rejects.toThrow(/only a locally authored preset may be overwritten/)
+    await seedPreset(userRoot, 'mine', {})
+    await expect(ctx.agentPresets.compose('mine', [{ id: 'a', name: 'x' }], undefined,
+      { overwrite: false, assertResolvable: () => [] })).rejects.toThrow(/already exists/)
+  })
+
+  it('readRows parses a shipped composition and refuses an unparsable one', async () => {
+    const rows = await ctx.agentPresets.readRows('standard')
+    expect(rows.length).toBeGreaterThan(0)
+    expect(rows[0]).toMatchObject({ name: expect.any(String) })
+    await seedPreset(userRoot, 'broken', { composition: 'not: [valid\n' })
+    await expect(ctx.agentPresets.readRows('broken')).rejects.toThrow()
+  })
+})
+
+describe('parsing a composition document', () => {
+  it('refuses a non-list document', () => {
+    expect(() => parseComposition('name: not-a-list\n')).toThrow(/not a top-level list/)
   })
 })

@@ -1549,10 +1549,16 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
    * constants so the settings editor's save and delete are exercisable: the
    * roster a GUI journey sees after writing is the text it wrote.
    */
-  const fixturePresets = new Map<string, { trust: 'system' | 'user'; content: string }>([
-    ['standard', { trust: 'system', content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n" }],
-    ['minimal', { trust: 'system', content: "- id: tool-web-search\n  name: '@deepseek-ai/dsh-tool-web-search'\n" }],
-    ['my-agent', { trust: 'user', content: "- id: tool-read\n  name: '@deepseek-ai/dsh-tool-read'\n" }],
+  const fixturePresets = new Map<string, {
+    trust: 'system' | 'user'
+    content: string
+    rows: RequestPayload<'agentPreset.compose'>['rows']
+    name?: string
+    description?: string
+  }>([
+    ['standard', { trust: 'system', content: "- id: tool-bash\n  name: '@deepseek-ai/dsh-tool-bash'\n", rows: [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }] }],
+    ['minimal', { trust: 'system', content: "- id: tool-web-search\n  name: '@deepseek-ai/dsh-tool-web-search'\n", rows: [{ id: 'tool-web-search', name: '@deepseek-ai/dsh-tool-web-search' }] }],
+    ['my-agent', { trust: 'user', content: "- id: tool-read\n  name: '@deepseek-ai/dsh-tool-read'\n", rows: [{ id: 'tool-read', name: '@deepseek-ai/dsh-tool-read' }] }],
   ])
   let fixtureDefaultPreset = 'standard'
   const nextTurn = new Map<SessionId, number>([[sid('fx-alpha'), 75]])
@@ -2834,6 +2840,9 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           agentPreset,
           trust: preset.trust,
           content: preset.content,
+          rows: preset.rows,
+          ...preset.name === undefined ? {} : { name: preset.name },
+          ...preset.description === undefined ? {} : { description: preset.description },
         })
       },
       copy: (request) => {
@@ -2853,7 +2862,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
             details: { agentPreset, reason: 'already exists' },
           })
         }
-        fixturePresets.set(agentPreset, { trust: 'user', content: source.content })
+        fixturePresets.set(agentPreset, {
+          trust: 'user',
+          content: source.content,
+          rows: [...source.rows],
+          ...request.payload.name === undefined ? {} : { name: request.payload.name },
+        })
         return ok(request, { agentPreset })
       },
       // Native opens are deterministic no-op successes in this fixture, so the
@@ -2883,6 +2897,37 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         }
         fixturePresets.delete(agentPreset)
         return ok(request, {})
+      },
+      // Mirror the Host's create-vs-replace split: an occupied id refuses
+      // unless overwrite is set, a shipped preset never overwrites, and a
+      // fresh id creates a user-authored preset. The viewer text is derived
+      // from the rows so a GUI journey re-reads what it wrote.
+      compose: (request) => {
+        const { agentPreset, rows, name, description, overwrite } = request.payload
+        const existing = fixturePresets.get(agentPreset)
+        if (existing !== undefined && existing.trust === 'system') {
+          return err(request, {
+            code: 'agent-preset-read-only',
+            message: `agent preset "${agentPreset}" ships with the deployment`,
+            details: { agentPreset, reason: 'only a locally authored preset may be overwritten' },
+          })
+        }
+        if (existing !== undefined && overwrite !== true) {
+          return err(request, {
+            code: 'agent-preset-invalid',
+            message: `agent preset "${agentPreset}" already exists`,
+            details: { agentPreset, reason: 'already exists' },
+          })
+        }
+        const content = rows.map(row => `- id: ${row.id}\n  name: '${row.name}'\n`).join('')
+        fixturePresets.set(agentPreset, {
+          trust: 'user',
+          content,
+          rows: [...rows],
+          ...name === undefined ? {} : { name },
+          ...description === undefined ? {} : { description },
+        })
+        return ok(request, { agentPreset })
       },
     },
 
@@ -3226,6 +3271,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'agentPreset.copy': return this.api.agentPresets.copy(request)
       case 'agentPreset.openDocument': return this.api.agentPresets.openDocument(request, new AbortController().signal)
       case 'agentPreset.remove': return this.api.agentPresets.remove(request)
+      case 'agentPreset.compose': return this.api.agentPresets.compose(request)
       case 'goal.create': return this.api.goals.create(request)
       case 'goal.edit': return this.api.goals.edit(request)
       case 'goal.pause': return this.api.goals.pause(request)

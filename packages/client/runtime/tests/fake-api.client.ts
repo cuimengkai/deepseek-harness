@@ -238,7 +238,7 @@ export class FakeApiClient implements IApiClient {
       this.record('agentPreset.select', payload, Promise.resolve(ok({ agentPreset: payload.agentPreset }))),
     read: (payload: { agentPreset: string }) =>
       this.record('agentPreset.read', payload, Promise.resolve(ok({
-        agentPreset: payload.agentPreset, trust: 'user' as const, content: '',
+        agentPreset: payload.agentPreset, trust: 'user' as const, content: '', rows: [],
       }))),
     copy: (payload: { agentPreset: string }) =>
       this.record('agentPreset.copy', payload, Promise.resolve(ok({ agentPreset: payload.agentPreset }))),
@@ -246,6 +246,8 @@ export class FakeApiClient implements IApiClient {
       this.record('agentPreset.openDocument', payload, Promise.resolve(ok({ opened: true as const }))),
     remove: (payload: { agentPreset: string }) =>
       this.record('agentPreset.remove', payload, Promise.resolve(ok({}))),
+    compose: (payload: { agentPreset: string }) =>
+      this.record('agentPreset.compose', payload, Promise.resolve(ok({ agentPreset: payload.agentPreset }))),
   }
 
   readonly skills: IApiClient['skills'] = {

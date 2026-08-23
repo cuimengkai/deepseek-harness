@@ -12,6 +12,12 @@ import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type { Agent, ModelSelection, ModelSelectionRef, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import type {} from '@deepseek-ai/dsh-agent-presets/types'
+// Type-only: brings the `ctx.pluginInventory` service merge into this program
+// (the gateway is a Typert remote, but the compose handler proves installed
+// modules against its in-process projection, not over the wire).
+import type {} from '@deepseek-ai/dsh-host-plugin-inventory'
+import type {} from '@deepseek-ai/dsh-host-plugin-inventory/types'
+import type {} from '@deepseek-ai/dsh-host-plugin-manager/types'
 import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { contentHasImage, createUserMessage, freezeMessage, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
@@ -34,13 +40,13 @@ import {
 } from '@deepseek-ai/dsh-workspace'
 // Type-only: brings the `ctx.tools` Context merge into this program (viewFor reads presenters).
 import {
-  InvalidPresetIdError, PresetExistsError, PresetMountError,
+  ComposeModuleError, InvalidPresetIdError, PresetExistsError, PresetMountError,
   PresetNotWritableError, resolveSessionPreset, UnknownPresetError,
 } from '@deepseek-ai/dsh-agent-presets'
 import type { PresetBearingSession } from '@deepseek-ai/dsh-agent-presets'
 import type {} from '@deepseek-ai/dsh-tools'
 import type {
-  ApiProxy, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
+  ApiProxy, ComposeRow, ConfigurableProviderView, CredentialView, GoalRef, HistoryEntry, HostFrame,
   ModelCatalogFailure, ModelProviderGroup,
   ModelReasoning, MuxFrame, PromptContentPart, QuestionResponsePayload, SessionListMetadata, SessionProjectionsBlock, SessionSearchItem,
   QueuedInboxItem, SessionSummary, SettingsNamespaceView, SubagentAddress, JobView, ToolEventView,
@@ -973,7 +979,7 @@ function presetError(agentPreset: string, error: unknown): RpcError {
   if (error instanceof PresetNotWritableError) {
     return { code: 'agent-preset-read-only', message: error.message, details: { agentPreset, reason: error.message } }
   }
-  if (error instanceof InvalidPresetIdError || error instanceof PresetExistsError) {
+  if (error instanceof InvalidPresetIdError || error instanceof PresetExistsError || error instanceof ComposeModuleError) {
     return { code: 'agent-preset-invalid', message: error.message, details: { agentPreset, reason: error.message } }
   }
   return { code: 'internal', message: `agent preset "${agentPreset}": ${String(error)}`, details: {} }
@@ -3117,6 +3123,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             agentPreset: preset.id,
             trust: preset.trust,
             content: await presets.read(preset.id),
+            rows: await presets.readRows(preset.id),
             ...preset.name === undefined ? {} : { name: preset.name },
             ...preset.description === undefined ? {} : { description: preset.description },
           })
@@ -3167,6 +3174,44 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
         try {
           await presets.remove(agentPreset)
           return ok(request, {})
+        } catch (error: unknown) {
+          return err(request, presetError(agentPreset, error))
+        }
+      },
+
+      // Rows authoring is privileged (see PRIVILEGED_METHODS in
+      // dsh-client-connection): the payload is a row structure, never
+      // composition text or a path, and it is validated three ways before the
+      // Host writes it — the inventory proof that every named module is
+      // installed, the preset domain's own row invariants, and (for
+      // `overwrite`) a user-authored target. A deployment without the
+      // inventory can prove nothing, so compose refuses rather than write
+      // blind; group rows name groups rather than modules, so they are not
+      // resolvability subjects.
+      async compose(request) {
+        const { agentPreset, rows, name, description, overwrite } = request.payload
+        const presets = ctx.get('agentPresets')
+        if (presets === undefined) return err(request, noRoster(agentPreset))
+        const inventory = ctx.get('pluginInventory')
+        if (inventory === undefined) {
+          return err(request, {
+            code: 'internal',
+            message: 'this deployment mounts no plugin inventory, so a composition cannot be proven to name installed plugins',
+            details: {},
+          })
+        }
+        const installed = new Set(inventory.list().entries.map(entry => entry.moduleName))
+        try {
+          await presets.compose(agentPreset, rows, {
+            ...name === undefined ? {} : { name },
+            ...description === undefined ? {} : { description },
+          }, {
+            overwrite: overwrite ?? false,
+            assertResolvable: (composed: readonly ComposeRow[]): readonly string[] =>
+              composed.filter(row => row.group !== true).map(row => row.name)
+                .filter(moduleName => !installed.has(moduleName)),
+          })
+          return ok(request, { agentPreset })
         } catch (error: unknown) {
           return err(request, presetError(agentPreset, error))
         }

@@ -5,8 +5,13 @@
  * `list` is ordinary: it carries ids and trust, and every preset picker needs
  * it. The authoring calls are privileged and loopback-pinned — a composition
  * names the plugins a session runs, so reading one is reconnaissance, and
- * although authoring is copy-only (no caller supplies composition text or a
- * path), copying and deleting still rearrange what the deployment offers.
+ * although authoring is rows-only (no caller supplies composition text or a
+ * path), copying, composing, and deleting still rearrange what the deployment
+ * offers. A rows payload is validated three ways before the Host writes it:
+ * the palette only offers installed plugins, the Host refuses any module the
+ * plugin inventory does not confirm installed, and only a locally authored
+ * preset is overwritable — the browser edits membership and order, never the
+ * plugin set the deployment can run.
  */
 
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
@@ -42,6 +47,27 @@ export interface AgentPresetEntry {
   readonly broken?: string
 }
 
+/**
+ * One row of a composed agent's plugin list, in composition order.
+ *
+ * The browser-facing row: a JSON-safe subset of a Loader entry. `config`,
+ * `disabled`, and `inject` pass through verbatim — the composer edits
+ * membership and order, never row internals — and a `!!js` expression arrives
+ * as `{ __jsExpr }` exactly as the Host parsed it. `id` is required by the
+ * composer but kept optional here because shipped compositions may carry
+ * id-less rows that the Host reads back but the browser cannot author.
+ */
+export interface ComposeRow {
+  readonly id?: string
+  /** Exact module specifier the Loader entry imports, e.g. `@deepseek-ai/dsh-tool-bash`. */
+  readonly name: string
+  readonly config?: unknown
+  readonly group?: boolean | null
+  readonly disabled?: unknown
+  /** Required-service override, carried verbatim so an overwrite never drops it. */
+  readonly inject?: unknown
+}
+
 /** agent-preset-domain unary methods (the map key agentPreset.* of RpcMethodMap). */
 export interface AgentPresetsApi {
   /**
@@ -72,16 +98,20 @@ export interface AgentPresetsApi {
   Promise<RpcResponse<{ agentPreset: string }>>
 
   /**
-   * Read one preset's composition text, for the read-only viewer.
+   * Read one preset's composition text and structured rows, for the read-only
+   * viewer and the rows composer.
    *
    * Privileged: a composition names the plugins a session runs, so reading
-   * one is reconnaissance.
+   * one is reconnaissance. `rows` are the composition parsed through the
+   * Loader's own YAML dialect, so the composer edits structured rows and the
+   * browser never parses YAML; `content` stays for the viewer.
    */
   read(request: RpcRequest<{ agentPreset: string }>):
   Promise<RpcResponse<{
     agentPreset: string
     trust: 'system' | 'user'
     content: string
+    rows: readonly ComposeRow[]
     name?: string
     description?: string
   }>>
@@ -89,19 +119,42 @@ export interface AgentPresetsApi {
   /**
    * Create a locally authored preset by copying an existing one whole.
    *
-   * The only authoring write. No composition text and no path crosses the
-   * wire: `from` and `agentPreset` are ids the Host resolves against its own
-   * roots, so a copy is exactly as loadable as its source and grants nothing
-   * the roster did not already carry. The copy keeps the source's description
-   * (the file is the author's to edit afterwards) but not its name — `name`
-   * here or the id fallback is what distinguishes the rows.
+   * The directory-copy authoring write. No composition text and no path
+   * crosses the wire: `from` and `agentPreset` are ids the Host resolves
+   * against its own roots, so a copy is exactly as loadable as its source and
+   * grants nothing the roster did not already carry. The copy keeps the
+   * source's description (the file is the author's to edit afterwards) but
+   * not its name — `name` here or the id fallback is what distinguishes the
+   * rows.
    */
   copy(request: RpcRequest<{ from: string; agentPreset: string; name?: string }>):
   Promise<RpcResponse<{ agentPreset: string }>>
 
   /**
+   * Create or replace a locally authored preset's composition from rows.
+   *
+   * The rows composer. Unlike `copy`, which builds a preset from an existing
+   * one's whole directory, `compose` writes exactly the rows it is given —
+   * creating a fresh preset under an idle id, or replacing an existing
+   * locally authored one in place when `overwrite` is set (a shipped preset
+   * is refused: only a locally authored preset is the user's to overwrite).
+   * The browser still never supplies composition text or a path, and the Host
+   * validates the payload three ways before writing: row structure and unique
+   * ids, the resolvability proof that every named module is installed, and —
+   * for `overwrite` — that the target is user-authored. `name`/`description`
+   * publish beside the composition; the id becomes the preset directory name.
+   */
+  compose(request: RpcRequest<{
+    agentPreset: string
+    rows: readonly ComposeRow[]
+    name?: string
+    description?: string
+    overwrite?: boolean
+  }>): Promise<RpcResponse<{ agentPreset: string }>>
+
+  /**
    * Hand one locally authored preset's DIRECTORY to the platform opener, for
-   * editing the files that are now the only composition editor. The request
+   * editing the files behind the rows composer. The request
    * carries an id, never a path — the Host resolves it — so no browser
    * payload can select an arbitrary filesystem target. Where the deployment
    * has no native opener (`hasDocument: false` on `list`), the reply carries

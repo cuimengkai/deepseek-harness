@@ -21,7 +21,9 @@
 - `ctx.agentPresets.roots: readonly PresetRoot[]` 本 roster 实际扫描的根目录——全部已配置根目录按序在前，随后是推导出的 harness home 根目录。它不是 `config.roots`：判断「是否已组装 roster」应读它，从而由同一处推导决定。
 - `ctx.agentPresets.authorable: boolean` 上述根目录中是否有任一具备 `user` 信任级别，因而 preset 是否可创建。
 - `ctx.agentPresets.read(id): Promise<string>` 某个 preset 的组装文本，与存储内容逐字一致。
-- `ctx.agentPresets.copy(from, id, name?): Promise<void>` 通过整目录复制一个既有 preset 来创建本地创作的 preset——唯一的创作写入。组装文本不经过这道接缝，因此副本与其来源同等可加载；复制出的元数据保留来源的描述、但绝不保留其名称与 roster 排序，`name`（或回退到 id）才是区分两行的依据。
+- `ctx.agentPresets.readRows(id): Promise<ComposeRow[]>` 某个 preset 的组装被解析为行结构，供需要渲染或编辑行、而非编辑 YAML 文本的调用方使用。
+- `ctx.agentPresets.compose(id, rows, meta?, { overwrite, assertResolvable }): Promise<void>` 从行结构写入组装，创建它或就地替换一个本地创作的 preset——面向浏览器的创作写入。它强制 preset 域自身的行不变量（行非空、每行一个插件模块、id 唯一），并通过必传的 `assertResolvable` 证明拒绝点名了未安装模块的行；由 wire 层提供基于 inventory 的检查，因此任何调用方都无法绕过。就地替换要求目标为 `user`——随部署提供的 preset 会被拒绝。
+- `ctx.agentPresets.copy(from, id, name?): Promise<void>` 通过整目录复制一个既有 preset 来创建本地创作的 preset——整目录复制的创作写入。组装文本不经过这道接缝，因此副本与其来源同等可加载；复制出的元数据保留来源的描述、但绝不保留其名称与 roster 排序，`name`（或回退到 id）才是区分两行的依据。
 - `ctx.agentPresets.remove(id): Promise<void>` 删除一个本地创作的 preset；已加入的会话保留其常驻挂载。若用户默认值恰好指向刚删除的 preset 则一并清除：存一个尚不存在的默认值是刻意的，但本次删除的这个再也不会有人提供，留着会让所有未显式指定的新会话无法启动。
 
 `AgentPreset` 携带 `id`（目录名）、`trust`（`system` 或 `user`，取自它所在的根目录）、`path`（组装文件的绝对路径），以及——仅当该 preset 无法组装会话时——`broken`（一条人类可读的原因，名单界面原样展示）。
@@ -52,7 +54,7 @@ subagent 的子 agent 通过 `composeFrom()` 加入其父方的常驻组装，�
 
 ## 创作
 
-创作即复制。新 preset 是某个既有 preset 的整目录副本——组装、元数据、skill 目录、附带资产——落在首个 `user` 根目录之下；输入只有两个由服务对照自身根目录解析的 id 加一个可选显示名，因此调用方从不提供组装文本，一次复制不会授予 roster 尚未携带的任何能力。创建之后的一切都发生在 preset 自己的文件里。`copy()` 在任何内容落盘之前拒绝三种情况：
+创作有两条路径：整目录复制与行列表组装。复制把一个既有 preset 的整个目录——组装、元数据、skill 目录、附带资产——落在首个 `user` 根目录之下；输入只有两个由服务对照自身根目录解析的 id 加一个可选显示名，因此调用方从不提供组装文本，一次复制不会授予 roster 尚未携带的任何能力。组装则从调用方拼装的行结构写出 `agent.cordis.yml`；它强制行不变量、拒绝任何点名了未安装模块的行（由调用方证明可解析性，而非服务本身），只就地替换 `user` 创作的 preset，且从不被挂载以校验——加载器层面的检查在挂载时进行，与每个创作的 preset 一样。其余一切——描述、skills——都在 preset 自己的文件里编辑。`copy()` 在任何内容落盘之前拒绝三种情况：
 
 - **不符合 `[a-z0-9][a-z0-9-]*` 的 id。** id 会成为目录名，因此约束是 id 自身的性质，而非事后再做一次路径检查——`../escape`、`a/b` 与绝对路径都作为 id 被拒绝。
 - **已被占用的 id。** 复制从不覆写：任一根目录已提供该 id 即拒绝（与随附 preset 同名的用户目录只会被它遮蔽），磁盘上占着该名字的目录同样拒绝。发现过程会把这样的目录列为损坏的 preset，所以这条拒绝的出路——删掉它——就在报告它的同一页面上。
@@ -128,7 +130,7 @@ agent-presets:
 
 只要 Loader 认为配置变了，它就会把树写回源文件——而一个行释放自己的 fiber 就足以让它这么认为：该 entry 被标记 `disabled`，随即触发写回。若继承该行为，一个会话的运行时状态就会被烧进所有会话共享的文件里：YAML 往返会抹掉注释，而对随附的只读 preset，`writeFile` 还会在 `setTimeout` 内抛出无人接管的 rejection。
 
-因此被挂载的子树把 `write()` 覆写为空操作。本包不写任何组装；创作组装是另一件独立且显式的操作。
+因此被挂载的子树把 `write()` 覆写为空操作。没有任何东西自动写组装；创作组装是另一件独立且显式的操作——`copy()` 与 `compose()` 是仅有的写入，且两者都不在被挂载的子树下运行。
 
 ## 信任
 

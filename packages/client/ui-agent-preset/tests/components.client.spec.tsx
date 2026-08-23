@@ -7,8 +7,9 @@
  * only ever offered before one starts.
  */
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { Mock } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { AgentPresetLabel } from '../src/client/AgentPresetLabel.tsx'
@@ -17,11 +18,30 @@ import { AgentPresetRow } from '../src/client/AgentPresetRow.tsx'
 import type { AgentPresetRowProps } from '../src/client/AgentPresetRow.tsx'
 import { AgentPresetSeat } from '../src/client/AgentPresetSeat.tsx'
 import type { AgentPresetSeatProps } from '../src/client/AgentPresetSeat.tsx'
+import { AgentPresetComposer } from '../src/client/AgentPresetComposer.tsx'
+import type { AgentPresetComposerActions } from '../src/client/AgentPresetComposer.tsx'
+import type { ComposeDraft, ComposePalette, PresetRow } from '../src/client/section-store.ts'
 import type { AgentPresetSettingsState } from '../src/client/settings-store.ts'
 import type { AgentPresetSeatState } from '../src/client/seat-store.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
+
+/** The composer palette fixture: three annotated installed modules. */
+const PALETTE: ComposePalette = {
+  status: 'ready',
+  modules: [
+    { moduleName: '@deepseek-ai/dsh-tool-bash', displayName: 'Bash' },
+    { moduleName: '@deepseek-ai/dsh-tool-read', displayName: 'Read' },
+    { moduleName: '@deepseek-ai/dsh-web-search', displayName: 'Web Search' },
+  ],
+}
+
+/** The roster fixture: one shipped preset and one local one. */
+const ROSTER: readonly PresetRow[] = [
+  { id: 'standard', trust: 'system', isDefault: true },
+  { id: 'mine', trust: 'user', isDefault: false },
+]
 
 const ROW_READY: AgentPresetSettingsState = {
   status: 'ready',
@@ -401,5 +421,414 @@ describe('the session-header label', () => {
     await act(async () => { await Promise.resolve() })
     expect(absent.load).not.toHaveBeenCalled()
     expect(unknown.load).not.toHaveBeenCalled()
+  })
+})
+
+describe('the drag-and-drop composer', () => {
+  const draft = (over: Partial<ComposeDraft> = {}): ComposeDraft => ({
+    id: 'my-agent', name: 'My agent',
+    rows: [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }],
+    saving: false, error: null,
+    original: { id: '', name: '', rows: [] },
+    ...over,
+  })
+
+  /** A DataTransfer stub, since jsdom ships no drag payloads. */
+  function dragData() {
+    return {
+      setData: vi.fn(),
+      getData: vi.fn(() => ''),
+      effectAllowed: 'none',
+      dropEffect: 'none',
+    }
+  }
+
+  function renderComposer(
+    state: Partial<ComposeDraft> = {},
+    palette: ComposePalette | null = PALETTE,
+    roster: readonly PresetRow[] = ROSTER,
+    options: { handoff?: boolean } = {},
+  ) {
+    const creatorDraft = options.handoff === true ? vi.fn() : undefined
+    const actions: AgentPresetComposerActions = {
+      closeComposer: vi.fn(),
+      setComposerId: vi.fn(),
+      setComposerName: vi.fn(),
+      addRow: vi.fn(),
+      insertRowAt: vi.fn(),
+      removeRow: vi.fn(),
+      moveRow: vi.fn(),
+      confirmCompose: vi.fn(() => Promise.resolve(true)),
+      ...creatorDraft === undefined ? {} : { startCreatorDraft: creatorDraft },
+    }
+    // The handoff names the self-referential preset, so it appears only when
+    // both the Creator flow and the cordis preset are present.
+    const reachable: readonly PresetRow[] = options.handoff === true
+      ? [...roster, { id: 'cordis', trust: 'system', isDefault: false }]
+      : roster
+    render(<AgentPresetComposer
+      draft={draft(state)}
+      palette={palette}
+      roster={reachable}
+      t={(key: keyof typeof en) => en[key]}
+      actions={actions}
+    />)
+    return actions
+  }
+
+  it('renders the palette, the composition, and the fields', () => {
+    const actions = renderComposer()
+    const palette = screen.getByRole('heading', { name: en.palette }).closest('aside')!
+
+    expect(screen.getByRole('heading', { name: en.newAgent })).toBeTruthy()
+    // The palette annotates each module with a display name and the mono
+    // specifier, so a card reads as the plugin it installs.
+    expect(within(palette).getByText('Bash')).toBeTruthy()
+    expect(within(palette).getByText('@deepseek-ai/dsh-tool-bash')).toBeTruthy()
+    expect(within(palette).getByText('Read')).toBeTruthy()
+    expect(within(palette).getByText('Web Search')).toBeTruthy()
+    // The composition renders the module already in the draft as one node on
+    // the pipeline canvas, in chain order.
+    const node = screen.getByTitle(en.reorderHint)
+    expect(within(node).getByText('Bash')).toBeTruthy()
+    expect(within(node).getByText('@deepseek-ai/dsh-tool-bash')).toBeTruthy()
+
+    fireEvent.change(screen.getByPlaceholderText(en.presetIdPlaceholder), { target: { value: 'renamed' } })
+    fireEvent.change(screen.getByPlaceholderText(en.displayNamePlaceholder), { target: { value: 'Renamed' } })
+    expect(actions.setComposerId).toHaveBeenCalledWith('renamed')
+    expect(actions.setComposerName).toHaveBeenCalledWith('Renamed')
+  })
+
+  it('titles an in-place edit as such', () => {
+    renderComposer({ id: 'mine', original: { id: 'mine', name: 'mine', rows: draft().rows } })
+
+    expect(screen.getByRole('heading', { name: en.composeTitle })).toBeTruthy()
+    expect(screen.getByText(en.overwriteWarning)).toBeTruthy()
+  })
+
+  it('adds a row from the palette on click, and ignores an added module', () => {
+    const actions = renderComposer()
+    const palette = screen.getByRole('heading', { name: en.palette }).closest('aside')!
+
+    fireEvent.click(within(palette).getByText('@deepseek-ai/dsh-tool-read'))
+    expect(actions.addRow).toHaveBeenCalledWith('@deepseek-ai/dsh-tool-read')
+
+    // The row already in the composition is marked, and clicking it adds nothing.
+    expect(within(palette).getByText(en.rowAdded)).toBeTruthy()
+    fireEvent.click(within(palette).getByText('@deepseek-ai/dsh-tool-bash'))
+    expect(actions.addRow).toHaveBeenCalledTimes(1)
+  })
+
+  it('carries the module name on a palette drag', () => {
+    renderComposer()
+    const data = dragData()
+    const palette = screen.getByRole('heading', { name: en.palette }).closest('aside')!
+
+    fireEvent.dragStart(within(palette).getByText('@deepseek-ai/dsh-tool-read'), { dataTransfer: data })
+
+    expect(data.setData).toHaveBeenCalledWith('text/plain', '@deepseek-ai/dsh-tool-read')
+    expect(data.effectAllowed).toBe('copy')
+  })
+
+  it('inserts a dropped palette module at the slot under the pointer', () => {
+    const actions = renderComposer()
+    const data = dragData()
+    data.getData.mockReturnValue('@deepseek-ai/dsh-web-search')
+
+    // jsdom lays nothing out, so every midpoint is 0 and a drop past the end
+    // lands in the last slot — the end of the one-row chain.
+    fireEvent.drop(screen.getByTitle(en.reorderHint), { clientX: 20, dataTransfer: data })
+
+    expect(actions.insertRowAt).toHaveBeenCalledWith('@deepseek-ai/dsh-web-search', 1)
+  })
+
+  it('reorders the composition when a row is dragged to a new slot', () => {
+    const actions = renderComposer({
+      rows: [
+        { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' },
+        { id: 'tool-read', name: '@deepseek-ai/dsh-tool-read' },
+      ],
+    })
+    const data = dragData()
+    const nodes = screen.getAllByTitle(en.reorderHint)
+
+    fireEvent.dragStart(nodes[0]!, { dataTransfer: data })
+    // jsdom lays nothing out, so every midpoint is 0 and a drop past the end
+    // lands in the last slot.
+    fireEvent.drop(nodes[0]!, { clientX: 100, dataTransfer: data })
+
+    expect(actions.moveRow).toHaveBeenCalledWith(0, 2)
+  })
+
+  it('removes a row through the × action', () => {
+    const actions = renderComposer()
+
+    fireEvent.click(screen.getByRole('button', { name: `${en.removeRow}: @deepseek-ai/dsh-tool-bash` }))
+
+    expect(actions.removeRow).toHaveBeenCalledWith('tool-bash')
+  })
+
+  it('keeps the drop hint when the composition is empty', () => {
+    renderComposer({ rows: [] })
+
+    expect(screen.getByText(en.compositionEmpty)).toBeTruthy()
+  })
+
+  it('shows the selected node\'s details in the inspector', () => {
+    renderComposer()
+    // Nothing selected: the inspector is not on the stage at all — it floats
+    // out over the canvas only while a node is selected.
+    expect(screen.queryByRole('heading', { name: en.inspectorTitle })).toBeNull()
+
+    fireEvent.click(screen.getByTitle(en.reorderHint))
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+    expect(within(inspector).getByText(en.rowId)).toBeTruthy()
+    expect(within(inspector).getByText('tool-bash')).toBeTruthy()
+    expect(within(inspector).getByText('Bash')).toBeTruthy()
+  })
+
+  it('moves the selected node through the inspector', () => {
+    const actions = renderComposer({
+      rows: [
+        { id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' },
+        { id: 'tool-read', name: '@deepseek-ai/dsh-tool-read' },
+      ],
+    })
+    fireEvent.click(screen.getAllByTitle(en.reorderHint)[1]!)
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+    // The last node cannot move down; moving it up is the point.
+    const moveDown = within(inspector).getByRole('button', { name: en.moveDown })
+    expect(moveDown).toHaveProperty('disabled', true)
+
+    fireEvent.click(within(inspector).getByRole('button', { name: en.moveUp }))
+
+    expect(actions.moveRow).toHaveBeenCalledWith(1, 0)
+  })
+
+  it('removes the selected node through the inspector', () => {
+    const actions = renderComposer()
+    fireEvent.click(screen.getByTitle(en.reorderHint))
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    fireEvent.click(within(inspector).getByRole('button', { name: en.removeRow }))
+
+    expect(actions.removeRow).toHaveBeenCalledWith('tool-bash')
+  })
+
+  it('deselects on a canvas-background click', () => {
+    renderComposer()
+    fireEvent.click(screen.getByTitle(en.reorderHint))
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+    expect(within(inspector).getByText('tool-bash')).toBeTruthy()
+
+    // A click on the canvas background, not on a node, is an explicit deselect
+    // and the inspector floats away again. The head label now sits above the
+    // canvas, so reach the background by its data attribute, not a heading's
+    // ancestor.
+    fireEvent.click(document.querySelector<HTMLElement>('[data-canvas]')!)
+
+    expect(screen.queryByRole('heading', { name: en.inspectorTitle })).toBeNull()
+  })
+
+  it('collapses and reopens the palette overlay', () => {
+    renderComposer()
+    expect(screen.getByRole('heading', { name: en.palette })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: en.paletteCollapse }))
+    expect(screen.queryByRole('heading', { name: en.palette })).toBeNull()
+    expect(screen.getByRole('button', { name: en.paletteExpand })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: en.paletteExpand }))
+    expect(screen.getByRole('heading', { name: en.palette })).toBeTruthy()
+  })
+
+  it('reports the palette loading, unavailable, and empty states', () => {
+    renderComposer({}, { status: 'loading', modules: [] })
+    expect(screen.getByText(en.paletteLoading)).toBeTruthy()
+    cleanup()
+
+    renderComposer({}, { status: 'unavailable', modules: [] })
+    expect(screen.getByText(en.paletteUnavailable)).toBeTruthy()
+    cleanup()
+
+    renderComposer({}, { status: 'ready', modules: [] })
+    expect(screen.getByText(en.paletteEmpty)).toBeTruthy()
+  })
+
+  it('filters the palette by the search box', () => {
+    renderComposer()
+    const palette = screen.getByRole('heading', { name: en.palette }).closest('aside')!
+    const search = screen.getByPlaceholderText(en.paletteSearch)
+
+    fireEvent.change(search, { target: { value: 'read' } })
+
+    expect(within(palette).queryByText('@deepseek-ai/dsh-tool-bash')).toBeNull()
+    expect(within(palette).getByText('@deepseek-ai/dsh-tool-read')).toBeTruthy()
+    expect(within(palette).queryByText('@deepseek-ai/dsh-web-search')).toBeNull()
+  })
+
+  it('disables Save while blocked, and shows why', () => {
+    const actions = renderComposer({ id: '' })
+
+    const save = screen.getByRole('button', { name: en.save })
+    expect(save).toHaveProperty('disabled', true)
+    expect(screen.getByRole('alert').textContent).toBe(en.idRequired)
+    fireEvent.click(save)
+    expect(actions.confirmCompose).not.toHaveBeenCalled()
+  })
+
+  it('disables Save while a save is in flight', () => {
+    const actions = renderComposer({ saving: true })
+
+    fireEvent.click(screen.getByRole('button', { name: en.saving }))
+    expect(actions.confirmCompose).not.toHaveBeenCalled()
+  })
+
+  it('submits through the controller once the composition is valid', () => {
+    const actions = renderComposer()
+
+    fireEvent.click(screen.getByRole('button', { name: en.save }))
+
+    expect(actions.confirmCompose).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows a host refusal on the composer', () => {
+    renderComposer({ error: 'preset my-agent already exists' })
+
+    expect(screen.getByRole('alert').textContent).toBe('preset my-agent already exists')
+  })
+
+  it('closes through Back and through Cancel', () => {
+    const actions = renderComposer()
+
+    fireEvent.click(screen.getByRole('button', { name: en.back }))
+    expect(actions.closeComposer).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByRole('button', { name: en.cancel }))
+    expect(actions.closeComposer).toHaveBeenCalledTimes(2)
+  })
+
+  it('offers the handoff only when Creator mode is reachable', () => {
+    renderComposer()
+    expect(screen.queryByRole('button', { name: en.handoff })).toBeNull()
+    cleanup()
+
+    renderComposer({}, PALETTE, ROSTER, { handoff: true })
+    expect(screen.getByRole('button', { name: en.handoff })).toBeTruthy()
+  })
+
+  it('disables the handoff while the draft cannot compose', () => {
+    const actions = renderComposer({ id: '' }, PALETTE, ROSTER, { handoff: true })
+    const creatorDraft = actions.startCreatorDraft as unknown as Mock
+
+    const handoff = screen.getByRole('button', { name: en.handoff })
+    expect(handoff).toHaveProperty('disabled', true)
+    expect(handoff.getAttribute('title')).toBe(en.idRequired)
+    fireEvent.click(handoff)
+    expect(creatorDraft).not.toHaveBeenCalled()
+  })
+
+  it('hands a changed draft to Creator mode after saving it', async () => {
+    const actions = renderComposer({}, PALETTE, ROSTER, { handoff: true })
+    const creatorDraft = actions.startCreatorDraft as unknown as Mock
+
+    fireEvent.click(screen.getByRole('button', { name: en.handoff }))
+
+    expect(actions.confirmCompose).toHaveBeenCalledTimes(1)
+    await waitFor(() => { expect(creatorDraft).toHaveBeenCalledTimes(1) })
+  })
+
+  it('hands an untouched preset to Creator mode without saving', async () => {
+    const actions = renderComposer(
+      { original: { id: 'my-agent', name: 'My agent', rows: draft().rows } },
+      PALETTE, ROSTER, { handoff: true },
+    )
+    const creatorDraft = actions.startCreatorDraft as unknown as Mock
+
+    fireEvent.click(screen.getByRole('button', { name: en.handoff }))
+
+    await waitFor(() => { expect(creatorDraft).toHaveBeenCalledTimes(1) })
+    expect(actions.confirmCompose).not.toHaveBeenCalled()
+  })
+})
+
+describe('the read-only composer (a shipped preset\'s view)', () => {
+  /** A view draft, mirroring what the section derives from a shipped preset. */
+  const viewDraft = (over: Partial<ComposeDraft> = {}): ComposeDraft => ({
+    id: 'standard', name: '标准模式',
+    rows: [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }],
+    saving: false, error: null,
+    original: { id: 'standard', name: '标准模式', rows: [] },
+    ...over,
+  })
+
+  function renderView(over: Partial<ComposeDraft> = {}) {
+    const actions: AgentPresetComposerActions = {
+      closeComposer: vi.fn(),
+      setComposerId: vi.fn(),
+      setComposerName: vi.fn(),
+      addRow: vi.fn(),
+      insertRowAt: vi.fn(),
+      removeRow: vi.fn(),
+      moveRow: vi.fn(),
+      confirmCompose: vi.fn(() => Promise.resolve(false)),
+    }
+    render(<AgentPresetComposer
+      readOnly
+      draft={viewDraft(over)}
+      palette={PALETTE}
+      roster={ROSTER}
+      t={(key: keyof typeof en) => en[key]}
+      actions={actions}
+    />)
+    return actions
+  }
+
+  it('renders a shipped composition as a design page', () => {
+    renderView()
+
+    // The head names the preset under the view title; the body is the same
+    // pipeline canvas an edit shows, with the row as one chain node.
+    expect(screen.getByRole('heading', { name: `${en.view} · 标准模式` })).toBeTruthy()
+    expect(screen.getByText(en.compositionLabel)).toBeTruthy()
+    const node = document.querySelector<HTMLElement>('[data-row-id="tool-bash"]')
+    expect(node).toBeTruthy()
+    expect(within(node!).getByText('Bash')).toBeTruthy()
+  })
+
+  it('renders no palette, fields, or footer', () => {
+    renderView()
+
+    expect(screen.queryByRole('heading', { name: en.palette })).toBeNull()
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('button', { name: en.save })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.handoff })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.cancel })).toBeNull()
+  })
+
+  it('renders the nodes non-draggable with no remove control', () => {
+    renderView()
+
+    const node = document.querySelector('[data-row-id="tool-bash"]')
+    expect(node?.getAttribute('draggable')).toBe('false')
+    expect(screen.queryByRole('button', { name: new RegExp(`^${en.removeRow}:`) })).toBeNull()
+  })
+
+  it('explains a selected node without the edit actions', () => {
+    renderView()
+
+    fireEvent.click(document.querySelector<HTMLElement>('[data-row-id="tool-bash"]')!)
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+    expect(within(inspector).getByText(en.rowId)).toBeTruthy()
+    expect(within(inspector).queryByRole('button', { name: en.moveUp })).toBeNull()
+    expect(within(inspector).queryByRole('button', { name: en.moveDown })).toBeNull()
+    expect(within(inspector).queryByRole('button', { name: en.removeRow })).toBeNull()
+  })
+
+  it('closes through Back', () => {
+    const actions = renderView()
+
+    fireEvent.click(screen.getByRole('button', { name: en.back }))
+
+    expect(actions.closeComposer).toHaveBeenCalledTimes(1)
   })
 })

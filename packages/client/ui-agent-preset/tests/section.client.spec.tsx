@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The management section's rendering rules: which actions a row offers depends
- * on its trust, a shipped composition opens in a read-only viewer, creation is
+ * on its trust, a shipped composition opens as a read-only design page, creation is
  * a copy dialog that collects an id and an optional name, and the location
  * action follows the host's desktop capability.
  */
@@ -12,7 +12,7 @@ import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { AgentPresetSection } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionProps } from '../src/client/AgentPresetSection.tsx'
-import type { AgentPresetSectionState, CopyDraft } from '../src/client/section-store.ts'
+import type { AgentPresetSectionState, ComposeDraft, ComposePalette, CopyDraft } from '../src/client/section-store.ts'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)
@@ -28,6 +28,8 @@ const READY: AgentPresetSectionState = {
   ],
   copy: null,
   view: null,
+  composer: null,
+  palette: null,
   pendingDelete: null,
   deleting: false,
   revealedPaths: {},
@@ -55,6 +57,15 @@ function renderSection(
     setCopyId: vi.fn(),
     setCopyName: vi.fn(),
     confirmCopy: vi.fn(() => Promise.resolve()),
+    beginCompose: vi.fn(() => Promise.resolve()),
+    closeComposer: vi.fn(),
+    setComposerId: vi.fn(),
+    setComposerName: vi.fn(),
+    addRow: vi.fn(),
+    insertRowAt: vi.fn(),
+    removeRow: vi.fn(),
+    moveRow: vi.fn(),
+    confirmCompose: vi.fn(() => Promise.resolve(true)),
     openLocation: vi.fn(() => Promise.resolve()),
     confirmDelete: vi.fn(),
     remove: vi.fn(() => Promise.resolve()),
@@ -77,6 +88,17 @@ function rowFor(id: string): HTMLElement {
   if (row === null) throw new Error(`no card for ${id}`)
   return row
 }
+
+/** An open composer, unchanged from a blank draft, with one row assembled. */
+const COMPOSER_DRAFT: ComposeDraft = {
+  id: 'my-agent', name: 'My agent',
+  rows: [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }],
+  saving: false, error: null,
+  original: { id: '', name: '', rows: [] },
+}
+
+/** A ready palette for an open composer; the handoff needs no modules. */
+const PALETTE: ComposePalette = { status: 'ready', modules: [] }
 
 describe('the preset list', () => {
   it('reads the roster once when it first renders', async () => {
@@ -116,18 +138,21 @@ describe('the preset list', () => {
     expect(screen.getByRole('heading', { name: en.customGroup })).toBeTruthy()
   })
 
-  it('shows no group heading for a set nobody has', () => {
+  it('keeps the custom group on screen for a set nobody has', () => {
     renderSection({ rows: [{ id: 'standard', trust: 'system', isDefault: true }] })
 
-    expect(screen.queryByRole('heading', { name: en.customGroup })).toBeNull()
+    // The custom group is where one's own preset will appear, and the composer
+    // entry lives there, so an empty set still shows the place to create.
+    expect(screen.getByRole('heading', { name: en.customGroup })).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.newAgent })).toBeTruthy()
   })
 
   it('leads with the two ways a preset is created', () => {
     renderSection()
 
-    // The page has no create button: the intro is what tells a first-time
-    // reader that copying an existing preset — or drafting one in Creator
-    // mode — IS the way to make one.
+    // The composer entry is the button on the list; the intro is what tells a
+    // first-time reader that duplicating an existing preset — or letting the
+    // agent draft one in Creator mode — is the other way to make one.
     expect(screen.getByText(new RegExp('Creator mode'))).toBeTruthy()
   })
 
@@ -240,52 +265,38 @@ describe('the preset list', () => {
     expect(actions.view).toHaveBeenCalledWith('standard')
   })
 
-  it('starts a creator-mode draft session and leaves settings', () => {
+  it('reaches Creator mode from the composer handoff and leaves settings', async () => {
     const actions = renderSection({
       rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
+      composer: COMPOSER_DRAFT,
+      palette: PALETTE,
     })
 
-    fireEvent.click(screen.getByRole('button', { name: en.creatorDraft }))
+    fireEvent.click(screen.getByRole('button', { name: en.handoff }))
 
-    expect(actions.startCreatorDraft).toHaveBeenCalledTimes(1)
+    // Save-then-handoff: the draft is a new preset, so the section saves it
+    // before starting the Creator-mode session on the cordis preset.
+    expect(actions.confirmCompose).toHaveBeenCalledTimes(1)
+    await waitFor(() => { expect(actions.startCreatorDraft).toHaveBeenCalledTimes(1) })
     // Leaving settings is part of the gesture: the flow lands in the new
     // session, not behind the modal.
     expect(actions.close).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the empty custom group on screen: heading plus the creator entry', () => {
+  it('hides the composer handoff without the creator flow', () => {
     renderSection({
-      rows: [
-        { id: 'standard', trust: 'system', isDefault: true, name: '标准模式' },
-        { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' },
-      ],
-    })
+      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
+      composer: COMPOSER_DRAFT,
+      palette: PALETTE,
+    }, { creator: false })
 
-    // No member yet, but the place where one's own preset will appear stays.
-    expect(screen.getByRole('heading', { name: en.customGroup })).toBeTruthy()
-    expect(screen.getByRole('button', { name: en.creatorDraft })).toBeTruthy()
-    expect(screen.queryByText(`· ${en.userTrust}`)).toBeNull()
+    expect(screen.queryByRole('button', { name: en.handoff })).toBeNull()
   })
 
-  it('hides the creator entry without the flow or the preset, disables it without a root', () => {
-    renderSection()
-    expect(screen.queryByRole('button', { name: en.creatorDraft })).toBeNull()
-    cleanup()
+  it('hides the composer handoff until the cordis preset is on the roster', () => {
+    renderSection({ composer: COMPOSER_DRAFT, palette: PALETTE })
 
-    renderSection({
-      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
-    }, { creator: false })
-    expect(screen.queryByRole('button', { name: en.creatorDraft })).toBeNull()
-    cleanup()
-
-    const actions = renderSection({
-      authorable: false,
-      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
-    })
-    const disabled = screen.getByRole('button', { name: en.creatorDraft })
-    expect(disabled).toHaveProperty('disabled', true)
-    fireEvent.click(disabled)
-    expect(actions.startCreatorDraft).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: en.handoff })).toBeNull()
   })
 
   it('shows a page-level failure without hiding the list', () => {
@@ -383,34 +394,50 @@ describe('the copy dialog', () => {
   })
 })
 
-describe('the read-only viewer', () => {
-  it('shows the composition text under the preset\'s name', () => {
-    renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: tool-bash\n' } })
+describe('the read-only canvas view', () => {
+  const ROWS = [{ id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash' }]
 
-    const dialog = screen.getByRole('dialog')
-    expect(dialog.getAttribute('aria-label')).toBe(`${en.view} · ${en.presetStandardName}`)
-    expect(within(dialog).getByText(en.composition)).toBeTruthy()
-    expect(within(dialog).getByText(/tool-bash/).textContent).toBe('- id: tool-bash\n')
+  it('shows a shipped preset as a design page, rows on the canvas', () => {
+    renderSection({ view: { id: 'standard', title: '标准模式', rows: ROWS } })
+
+    // The composer head names the preset under the view title, and the body is
+    // the pipeline canvas: the row renders as a node, not a dialog of YAML.
+    expect(screen.getByRole('heading', { name: `${en.view} · ${en.presetStandardName}` })).toBeTruthy()
+    expect(screen.getByText(en.compositionLabel)).toBeTruthy()
+    expect(document.querySelectorAll('[data-row-id]')).toHaveLength(ROWS.length)
+    expect(document.querySelector('[data-row-id="tool-bash"]')).toBeTruthy()
   })
 
   it('keeps the loaded title when the viewed row leaves the roster', () => {
-    renderSection({ view: { id: 'retired', title: 'Retired mode', content: '- id: tool-bash\n' } })
+    renderSection({ view: { id: 'retired', title: 'Retired mode', rows: [] } })
 
-    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe(`${en.view} · Retired mode`)
+    // The view carries its own title, so a row that vanished from the roster
+    // does not degrade the design page into an empty shell.
+    expect(screen.getByRole('heading', { name: `${en.view} · Retired mode` })).toBeTruthy()
+  })
+
+  it('renders no edit affordance: no fields, palette, or save', () => {
+    renderSection({ view: { id: 'standard', title: '标准模式', rows: ROWS } })
+
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('heading', { name: en.palette })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.save })).toBeNull()
+    expect(screen.queryByRole('button', { name: new RegExp(`^${en.removeRow}:`) })).toBeNull()
+  })
+
+  it('renders the nodes non-draggable', () => {
+    renderSection({ view: { id: 'standard', title: '标准模式', rows: ROWS } })
+
+    // The shipped composition is the known-good copy source, so its chain is
+    // legible but cannot be reordered or removed from.
+    const node = document.querySelector('[data-row-id="tool-bash"]')
+    expect(node?.getAttribute('draggable')).toBe('false')
   })
 
   it('closes through the controller', () => {
-    const actions = renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: x\n' } })
+    const actions = renderSection({ view: { id: 'standard', title: '标准模式', rows: ROWS } })
 
-    fireEvent.click(within(screen.getByRole('dialog')).getByText(en.close))
-
-    expect(actions.closeView).toHaveBeenCalledTimes(1)
-  })
-
-  it('dismisses on Escape', () => {
-    const actions = renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: x\n' } })
-
-    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: en.back }))
 
     expect(actions.closeView).toHaveBeenCalledTimes(1)
   })

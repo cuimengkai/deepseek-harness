@@ -17,6 +17,7 @@ import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import { SIDEBAR_COLLAPSED } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
+import type { PagesSnapshot } from '@deepseek-ai/dsh-client-ui-layout/src/client/pages.ts'
 import type {
   SessionId, SessionListState, WorkspaceListState,
 } from '@deepseek-ai/dsh-client-runtime/client'
@@ -25,6 +26,8 @@ import type {
 const selectedSession = { current: 's-test' as SessionId | undefined }
 const selectedSessionBlank = { current: false }
 const baselinesReady = { current: true }
+// Page-projection control for the usePages stub (undefined = no active page).
+const pageState = { activeId: undefined as string | undefined }
 
 // Render-prop contract stub fed through the standard seat prop (the renderer
 // injects the real one in production): session mode runs children(id), empty
@@ -55,9 +58,9 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
 function mountFrame() {
   window.innerWidth = frameWidth // first-render viewport source before the observer fires
   const instance = createLayoutStore().create()
-  const slotCalls: { key: string; props: unknown }[] = []
-  const renderSlot = ((key: string, owner: object) => {
-    slotCalls.push({ key, props: owner })
+  const slotCalls: { key: string; props: unknown; only?: string }[] = []
+  const renderSlot = ((key: string, owner: object, opts?: { only?: string }) => {
+    slotCalls.push({ key, props: owner, ...(opts?.only !== undefined ? { only: opts.only } : {}) })
     if (key === 'sidebar') return <div data-testid="sidebar-content" />
     if (key === 'conversation') return <div data-testid="center-content" />
     if (key === 'details') return <div data-testid="details-content" />
@@ -88,6 +91,8 @@ function mountFrame() {
       useSessions={useSessions}
       useWorkspaces={((sel: (s: WorkspaceListState) => unknown) => sel(workspaceState)) as never}
       SessionProvider={SessionProviderStub}
+      usePages={((sel: (s: PagesSnapshot) => unknown) =>
+        sel({ pages: [], activeId: pageState.activeId })) as never}
     />
   )
   const utils = render(element())
@@ -115,6 +120,7 @@ beforeEach(() => {
   selectedSession.current = 's-test' as SessionId
   selectedSessionBlank.current = false
   baselinesReady.current = true
+  pageState.activeId = undefined
   vi.useFakeTimers()
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => { cb(0) }, 16) as unknown as number)
@@ -394,5 +400,29 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
     frameWidth = 1250
     act(() => { fireResize?.(); fireResize?.(); vi.advanceTimersByTime(20) })
     expect(tracks(frame)).toEqual([280, 330])
+  })
+})
+
+describe('AppFrame — routable page layer', () => {
+  it('renders no page layer while no page is active (grid not inert)', () => {
+    const { frame, slotCalls } = mountFrame()
+    expect(frame.querySelector('[class*="pageLayer"]')).toBeNull()
+    expect(frame.querySelector('[class*="appRegion"]')?.hasAttribute('inert')).toBe(false)
+    expect(slotCalls.find(c => c.key === 'page')).toBeUndefined()
+  })
+
+  it('renders the matched page over the grid and makes the app region inert', () => {
+    pageState.activeId = 'settings'
+    const { frame, slotCalls, getByTestId } = mountFrame()
+    const pageLayer = frame.querySelector('[class*="pageLayer"]')!
+    expect(pageLayer).toBeTruthy()
+    expect(pageLayer.hasAttribute('data-page')).toBe(true)
+    // The app grid below stays mounted (session state preserved) but inert.
+    expect(frame.querySelector('[class*="appRegion"]')?.hasAttribute('inert')).toBe(true)
+    expect(getByTestId('center-content')).toBeTruthy()
+    // The page slot renders only the active entry, by id.
+    const pageCall = slotCalls.find(c => c.key === 'page')!
+    expect(pageCall.props).toEqual({})
+    expect(pageCall.only).toBe('settings')
   })
 })

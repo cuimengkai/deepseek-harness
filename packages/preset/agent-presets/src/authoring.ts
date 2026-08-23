@@ -65,6 +65,26 @@ export class PresetNotWritableError extends Error {
 }
 
 /**
+ * A composition named a module the deployment does not have installed.
+ * Raised by `compose` when the caller's resolvability proof fails: the
+ * composer may only assemble agents from plugins actually present, so a
+ * browser payload can never grant a capability the deployment does not carry.
+ */
+export class ComposeModuleError extends Error {
+  constructor(
+    /** The preset being composed. */
+    readonly presetId: string,
+    /** The module names the composition referenced that are not installed. */
+    readonly unresolved: readonly string[],
+  ) {
+    super(
+      `agent-presets: preset "${presetId}" references uninstalled modules: `
+      + `${unresolved.map(name => JSON.stringify(name)).join(', ')}`,
+    )
+  }
+}
+
+/**
  * The root locally authored presets are written to.
  * @param roots - the configured roots in precedence order.
  * @returns the absolute path of the first `user` root.
@@ -223,6 +243,69 @@ export async function writeComposition(
     throw error
   }
   return dir
+}
+
+/**
+ * Replace one locally authored preset's composition and metadata in place.
+ *
+ * The overwrite half of the rows authoring boundary. `writeComposition`
+ * creates a preset and refuses an occupied id; this primitive re-renders an
+ * existing preset's files atomically, skipping the `occupied` refusal so an
+ * existing directory is updated rather than refused. Only the composition and
+ * display metadata are rewritten — the directory's other contents (skills,
+ * assets) are left alone, and a failed atomic write leaves the prior file
+ * intact rather than a half-preset. The caller (the service's `compose`) owns
+ * the trust and existence checks that decide overwrite vs create.
+ * @param root - the writable root's resolved path.
+ * @param id - the preset id, whose directory already exists.
+ * @param rows - the composition rows to persist.
+ * @param meta - display metadata to publish beside the composition.
+ * @returns the absolute path of the preset directory.
+ * @throws when the id is unusable.
+ */
+export async function replaceComposition(
+  root: string,
+  id: string,
+  rows: readonly EntryOptions[],
+  meta?: PresetMetadata,
+): Promise<string> {
+  if (!PRESET_ID.test(id)) throw new InvalidPresetIdError(id)
+  const dir = join(root, id)
+  await mkdir(dir, { recursive: true, mode: 0o700 })
+  await writeFileAtomic(
+    join(dir, COMPOSITION_FILE),
+    yaml.dump([...rows], { schema: entryListSchema, lineWidth: -1 }),
+    { mode: 0o600, dirMode: 0o700 },
+  )
+  const rendered = renderPresetMetadata(meta ?? {})
+  const metadataPath = join(dir, METADATA_FILE)
+  if (rendered === undefined) {
+    await rm(metadataPath, { force: true })
+  } else {
+    await writeFileAtomic(metadataPath, rendered, { mode: 0o600, dirMode: 0o700 })
+  }
+  await tightenModes(dir)
+  return dir
+}
+
+/**
+ * Parse a preset's composition text into its entry list.
+ *
+ * Read with the loader's own YAML dialect ({@link entryListSchema}, the one
+ * carrying `!!js`), so a composition that mounts parses here exactly as the
+ * Loader reads it — a `!!js` `disabled` row round-trips as the evaluable
+ * expression. The composer reads rows this way so the browser never parses
+ * YAML: the wire carries structured rows instead of text.
+ * @param content - the composition file's contents.
+ * @returns the parsed entry list.
+ * @throws when the composition is not a top-level list of plugin rows.
+ */
+export function parseComposition(content: string): EntryOptions[] {
+  const rows = yaml.load(content, { schema: entryListSchema })
+  if (!Array.isArray(rows)) {
+    throw new Error('agent-presets: the composition is not a top-level list of plugin rows')
+  }
+  return rows as EntryOptions[]
 }
 
 /**

@@ -129,6 +129,28 @@ describe('real Loader composition', () => {
     untap()
     expect((await request(port, '/')).body).not.toContain('__T__')
 
+    // SPA fallback: a missing route-like path that accepts HTML serves the
+    // shell, so deep links survive a refresh — GET and HEAD alike, and the
+    // fallback body still runs the (now untapped) index render. Missing static
+    // assets under HTML accept, and any miss under a non-HTML accept, keep the
+    // empty-404 contract.
+    const deepLink = await request(port, '/settings/models', { headers: { accept: 'text/html' } })
+    expect(deepLink).toMatchObject({ status: 200, type: 'text/html; charset=utf-8' })
+    expect(deepLink.body).toContain('shell')
+    expect(deepLink.body).not.toContain('__T__')
+    expect(await request(port, '/no/such/route', { headers: { accept: 'text/html' } })).toMatchObject({
+      status: 200,
+      type: 'text/html; charset=utf-8',
+    })
+    expect(await request(port, '/settings/models', { headers: { accept: 'text/html' }, method: 'HEAD' })).toEqual({
+      status: 200,
+      type: 'text/html; charset=utf-8',
+      body: '',
+    })
+    expect(await request(port, '/no/such/route', { headers: { accept: 'application/json' } })).toEqual({ status: 404, type: null, body: '' })
+    expect(await request(port, '/missing.js', { headers: { accept: 'text/html' } })).toEqual({ status: 404, type: null, body: '' })
+    expect(await request(port, '/missing.css', { headers: { accept: 'text/html' } })).toEqual({ status: 404, type: null, body: '' })
+
     // A missing configured index follows the same empty-404 contract for both
     // of its public entry paths and for both supported methods.
     await rm(join(root!, 'dist', 'index.html'))

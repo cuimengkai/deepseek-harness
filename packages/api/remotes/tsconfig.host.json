@@ -51,6 +51,12 @@
     },
     {
       "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../host/plugin-inventory"
+    },
+    {
+      "path": "../../host/plugin-manager"
     }
   ]
 }

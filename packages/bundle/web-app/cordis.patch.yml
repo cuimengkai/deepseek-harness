@@ -108,6 +108,11 @@
     - id: plugin-inventory
       name: '@deepseek-ai/dsh-host-plugin-inventory'
 
+    # Live plugin install/uninstall over configurable catalog sources
+    # (default: awesome curated list + GitHub topic search) via home-patch HMR.
+    - id: plugin-manager
+      name: '@deepseek-ai/dsh-host-plugin-manager'
+
     # The API gateway: the transport-agnostic dispatch face every client shape
     # shares. The base layer's agent-default-model service owns the default model.
     - id: api-gateway
@@ -192,6 +197,12 @@
 
     - id: locale
       name: '@deepseek-ai/dsh-client-locale'
+
+    # Browser history + page-route matching service: the router every routed
+    # surface (the settings page) rides. Must appear before any row that injects
+    # it — ui-layout, ui-settings-general — so its service resolves at load.
+    - id: ui-router
+      name: '@deepseek-ai/dsh-client-ui-router'
 
     - id: ui-layout
       name: '@deepseek-ai/dsh-client-ui-layout'

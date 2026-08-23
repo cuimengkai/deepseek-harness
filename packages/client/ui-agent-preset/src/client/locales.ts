@@ -11,9 +11,17 @@ export type AgentPresetSettingsKey =
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
-  | 'brokenBadge' | 'brokenNoCopy'
-  | 'composition' | 'cancel' | 'close' | 'retry'
-  | 'copyTitle' | 'copyIntro' | 'create' | 'creating' | 'creatorDraft'
+  | 'brokenBadge' | 'brokenNoCopy' | 'brokenNoCompose'
+  | 'cancel' | 'close' | 'retry'
+  | 'copyTitle' | 'copyIntro' | 'create' | 'creating'
+  | 'compose' | 'composeTitle' | 'composeIntro' | 'newAgent'
+  | 'handoff' | 'handoffHint'
+  | 'palette' | 'paletteHint' | 'paletteSearch' | 'paletteLoading' | 'paletteUnavailable' | 'paletteEmpty'
+  | 'compositionLabel' | 'compositionEmpty' | 'reorderHint'
+  | 'canvasStart' | 'canvasEnd' | 'inspectorTitle' | 'rowId' | 'moveUp' | 'moveDown' | 'paletteCategoryOther'
+  | 'paletteCollapse' | 'paletteExpand'
+  | 'rowAdded' | 'alreadyAdded' | 'removeRow'
+  | 'save' | 'saving' | 'noRows' | 'unchanged' | 'overwriteWarning' | 'back'
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
   | 'idRequired' | 'idInvalid' | 'idTaken'
   | 'deleteTitle' | 'deleteDescription' | 'deleteConfirm' | 'deleting'
@@ -30,7 +38,8 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   nav: 'Agent presets',
   sectionIntro:
     'A preset is the plugin composition one session\'s agent runs — its tools, prompt, and capabilities. '
-    + 'Duplicate an existing one and make it yours, or let the agent draft one for you in Creator mode.',
+    + 'Assemble one from the installed plugins, duplicate an existing one and make it yours, '
+    + 'or let the agent draft one for you in Creator mode.',
   builtIn: 'Built-in',
   setDefault: 'Set as default',
   view: 'View',
@@ -59,8 +68,8 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   noDescription: 'No description.',
   brokenBadge: 'Failed to load',
   brokenNoCopy: 'A preset that failed to load cannot be duplicated',
+  brokenNoCompose: 'A preset that failed to load has no rows to edit',
   copyOf: 'Copied from',
-  composition: 'Composition (agent.cordis.yml)',
   cancel: 'Cancel',
   close: 'Close',
   retry: 'Retry',
@@ -70,7 +79,41 @@ export const en: Record<AgentPresetSettingsKey, string> = {
     + 'be changed later; everything else is edited in the preset\'s own files.',
   create: 'Create',
   creating: 'Creating…',
-  creatorDraft: 'Draft a custom preset with Creator mode',
+  compose: 'Edit composition',
+  composeTitle: 'Edit agent composition',
+  composeIntro:
+    'An agent is the plugin composition one session runs. Arrange installed plugins left to right as the '
+    + 'pipeline that composes it, or hand the draft to Creator mode to build or refine it.',
+  newAgent: 'New agent',
+  handoff: 'Let the agent build on this',
+  handoffHint: 'Save, then hand this draft to Creator mode to build or refine it.',
+  palette: 'Plugins',
+  paletteHint: 'Drag into the composition',
+  paletteSearch: 'Search plugins',
+  paletteLoading: 'Loading installed plugins…',
+  paletteUnavailable: 'This deployment reports no plugin inventory, so nothing can be dragged in.',
+  paletteEmpty: 'No installed plugins to add.',
+  compositionLabel: 'Composition',
+  compositionEmpty: 'Drag plugins here',
+  reorderHint: 'Drag to reorder',
+  canvasStart: 'Start',
+  canvasEnd: 'End',
+  inspectorTitle: 'Plugin details',
+  rowId: 'Row id',
+  moveUp: 'Move up',
+  moveDown: 'Move down',
+  paletteCategoryOther: 'Other',
+  paletteCollapse: 'Collapse plugins',
+  paletteExpand: 'Open plugins',
+  rowAdded: 'Added',
+  alreadyAdded: 'Already in the composition',
+  removeRow: 'Remove',
+  save: 'Save',
+  saving: 'Saving…',
+  noRows: 'The composition needs at least one plugin.',
+  unchanged: 'Nothing changed yet.',
+  overwriteWarning: 'Saving overwrites this preset\'s existing composition.',
+  back: 'Back',
   openLocation: 'Open folder',
   showLocation: 'Show location',
   revealedPathLabel: 'Preset files:',
@@ -94,7 +137,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   seatHint: '即将开始的这个会话所用的 Agent 预设',
   headerHint: '本会话运行的 Agent 预设，开始时即固定',
   nav: 'Agent 预设',
-  sectionIntro: '预设即一个会话的 Agent 所运行的插件组装 —— 它的工具、提示词与能力。复制一份既有预设改成自己的，或用「创造模式」让 Agent 帮你创建。',
+  sectionIntro: '预设即一个会话的 Agent 所运行的插件组装 —— 它的工具、提示词与能力。从已安装的插件组装一个、复制一份既有预设改成自己的，或用「创造模式」让 Agent 帮你创建。',
   builtIn: '内置',
   setDefault: '设为默认',
   view: '查看',
@@ -119,8 +162,8 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   noDescription: '暂无描述。',
   brokenBadge: '加载失败',
   brokenNoCopy: '预设加载失败，不能复制',
+  brokenNoCompose: '预设加载失败，没有可编辑的行',
   copyOf: '复制自',
-  composition: '组装（agent.cordis.yml）',
   cancel: '取消',
   close: '关闭',
   retry: '重试',
@@ -128,7 +171,39 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   copyIntro: '整个预设会在本机复制一份。标识符将成为目录名，事后无法更改；其余内容之后直接在预设自己的文件里编辑。',
   create: '创建',
   creating: '正在创建…',
-  creatorDraft: '用「创造模式」创作自定义预设',
+  compose: '编辑组合',
+  composeTitle: '编辑 Agent 组合',
+  composeIntro: 'Agent 就是一个会话所运行的插件组装。把已安装的插件从左到右排成一条流水线，或把草稿交给「创造模式」搭建或完善。',
+  newAgent: '新建 Agent',
+  handoff: '让 Agent 帮我搭建/完善',
+  handoffHint: '保存后交给「创造模式」搭建或完善。',
+  palette: '插件',
+  paletteHint: '拖入组合',
+  paletteSearch: '搜索插件',
+  paletteLoading: '正在加载已安装插件…',
+  paletteUnavailable: '此部署没有提供插件清单，无法拖入插件。',
+  paletteEmpty: '没有可添加的已安装插件。',
+  compositionLabel: '组合',
+  compositionEmpty: '把插件拖到这里',
+  reorderHint: '拖拽调整顺序',
+  canvasStart: '开始',
+  canvasEnd: '结束',
+  inspectorTitle: '插件详情',
+  rowId: '行标识',
+  moveUp: '上移',
+  moveDown: '下移',
+  paletteCategoryOther: '其他',
+  paletteCollapse: '收起插件',
+  paletteExpand: '展开插件',
+  rowAdded: '已添加',
+  alreadyAdded: '已在组合中',
+  removeRow: '移除',
+  save: '保存',
+  saving: '正在保存…',
+  noRows: '组合至少需要一个插件。',
+  unchanged: '还没有改动。',
+  overwriteWarning: '保存将覆盖该预设现有的组合。',
+  back: '返回',
   openLocation: '打开目录',
   showLocation: '查看路径',
   revealedPathLabel: '预设文件：',

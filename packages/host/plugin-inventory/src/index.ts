@@ -5,6 +5,7 @@ import type {} from '@deepseek-ai/cordis-plugin-loader'
 import { TypertRemoteService, Remote } from '@deepseek-ai/dsh-typert-protocol'
 // Typert-generated ./typert and ./remote artifacts import Zod at runtime.
 import type {} from 'zod'
+import { spineMeta } from './spine-meta.ts'
 import type {
   PluginEntryId,
   PluginFiberPhase,
@@ -13,6 +14,15 @@ import type {
 } from './types.ts'
 
 export type * from './types.ts'
+export { CATEGORIES, SPINE_META, spineMeta } from './spine-meta.ts'
+export type { SpineCategory, SpineMetaEntry } from './spine-meta.ts'
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The deployment's Loader plugin projection, for host callers that must prove what is installed. */
+    pluginInventory: PluginInventoryGateway
+  }
+}
 
 /** Brand an existing Loader-tree entry id at the owning boundary. */
 function pluginEntryId(value: string): PluginEntryId {
@@ -43,8 +53,20 @@ const FIBER_PHASE = {
 export class PluginInventoryGateway extends TypertRemoteService {
   static inject = ['loader']
 
+  /** Serialized form of the last emitted projection, for change detection. */
+  private lastProjection: string | undefined
+  /** Whether a coalesced changed emit is already queued this frame. */
+  private changedQueued = false
+
   constructor(ctx: Context) {
     super(ctx, 'pluginInventory')
+    // Live-update nudge: coalesce one frame of loader events, then emit only
+    // when the recomputed projection actually differs — internal/status fires
+    // on every fiber transition, which would otherwise flood the wire.
+    ctx.on('loader/entry-init', this.scheduleChanged)
+    ctx.on('loader/partial-dispose', this.scheduleChanged)
+    ctx.on('internal/plugin', this.scheduleChanged)
+    ctx.on('internal/status', this.scheduleChanged)
   }
 
   /**
@@ -55,17 +77,37 @@ export class PluginInventoryGateway extends TypertRemoteService {
    */
   @Remote('list')
   list(): PluginInventorySnapshot {
+    return this.projection()
+  }
+
+  /** The current non-group Loader entries in Loader order. */
+  private projection(): PluginInventorySnapshot {
     const entries: PluginInventoryEntry[] = []
     for (const entry of this.ctx.loader.entries()) {
       if (entry.options.group) continue
+      const meta = spineMeta(entry.options.name)
       entries.push({
         entryId: pluginEntryId(entry.id),
         moduleName: entry.options.name,
         enabled: !entry.disabled,
         fiberPhase: entry.fiber === undefined ? null : FIBER_PHASE[entry.fiber.state],
+        ...(meta === undefined ? {} : { category: meta.category, description: meta.description }),
       })
     }
     return { entries }
+  }
+
+  /** Coalesce one frame of loader events into a single changed emit. */
+  private scheduleChanged = (): void => {
+    if (this.changedQueued) return
+    this.changedQueued = true
+    queueMicrotask(() => {
+      this.changedQueued = false
+      const serialized = JSON.stringify(this.projection())
+      if (serialized === this.lastProjection) return
+      this.lastProjection = serialized
+      this.ctx.emit('plugin-inventory/changed')
+    })
   }
 }
 

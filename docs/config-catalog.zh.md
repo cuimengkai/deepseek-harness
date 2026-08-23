@@ -851,6 +851,91 @@ export interface Config {
 
 来源：[`packages/host/frontend-static/src/index.ts:28`](../packages/host/frontend-static/src/index.ts)
 
+<a id="deepseek-aidsh-host-plugin-manager"></a>
+
+## `@deepseek-ai/dsh-host-plugin-manager`
+
+需要：`loader`
+
+```ts config-catalog
+/** Deployment policy: catalog sources and the network install surface. */
+export interface Config {
+  /** Catalog sources, merged in order. Defaults to the awesome curated list and
+   * the GitHub `dsh-plugin` topic search. */
+  readonly sources?: readonly PluginManagerCatalogSourceDescriptor[]
+  /** Locally-resolvable catalog; normalized to a `static` source when `sources`
+   * is absent. */
+  readonly catalog?: readonly PluginCatalogDescriptor[]
+  /** Skip all network fetches and installs; serve only cached and static entries. */
+  readonly offline?: boolean
+  /** Root network installs write under. Defaults to `$DSH_HOME/profiles`. */
+  readonly installPrefix?: string
+  /** Package-manager executable. Defaults to `npm`. */
+  readonly packageManager?: string
+  /** Outbound manifest-fetch timeout in milliseconds. Defaults to 10_000. */
+  readonly fetchTimeoutMs?: number
+  /** Cache TTL override in milliseconds for network sources. */
+  readonly cacheTtlMs?: number
+}
+
+/**
+ * A catalog source descriptor accepted by the gateway Config. `static` holds an
+ * inline list of locally-resolvable modules; `awesome` fetches the
+ * awesome-dsh-plugin curated list as its repository tarball; `topic` searches a
+ * GitHub topic (browse-only, repositories are not installable npm packages);
+ * `manifest` fetches a generic JSON manifest at `url`.
+ */
+export type PluginManagerCatalogSourceDescriptor =
+  | {
+    /** Source id surfaced in entry `source` fields and source status lines. */
+    readonly id: string
+    /** Inline static list of locally-resolvable modules. */
+    readonly kind: 'static'
+    /** Inline locally-resolvable modules, installed without any network step. */
+    readonly entries: readonly PluginCatalogDescriptor[]
+  }
+  | {
+    /** Source id surfaced in entry `source` fields and source status lines. */
+    readonly id: string
+    /** Curated awesome-dsh-plugin list, fetched as its repository tarball. */
+    readonly kind: 'awesome'
+    /** GitHub owner of the curated list; defaults to `awesome-dsh-plugin`. */
+    readonly owner?: string
+    /** GitHub repository of the curated list; defaults to `awesome-dsh-plugin`. */
+    readonly repo?: string
+    /** Branch of the curated list; defaults to `main`. */
+    readonly branch?: string
+  }
+  | {
+    /** Source id surfaced in entry `source` fields and source status lines. */
+    readonly id: string
+    /** GitHub topic search; repositories are browse-only. */
+    readonly kind: 'topic'
+    /** GitHub topic to search, e.g. `dsh-plugin`. */
+    readonly topic: string
+    /** Search page size; defaults to `100` and is capped at `100`. */
+    readonly perPage?: number
+  }
+  | {
+    /** Source id surfaced in entry `source` fields and source status lines. */
+    readonly id: string
+    /** Generic JSON manifest at `url`; the configurable extension point. */
+    readonly kind: 'manifest'
+    /** URL of the JSON manifest to fetch (an array or `{ entries }` object). */
+    readonly url: string
+  }
+
+/** Maintainer-authored catalog descriptor accepted by the gateway Config. */
+export interface PluginCatalogDescriptor {
+  /** Exact module specifier the managed row would import. */
+  readonly name: string
+  /** Optional purpose line shown in the console. */
+  readonly description?: string
+}
+```
+
+来源：[`packages/host/plugin-manager/src/index.ts:59`](../packages/host/plugin-manager/src/index.ts)
+
 <a id="deepseek-aidsh-host-webserver"></a>
 
 ## `@deepseek-ai/dsh-host-webserver`

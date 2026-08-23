@@ -112,7 +112,7 @@ function selectApproval({ interactions }: ComposerChainProps): ApprovalWait | nu
 /** Mounts the conversation plugin.
  * @param ctx - Client root context.
  */
-export function apply(ctx: Context): void {
+export async function apply(ctx: Context): Promise<void> {
   const sessions = ctx.sessions
   const workspaces = ctx.workspaces
   const layout = ctx.layout
@@ -434,7 +434,8 @@ export function apply(ctx: Context): void {
   // registers itself as `conversation` and lives on its own child fiber.
   // Presentation registrants depend directly on their slot declarations;
   // this service remains only where conversation actions are required.
-  ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks })
+  // Awaited so the entry stays LOADING until `conversation` is resolvable.
+  await ctx.plugin(ConversationController, { input: inputHub, blocks: composerBlocks })
 
   // The plan strip rides the input dock above the queue rows (same posture).
   ctx.plugin(todoDockEntry)

@@ -491,6 +491,13 @@ export type KindOptions<
       id: string
       order?: number
       label?: SlotLabel
+      /**
+       * Optional route path (e.g. `/settings/:section?`) that makes the entry a
+       * routable page: the shell's router matches it against the URL and renders
+       * the entry full-viewport while its path is active. Consumed by the
+       * ui-layout 'page' slot's pages source; ordinary list slots ignore it.
+       */
+      path?: string
       /** Cell shadowing rank (ascending, default 0, lowest renders; same id + same priority throws — see {@link SlotCore.register}). */
       priority?: number
     }
@@ -556,7 +563,7 @@ type BaseOptions<
  */
 export interface StoredEntry {
   component: unknown
-  options: { key?: string; id?: string; order?: number; label?: SlotLabel; priority?: number }
+  options: { key?: string; id?: string; order?: number; label?: SlotLabel; priority?: number; path?: string }
   /** Chain routing selector (type-erased like `inject`; present exactly on chain-slot entries). */
   select?: ((owner: never) => unknown) | undefined
   /** Registrant business face; positional params derive from the declaration (sessionId?, actions?). */
@@ -596,6 +603,7 @@ interface ErasedOptions {
   label?: SlotLabel | undefined
   select?: ((owner: never) => unknown) | undefined
   priority?: number | undefined
+  path?: string | undefined
   children?: Record<string, SlotSpec<SlotEntryDef>> | undefined
   store?: StoreDecl | undefined
   locale?: string | undefined
@@ -850,6 +858,7 @@ export class SlotCore {
         ...(options.order !== undefined ? { order: options.order } : {}),
         ...(options.label !== undefined ? { label: options.label } : {}),
         ...(options.priority !== undefined ? { priority: options.priority } : {}),
+        ...(options.path !== undefined ? { path: options.path } : {}),
       },
       ...(options.select !== undefined ? { select: options.select } : {}),
       ...(options.inject !== undefined ? { inject: options.inject } : {}),

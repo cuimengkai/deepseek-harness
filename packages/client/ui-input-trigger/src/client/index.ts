@@ -52,8 +52,11 @@ export const inject = ['sessions', 'locale']
  * input overlay once its declarer is up.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
-  ctx.plugin(InputTriggerService)
+export async function apply(ctx: ClientContext): Promise<void> {
+  // Keep the entry LOADING until `inputTriggers` is strict-resolvable: the
+  // command and reference rows inject it, and an entry that activated before
+  // its service left them PENDING at the boot audit.
+  await ctx.plugin(InputTriggerService)
   ctx.effect(() => ctx.locale.register(MENU_NS, { zh, en }), 'ui-input-trigger: menu dictionaries')
   ctx.inject(['slots', 'inputTriggers', 'sessions'], (scope: ClientContext) => {
     const inputTriggers = scope.inputTriggers

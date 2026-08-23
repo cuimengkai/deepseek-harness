@@ -2,8 +2,18 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 720px;
+  /* Fills the settings content area, like the General page: the roster cards
+     are not a narrow column pinned to a reading width. */
+  width: 100%;
   color: var(--dsw-alias-label-primary);
+}
+
+/* The composer owns the whole settings content area, not a full-width column:
+   the pipeline canvas is the workspace, so it fills the full height under the
+   settings top bar. */
+.sectionComposer {
+  height: 100%;
+  min-height: 0;
 }
 
 .title {
@@ -340,25 +350,6 @@
   gap: 12px;
 }
 
-/* A shipped composition can be long; the dialog scrolls it rather than grow. */
-.viewerCode {
-  margin: 0;
-  padding: 12px;
-  max-height: min(52vh, 480px);
-  overflow: auto;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 10px;
-  background: var(--dsw-alias-bg-layer-2);
-  color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: 12.5px;
-  line-height: 1.5;
-  white-space: pre;
-  tab-size: 2;
-  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
-  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
-}
-
 .error {
   margin: 0;
   font-size: 12px;
@@ -406,4 +397,15 @@
 .creatorButton:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/* The two creation entries (composer + Creator-draft) side by side under the
+   custom group's cards. */
+.createRow {
+  display: flex;
+  gap: 10px;
+}
+
+.createRow > .creatorButton {
+  flex: 1;
 }

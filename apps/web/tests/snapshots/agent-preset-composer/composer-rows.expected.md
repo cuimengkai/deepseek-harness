@@ -1,0 +1,55 @@
+- banner:
+  - button "返回":
+    - img
+    - text: 返回
+  - heading "设置" [level=1]
+  - button "打开配置文件"
+  - button "关闭":
+    - img
+    - text: 关闭
+- navigation "设置导航":
+  - button "通用设置":
+    - img
+    - text: 通用设置
+  - button "模型":
+    - img
+    - text: 模型
+  - button "插件":
+    - img
+    - text: 插件
+  - button "Agent 预设":
+    - img
+    - text: Agent 预设
+- button "返回": ‹
+- heading "新建 Agent" [level=2]
+- paragraph: Agent 就是一个会话所运行的插件组装。把已安装的插件从左到右排成一条流水线，或把草稿交给「创造模式」搭建或完善。
+- text: 标识符
+- textbox "标识符":
+  - /placeholder: my-agent
+- text: 名称
+- textbox "名称":
+  - /placeholder: 选择器中显示的名字，缺省用标识符
+- heading "组合" [level=3]
+- complementary:
+  - heading "插件" [level=3]
+  - button "收起插件": ‹
+  - textbox "搜索插件": tool-bash
+  - heading "tool" [level=4]
+  - list:
+    - listitem "已在组合中":
+      - text: Bash tool Bash command tool
+      - code: "@deepseek-ai/dsh-tool-bash"
+      - text: 已添加
+- text: 开始 Bash
+- code: "@deepseek-ai/dsh-tool-bash"
+- text: Bash command tool
+- 'button "移除: @deepseek-ai/dsh-tool-bash"': ×
+- text: Str Replace Editor
+- code: "@deepseek-ai/dsh-tool-str-replace-editor"
+- text: String-replace file editor tool
+- 'button "移除: @deepseek-ai/dsh-tool-str-replace-editor"': ×
+- text: 结束
+- alert: 请填写标识符。
+- button "让 Agent 帮我搭建/完善" [disabled]
+- button "取消"
+- button "保存" [disabled]

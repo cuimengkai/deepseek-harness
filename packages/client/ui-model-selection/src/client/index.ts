@@ -105,7 +105,7 @@ export const inject = ['commandUi', 'connection', 'locale', 'sessions', 'slots',
  * over the service.
  * @param ctx - client root context.
  */
-export function apply(ctx: ClientContext): void {
+export async function apply(ctx: ClientContext): Promise<void> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-model-selection: dictionaries')
 
   // Non-slot faces (the command description, the popup option builder) read
@@ -113,8 +113,9 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
 
   // The composer-block reason is this plugin's own copy, read at raise time so
-  // a locale change reaches the next publish.
-  ctx.plugin(ModelDirectoryResolver, { blockReason: () => t('blocked.composer') })
+  // a locale change reaches the next publish. Awaited so the entry stays
+  // LOADING until `modelDirectories` is resolvable.
+  await ctx.plugin(ModelDirectoryResolver, { blockReason: () => t('blocked.composer') })
 
   // Entry 1: the /model popupSelect over the shared directory. The command
   // description is registry-held text: it reads t() once at registration and

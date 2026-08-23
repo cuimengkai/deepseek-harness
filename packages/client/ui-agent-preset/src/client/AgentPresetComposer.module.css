@@ -1,0 +1,669 @@
+.composer {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.composerHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.backButton {
+  appearance: none;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  width: 30px;
+  height: 30px;
+  background: none;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.backButton:hover:not(:disabled) {
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.composerTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.composerIntro {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.composerFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.fieldLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.input {
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.input::placeholder {
+  color: var(--dsw-alias-label-dimmed);
+}
+
+/* The body is a labelled stage: the composition head (the 「组合」 label) sits
+   in normal flow above the workspace, and the pipeline canvas fills the stage
+   with the palette and inspector floating over it as overlay panels. Keeping
+   the head outside the stage means a floating panel can never cover the label —
+   the palette's top edge is the stage's top at most. The floor keeps the stage
+   usable in a short settings pane — the settings content scrolls instead of
+   crushing the canvas and clipping the floating palette. */
+.composerBody {
+  flex: 1;
+  min-height: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stageHead {
+  flex: 0 0 auto;
+}
+
+/* The overlay stack's containing block: the absolute panels resolve against
+   it, so they are bounded by the stage and never climb over the head. */
+.stage {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+/* The canvas layer: the whole stage, the dot-grid workspace behind the
+   floating panels. */
+.canvasZone {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A floating overlay panel: solid fill, hairline border, and an elevated
+   shadow, so it reads as a layer above the canvas rather than a grid column.
+   z-index lifts it over the canvas zone so it receives pointer and drag
+   events, not just paint order. */
+.paletteZone,
+.inspector {
+  position: absolute;
+  top: 8px;
+  bottom: 8px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+  padding: 10px;
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  box-shadow: var(--dsw-shadow-lv3);
+  overflow: hidden;
+}
+
+.paletteZone {
+  left: 8px;
+  width: 320px;
+}
+
+.inspector {
+  right: 8px;
+  width: 280px;
+  overflow-y: auto;
+}
+
+/* Narrow panes: the floating panels become full-width sheets over the canvas,
+   still collapsible, instead of squeezing the drop target. */
+@media (max-width: 1080px) {
+  .paletteZone,
+  .inspector {
+    left: 8px;
+    right: 8px;
+    width: auto;
+  }
+}
+
+.columnHead {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The palette's head row: the section title plus a collapse control. */
+.paletteHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.paletteHead .columnHead {
+  flex: 1;
+  min-width: 0;
+}
+
+.paletteToggle {
+  appearance: none;
+  border: 0;
+  padding: 2px 6px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.paletteToggle:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The collapsed palette leaves a slim tab on the canvas edge to reopen it. */
+.paletteTab {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 2;
+  padding: 6px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: var(--dsw-shadow-lv3);
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.paletteTab:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.search {
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.search:focus {
+  outline: none;
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.paletteGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.paletteGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.paletteGroupHead {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.paletteList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* A palette card: the category glyph, then the annotated module body. The
+   color dot reads as the spine type, the badge names it, and the description
+   keeps the card a directory rather than a bare specifier list. */
+.paletteCard {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: grab;
+  transition: border-color .16s;
+}
+
+.paletteCard:hover:not(.paletteCardAdded) {
+  border-color: var(--dsw-alias-label-dimmed);
+}
+
+.paletteCard:active:not(.paletteCardAdded) {
+  cursor: grabbing;
+}
+
+/* A module already in the composition is a fact, not an offer: it stays
+   visible (so the palette mirrors the composition) but reads as spent. */
+.paletteCardAdded {
+  opacity: .55;
+  cursor: default;
+}
+
+.paletteGlyph {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-top: 4px;
+  border-radius: 3px;
+}
+
+.paletteBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.paletteName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.paletteBadge {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-bg-overlay);
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.paletteDesc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--dsw-alias-label-tertiary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.paletteModule {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 11px;
+  color: var(--dsw-alias-label-dimmed);
+  overflow-wrap: anywhere;
+}
+
+.paletteAdded {
+  flex: 0 0 auto;
+  margin-top: 4px;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.paletteNote {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The pipeline canvas: the whole stage, a dot-grid workspace with a
+   horizontally scrollable track, so a long chain scrolls rather than crushing
+   its nodes. */
+.canvas {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  border-radius: 12px;
+  overflow-x: auto;
+  background-image: radial-gradient(var(--dsw-alias-border-l1) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.canvasTrack {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 auto;
+  min-width: max-content;
+  padding: 4px 2px;
+}
+
+/* One plugin node: a typed glyph, the display name, the mono module, and a
+   clamped description. The chain order IS the composition order, so the node
+   reads left to right exactly as it will be written. */
+.node {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: 210px;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  cursor: grab;
+  transition: border-color .16s, box-shadow .16s, transform .16s;
+}
+
+.node:hover {
+  border-color: var(--dsw-alias-label-dimmed);
+  transform: translateY(-1px);
+}
+
+.node:active {
+  cursor: grabbing;
+}
+
+.nodeSelected {
+  border-color: var(--dsw-alias-brand-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-brand-primary) 22%, transparent);
+}
+
+.nodeDragging {
+  opacity: .55;
+}
+
+.nodeGlyph {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.nodeBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nodeName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.nodeModule {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 10.5px;
+  color: var(--dsw-alias-label-dimmed);
+  overflow-wrap: anywhere;
+}
+
+.nodeDesc {
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.nodeRemove {
+  appearance: none;
+  border: 0;
+  border-radius: 6px;
+  width: 22px;
+  height: 22px;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.nodeRemove:hover {
+  background: var(--dsw-alias-interactive-bg-hover-danger);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.nodeConnector {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 1px;
+  background: var(--dsw-alias-border-l3);
+  position: relative;
+}
+
+.nodeConnector::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: -3px;
+  border-left: 6px solid var(--dsw-alias-border-l3);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+
+/* The drop-slot indicator. Absolutely positioned within the track so showing
+   it never reflows the chain: a reflow detaches the dragged node mid-drag and
+   Chromium cancels the native drag, which would make reordering impossible. */
+.insertionLine {
+  position: absolute;
+  top: 50%;
+  width: 3px;
+  height: 64px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: var(--dsw-alias-state-business-primary);
+  pointer-events: none;
+}
+
+/* The chain's endpoints, Dify-style: Start carries the brand, End the warn
+   amber, so the pipeline's direction is legible at a glance. */
+.canvasEnd {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  background: var(--dsw-alias-bg-layer-2);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.canvasStart {
+  border-color: var(--dsw-alias-state-business-primary);
+}
+
+.canvasStart .nodeGlyph {
+  background: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.canvasEnd:not(.canvasStart) {
+  border-color: var(--dsw-alias-state-warn-primary);
+}
+
+.canvasEnd:not(.canvasStart) .nodeGlyph {
+  background: var(--dsw-alias-state-warn-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.dropSlot {
+  flex: 1;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  border-radius: 12px;
+  background: transparent;
+}
+
+.dropHint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.inspectorBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.inspectorName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+  overflow-wrap: anywhere;
+}
+
+.inspectorModule {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  color: var(--dsw-alias-label-dimmed);
+  overflow-wrap: anywhere;
+}
+
+.inspectorDesc {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.inspectorField {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.inspectorField code {
+  font-family: var(--dsw-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.inspectorActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.deleteConfirm {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.handoffHint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.error {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.overwriteNote {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.composerFoot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}

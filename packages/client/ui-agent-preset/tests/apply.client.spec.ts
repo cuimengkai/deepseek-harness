@@ -83,6 +83,12 @@ async function bench() {
   // The plugins inject `remote`; forwarded events reach them through the
   // same `$dispatch` handoff the connection sink makes.
   new TestRemote(ctx)
+  // The composer palette reads the installed-plugin inventory through the
+  // generated Remote; this bench never opens the composer, so an empty list
+  // is all the mount needs.
+  ctx.provide('remote.pluginInventory', {
+    list: () => Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { entries: [] } } }),
+  })
   const calls: string[] = []
   ctx.provide('connection', {
     api: {
@@ -181,7 +187,7 @@ function sessionsDouble(state: {
 
 describe('ui-agent-preset apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.pluginInventory', 'settingsScope'])
   })
 
   it('registers the General row and the settings section', async () => {

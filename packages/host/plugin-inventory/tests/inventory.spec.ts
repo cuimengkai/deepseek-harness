@@ -30,6 +30,55 @@ async function harness(): Promise<{
   return { ctx, inventory }
 }
 
+describe('plugin-inventory/changed events', () => {
+  /** Let the coalesced changed microtask (and any loader-internal awaits) run. */
+  async function flush(): Promise<void> {
+    await new Promise(resolve => setTimeout(resolve, 0))
+  }
+
+  function countChanged(ctx: Context): { changed: () => number; wait: () => Promise<void> } {
+    let count = 0
+    ctx.on('plugin-inventory/changed', () => { count += 1 })
+    return { changed: () => count, wait: flush }
+  }
+
+  it('emits a changed event after each create/update/remove mutation', async () => {
+    const { ctx } = await harness()
+    const watcher = countChanged(ctx)
+
+    const id = await ctx.loader.create({ name: 'cordis:active' })
+    await watcher.wait()
+    expect(watcher.changed()).toBeGreaterThan(0)
+
+    const afterCreate = watcher.changed()
+    await ctx.loader.update(id, { disabled: true })
+    await watcher.wait()
+    expect(watcher.changed()).toBeGreaterThan(afterCreate)
+
+    const afterUpdate = watcher.changed()
+    await ctx.loader.remove(id)
+    await watcher.wait()
+    expect(watcher.changed()).toBeGreaterThan(afterUpdate)
+  })
+
+  it('does not emit when the recomputed projection is unchanged', async () => {
+    const { ctx } = await harness()
+    const watcher = countChanged(ctx)
+
+    // Group entries are filtered out of the projection yet still traverse the
+    // loader; the recomputed projection is identical, so no changed emit.
+    await ctx.loader.create({ name: 'cordis:active', group: true })
+    await watcher.wait()
+    expect(watcher.changed()).toBe(0)
+
+    // A fiber with no loader entry (a direct ctx.plugin) also leaves the
+    // projection untouched, exercising the dirty check through internal/plugin.
+    await ctx.plugin(() => {})
+    await watcher.wait()
+    expect(watcher.changed()).toBe(0)
+  })
+})
+
 describe('PluginInventoryGateway', () => {
   it('publishes one direct list method under the pluginInventory namespace', async () => {
     const { inventory } = await harness()
@@ -85,5 +134,36 @@ describe('PluginInventoryGateway', () => {
 
     await ctx.loader.remove(pendingId)
     expect(inventory.list().entries.some(entry => entry.entryId === pendingId)).toBe(false)
+  })
+
+  it('projects spine category and description for known harness modules only', async () => {
+    const { ctx, inventory } = await harness()
+    // Both entries are disabled so the Loader skips module loading and never
+    // imports the real packages in this unit test.
+    const toolsId = await ctx.loader.create({
+      name: '@deepseek-ai/dsh-tools',
+      disabled: true,
+    })
+    const customId = await ctx.loader.create({
+      name: '@fixture/user-install',
+      disabled: true,
+    })
+
+    const entries = inventory.list().entries
+    expect(entries.find(entry => entry.entryId === toolsId)).toEqual({
+      entryId: toolsId,
+      moduleName: '@deepseek-ai/dsh-tools',
+      enabled: false,
+      fiberPhase: null,
+      category: 'core',
+      description: 'Host tool registry and presentation mode',
+    })
+    // Unknown modules project no category or description keys.
+    expect(entries.find(entry => entry.entryId === customId)).toEqual({
+      entryId: customId,
+      moduleName: '@fixture/user-install',
+      enabled: false,
+      fiberPhase: null,
+    })
   })
 })

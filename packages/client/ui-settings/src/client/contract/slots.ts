@@ -1,12 +1,12 @@
 /**
  * Settings slot contract — the canonical home of every settings slot type,
  * owned by the settings domain base rather than by the shell that renders
- * them (ui-settings-general, which occupies `sidebar.settings`). The shell has
- * zero copy of its own: ALL text (trigger label, panel title, header actions,
- * close aria, section content) arrives from registrants. A feature owns its
- * own settings pages — adding a setting never means editing the shell; copy
- * that belongs to no single feature (chrome, the General section) is owned by
- * ui-settings-general too.
+ * them (ui-settings-general, which occupies `sidebar.settings` and the routed
+ * settings page). The shell has zero copy of its own: ALL text (trigger label,
+ * page title, header actions, close aria, section content) arrives from
+ * registrants. A feature owns its own settings pages — adding a setting never
+ * means editing the shell; copy that belongs to no single feature (chrome, the
+ * General section) is owned by ui-settings-general too.
  */
 
 
@@ -15,20 +15,22 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /**
      * The sidebar-foot trigger row content: icon + label, supplied as slot
      * content (the accessible name comes from the content — rail state
-     * renders the label visually hidden). The shell renders the button
-     * chrome and owns open state. Absent contribution degrades to an
-     * icon-only button without an accessible name (broken-composition state;
-     * the shipped composition always registers the seat).
+     * renders the label visually hidden). The shell renders the button chrome
+     * and owns navigation: a click opens the settings route, and the button
+     * carries `aria-current` while that route is active. Absent contribution
+     * degrades to an icon-only button without an accessible name
+     * (broken-composition state; the shipped composition always registers the
+     * seat).
      */
     'settings.trigger': { kind: 'single'; scope: 'root'; owner: SettingsTriggerOwnerProps }
     /**
-     * The panel title text seat. Content renders inside the nav heading row;
-     * the dialog's accessible name points at that node via aria-labelledby.
-     * Absent contribution leaves the heading empty.
+     * The page title text seat. Content renders inside the top-bar heading;
+     * the page's `<h1>` owns that node, so the title reads as the page name to
+     * assistive technology. Absent contribution leaves the heading empty.
      */
     'settings.header': { kind: 'single'; scope: 'root'; owner: SettingsHeaderOwnerProps }
     /**
-     * Optional actions rendered in the content-column header before Close.
+     * Optional actions rendered in the top bar before the close control.
      * Registrants own visibility, behavior, copy, and failure presentation;
      * the shell supplies only the ordered render site.
      */
@@ -40,12 +42,14 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'settings.close': { kind: 'single'; scope: 'root'; owner: SettingsHeaderOwnerProps }
     /**
-     * One settings page per list entry. Registrant options carry the nav
-     * identity: `id` (section key, drives `only` filtering), `order` (nav
-     * position), `label` (registrant-localized display text — the registrant
-     * re-registers with fresh text on locale change, so the shell never
-     * subscribes locale state; the ledger bump doubles as the shell's
-     * re-render trigger). Sections render inside the panel content column.
+     * One settings section per list entry. Registrant options carry the nav
+     * identity: `id` (section key, also the URL section parameter, drives
+     * `only` filtering), `order` (nav position), `label` (registrant-localized
+     * display text — the registrant re-registers with fresh text on locale
+     * change, so the shell never subscribes locale state; the ledger bump
+     * doubles as the shell's re-render trigger). Sections render inside the
+     * page content column, activated by the URL parameter
+     * (`/settings/:section?`) with the first row as fallback.
      * (`settings.general.item`, declared by ui-settings-general's General
      * entry, is typed in the locale package — the common dependency of every
      * item registrant; the shell neither declares nor renders it.)
@@ -68,7 +72,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * chrome: a step wraps its visible content in its modal surface (including
      * `#root` inert ownership) and renders null while private facts are still
      * loading. The shell paints no chrome of its own, so a mounted-but-deciding
-     * step shows and blocks nothing.
+     * step shows and blocks nothing. The coordinator suppresses every step
+     * while the settings route is active — the covering page must not sit under
+     * a step's takeover chrome — and resumes on return.
      */
     'settings.onboarding': { kind: 'list'; scope: 'root'; owner: SettingsOnboardingOwnerProps }
     /**
@@ -113,14 +119,17 @@ export interface SettingsHeaderOwnerProps {
 }
 
 /**
- * Owner share of a settings section entry. The shell owns modal visibility
- * and navigation; a section's data arrives through its own inject faces and
+ * Owner share of a settings section entry. The shell owns page visibility and
+ * navigation; a section's data arrives through its own inject faces and
  * stores. `close` is the one shell affordance a section receives, for flows
- * that leave settings altogether (starting a session from a section) — the
- * onboarding coordinator's `openSection`/`complete` precedent, inverted.
+ * that leave settings altogether (starting a session from a section) — it
+ * navigates to the root, so the covering page is fully gone before the
+ * section's own flow (e.g. agent-preset 创造模式 mounting a new session view)
+ * takes the foreground. The onboarding coordinator's `openSection`/`complete`
+ * precedent, inverted.
  */
 export interface SettingsSectionOwnerProps {
-  /** Close the settings panel (the shell owns the open state). */
+  /** Leave the settings page entirely (navigate to the root `/`). */
   close: () => void
 }
 
@@ -130,6 +139,6 @@ export interface SettingsOnboardingOwnerProps {
   stepId: string
   /** Complete or skip this step and transfer ownership to the next entry. */
   complete: () => void
-  /** Open the settings panel directly on one registered section. */
+  /** Navigate to a settings section (`/settings/:id`). */
   openSection: (id: string) => void
 }
