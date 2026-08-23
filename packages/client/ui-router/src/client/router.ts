@@ -96,12 +96,18 @@ export class RouterService extends Service {
     this.ctx.effect(() => () => { this.offListen() }, 'ui-router: history listener')
   }
 
-  /** uSES getSnapshot: the current location (stable reference between navigations). */
+  /**
+   * uSES getSnapshot: the current location (stable reference between navigations).
+   * @returns the current location.
+   */
   getSnapshot(): RouterLocation {
     return this.location
   }
 
-  /** Monotonic navigation counter (uSES pairing with {@link getSnapshot}). */
+  /**
+   * Monotonic navigation counter (uSES pairing with {@link getSnapshot}).
+   * @returns the current navigation version.
+   */
   getVersion(): number {
     return this.version
   }

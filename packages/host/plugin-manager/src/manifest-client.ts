@@ -42,12 +42,21 @@ export class CatalogFetchError extends Error {
   }
 }
 
-/** Build a classified fetch failure. */
+/**
+ * Build a classified fetch failure.
+ * @param kind - the failure classification.
+ * @param message - one-line detail surfaced in the source status line.
+ * @returns the classified fetch error.
+ */
 export function catalogFetchError(kind: CatalogFetchErrorKind, message: string): CatalogFetchError {
   return new CatalogFetchError(kind, message)
 }
 
-/** Whether a thrown value is one of this transport's classified failures. */
+/**
+ * Whether a thrown value is one of this transport's classified failures.
+ * @param value - the value to classify.
+ * @returns true when the value is a {@link CatalogFetchError}.
+ */
 export function isCatalogFetchError(value: unknown): value is CatalogFetchError {
   return typeof value === 'object'
     && value !== null

@@ -315,7 +315,10 @@ export class TestSessions implements ISessions {
     })
   }
 
-  /** Physically delete a session (test double: same as remove; the host owns durability). */
+  /**
+   * Physically delete a session (test double: same as remove; the host owns durability).
+   * @param id - the session to delete.
+   */
   async delete(id: SessionId): Promise<void> {
     await this.remove(id)
   }

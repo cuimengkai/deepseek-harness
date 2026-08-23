@@ -33,7 +33,10 @@ export interface InstalledPluginRecord {
   readonly integrity: string
 }
 
-/** Absolute path of the provenance ledger. Resolved per call (home may change). */
+/**
+ * Absolute path of the provenance ledger. Resolved per call (home may change).
+ * @returns the absolute ledger path.
+ */
 export function ledgerPath(): string {
   return join(resolveDshHome(), 'plugins', 'installed.json')
 }

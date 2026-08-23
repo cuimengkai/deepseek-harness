@@ -50,6 +50,7 @@ interface JsonlTornMarker {
  * recovered from an incomplete final Zstandard frame.
  */
 export declare class JsonlSessionPersistence extends SessionPersistence implements PersistenceBackend<JsonlTornMarker> {
+  /** The plugin config this backend was constructed with. */
   config: Config
   readonly supportsRawArtifacts = true
   static inject: string[]

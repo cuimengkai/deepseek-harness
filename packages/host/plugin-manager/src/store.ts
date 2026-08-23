@@ -18,17 +18,30 @@ import type { InstalledPluginRecord } from './ledger.js'
 /** Ceiling on one package-manager invocation; full-tree npm installs take time. */
 const INSTALL_TIMEOUT_MS = 120_000
 
-/** Absolute root of the per-plugin store under an install prefix. */
+/**
+ * Absolute root of the per-plugin store under an install prefix.
+ * @param installPrefix - the plugin profile's install prefix.
+ * @returns the absolute store root path.
+ */
 export function storeRoot(installPrefix: string): string {
   return join(installPrefix, 'node_modules', '.dsh-plugins')
 }
 
-/** The per-plugin store directory name: the public name slugified. */
+/**
+ * The per-plugin store directory name: the public name slugified.
+ * @param name - the public plugin name.
+ * @returns the slugified store directory name.
+ */
 export function storeSlug(name: string): string {
   return name.replace(/^@/, '').replace(/[^a-z0-9]/gi, '-').toLowerCase()
 }
 
-/** Store paths for one public catalog name under an install prefix. */
+/**
+ * Store paths for one public catalog name under an install prefix.
+ * @param installPrefix - the plugin profile's install prefix.
+ * @param name - the public catalog name.
+ * @returns the store root and the plugin's slug directory under it.
+ */
 export function storePaths(installPrefix: string, name: string): { readonly storeRoot: string; readonly slugDir: string } {
   const root = storeRoot(installPrefix)
   return { storeRoot: root, slugDir: join(root, storeSlug(name)) }
@@ -42,6 +55,7 @@ export function storePaths(installPrefix: string, name: string): { readonly stor
  * @param spec - the install spec (a GitHub `user/repo`, registry spec, or tarball).
  * @param options - `ignoreScripts` appends `--ignore-scripts`; `cacheDir` (when
  * set) redirects npm's cache with `--cache` instead of the default `~/.npm`.
+ * @returns the argument vector, ending with the spec.
  */
 export function installArgv(
   spec: string,
@@ -237,7 +251,10 @@ export function removeModuleSymlink(installPrefix: string, moduleName: string): 
   unlinkSync(link)
 }
 
-/** Remove a plugin store directory recursively after uninstall. */
+/**
+ * Remove a plugin store directory recursively after uninstall.
+ * @param slugDir - the plugin's store directory to remove.
+ */
 export function removeStoreDir(slugDir: string): void {
   rmSync(slugDir, { recursive: true, force: true })
 }

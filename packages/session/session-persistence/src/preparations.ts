@@ -221,6 +221,7 @@ export class SessionPreparations<Source extends PreparedSource, CommitState> {
    * preparation: the resume holds the only live handle to the log, and a
    * delete racing it would either fail its publication or delete under it.
    * @param id - session identity to check.
+   * @returns true when the id is under a committing or reserved preparation.
    */
   isExclusivelyHeld(id: SessionId): boolean {
     const phase = this.entries.get(id)?.phase

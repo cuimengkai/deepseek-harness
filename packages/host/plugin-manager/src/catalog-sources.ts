@@ -73,7 +73,10 @@ interface CachedSource {
   readonly entries: readonly CatalogEntrySeed[]
 }
 
-/** Absolute cache directory, under the home plugins dir. Resolved per call. */
+/**
+ * Absolute cache directory, under the home plugins dir. Resolved per call.
+ * @returns the absolute cache directory path.
+ */
 export function cacheDirectory(): string {
   return join(resolveDshHome(), 'plugins', 'cache')
 }

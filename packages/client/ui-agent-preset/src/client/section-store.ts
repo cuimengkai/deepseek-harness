@@ -310,7 +310,11 @@ function rowsEqual(a: readonly ComposeRow[], b: readonly ComposeRow[]): boolean 
   })
 }
 
-/** Whether the draft differs from what the composer opened with. */
+/**
+ * Whether the draft differs from what the composer opened with.
+ * @param draft - the composer draft to compare.
+ * @returns true when any edited field differs from the original.
+ */
 export function composeDirty(draft: ComposeDraft): boolean {
   const { original } = draft
   return draft.id !== original.id
