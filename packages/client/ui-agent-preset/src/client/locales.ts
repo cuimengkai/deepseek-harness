@@ -19,8 +19,11 @@ export type AgentPresetSettingsKey =
   | 'palette' | 'paletteHint' | 'paletteSearch' | 'paletteLoading' | 'paletteUnavailable' | 'paletteEmpty'
   | 'compositionLabel' | 'canvasHint' | 'connectLabel'
   | 'canvasStart' | 'canvasEnd' | 'inspectorTitle' | 'rowId' | 'moveUp' | 'moveDown' | 'paletteCategoryOther'
+  | 'modelKinds' | 'modelKindText' | 'modelKindImage' | 'modelKindAudio' | 'modelKindEmbedding'
+  | 'modelKindProvider' | 'modelKindModel' | 'modelKindInherit' | 'modelKindsLoading' | 'modelKindsUnavailable'
   | 'paletteCollapse' | 'paletteExpand'
   | 'rowAdded' | 'alreadyAdded' | 'removeRow'
+  | 'nodeAddLabel' | 'nodeInsertLabel' | 'nodePickerTitle' | 'nodePickerAfter' | 'nodePickerEmpty'
   | 'save' | 'saving' | 'noRows' | 'unchanged' | 'overwriteWarning' | 'back'
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
   | 'idRequired' | 'idInvalid' | 'idTaken'
@@ -103,12 +106,27 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   rowId: 'Row id',
   moveUp: 'Move up',
   moveDown: 'Move down',
+  modelKinds: 'Models',
+  modelKindText: 'Text',
+  modelKindImage: 'Image',
+  modelKindAudio: 'Audio',
+  modelKindEmbedding: 'Embedding',
+  modelKindProvider: 'Provider',
+  modelKindModel: 'Model',
+  modelKindInherit: 'Inherit node default',
+  modelKindsLoading: 'Loading configured models…',
+  modelKindsUnavailable: 'No configured models yet — add providers and models in Settings first.',
   paletteCategoryOther: 'Other',
   paletteCollapse: 'Collapse plugins',
   paletteExpand: 'Open plugins',
   rowAdded: 'Added',
   alreadyAdded: 'Already in the composition',
   removeRow: 'Remove',
+  nodeAddLabel: 'Add a node after',
+  nodeInsertLabel: 'Insert a node between',
+  nodePickerTitle: 'Add a node',
+  nodePickerAfter: 'Add after',
+  nodePickerEmpty: 'No matching plugins.',
   save: 'Save',
   saving: 'Saving…',
   noRows: 'The composition needs at least one plugin.',
@@ -194,12 +212,27 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   rowId: '行标识',
   moveUp: '上移',
   moveDown: '下移',
+  modelKinds: '模型',
+  modelKindText: '文本',
+  modelKindImage: '图像',
+  modelKindAudio: '音频',
+  modelKindEmbedding: '向量',
+  modelKindProvider: '提供商',
+  modelKindModel: '模型',
+  modelKindInherit: '继承节点默认',
+  modelKindsLoading: '正在加载已配置的模型…',
+  modelKindsUnavailable: '还没有配置模型，请先在设置中添加提供商与模型。',
   paletteCategoryOther: '其他',
   paletteCollapse: '收起插件',
   paletteExpand: '展开插件',
   rowAdded: '已添加',
   alreadyAdded: '已在组合中',
   removeRow: '移除',
+  nodeAddLabel: '在其后添加节点',
+  nodeInsertLabel: '在节点之间插入',
+  nodePickerTitle: '添加节点',
+  nodePickerAfter: '在其后添加',
+  nodePickerEmpty: '没有匹配的插件。',
   save: '保存',
   saving: '正在保存…',
   noRows: '组合至少需要一个插件。',

@@ -96,8 +96,27 @@ describe('project-insight demo keyless smoke', () => {
         await seedFixtureProject(projectDir)
       },
       inspect: async (cwd) => {
-        const raw = await readFile(join(cwd, 'fixture-project', '.dsh', 'project-insight.json'), 'utf8')
-        persistedDoc = JSON.parse(raw) as ProjectInsightDoc
+        // Reassemble the committed document from its per-type layout: a meta
+        // file with the identity fields plus one `data.json` per scanned section.
+        const base = join(cwd, 'fixture-project', '.dsh', 'insight')
+        const readJson = async (rel: string): Promise<unknown> =>
+          JSON.parse(await readFile(join(base, rel), 'utf8'))
+        const meta = await readJson('meta.json') as Record<string, unknown>
+        persistedDoc = {
+          formatVersion: meta['formatVersion'],
+          rootName: meta['rootName'],
+          contentFingerprint: meta['contentFingerprint'],
+          statSignature: meta['statSignature'],
+          scannedAt: meta['scannedAt'],
+          sections: {
+            techStack: await readJson('tech-stack/data.json'),
+            moduleTopology: await readJson('module-topology/data.json'),
+            componentDependencies: await readJson('component-dependencies/data.json'),
+            components: await readJson('components/data.json'),
+            prompts: await readJson('prompts/data.json'),
+            agentTech: await readJson('agent-tech/data.json'),
+          },
+        } as unknown as ProjectInsightDoc
       },
     })
 
@@ -116,9 +135,10 @@ describe('project-insight demo keyless smoke', () => {
     expect(projectDir).not.toBe('')
     expect(persistedDoc).toBeDefined()
     const doc = persistedDoc!
-    expect(doc.formatVersion).toBe(1)
+    expect(doc.formatVersion).toBe(3)
     expect(doc.rootName).toBe('fixture-project')
     expect(doc.contentFingerprint).toMatch(/^[0-9a-f]{64}$/)
+    expect(doc.statSignature).toMatch(/^[0-9a-f]{64}$/)
     expect(typeof doc.scannedAt).toBe('number')
 
     const topologyPaths = doc.sections.moduleTopology.files.map(file => file.path)
@@ -161,5 +181,12 @@ describe('project-insight demo keyless smoke', () => {
     expect(doc.sections.agentTech.files).toContainEqual({
       path: '.claude/settings.json', kind: 'tool-config',
     })
+    // The v3 agent-tech section carries the embedded markdown collections:
+    // no skills or mcp configs are seeded, and the root prompt file is embedded.
+    expect(doc.sections.agentTech.skills).toEqual([])
+    expect(doc.sections.agentTech.mcp).toEqual([])
+    expect(doc.sections.agentTech.prompts).toEqual([
+      { name: 'review.prompt.md', path: 'prompts/review.prompt.md', markdown: '# Review checklist\n' },
+    ])
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 })

@@ -109,6 +109,13 @@ describe('validateFlow: structural rules', () => {
     )
   })
 
+  it('rejects a duplicate edge with a branch label, naming the label', () => {
+    expectErrors(
+      graph([start(), agent('a'), end()], [edge('start', 'a', 'true'), edge('start', 'a', 'true')]),
+      'labeled "true"',
+    )
+  })
+
   it('enforces start/end out-degree and branch labels', () => {
     expectErrors(graph([start(), agent('a'), agent('b'), end()], [edge('start', 'a'), edge('start', 'b'), edge('a', 'end'), edge('b', 'end')]), 'exactly one outgoing edge')
     expectErrors(graph([start(), agent('a'), end()], [edge('start', 'a'), edge('a', 'end'), edge('end', 'a')]), 'cannot have outgoing edges')
@@ -202,6 +209,41 @@ describe('validateFlow: branch-context exclusivity', () => {
       [start(), condition('c'), agent('t'), end()],
       [edge('start', 'c'), edge('c', 't', 'true'), edge('t', 'end'), edge('c', 'end', 'false')],
     ))
+  })
+
+  it('stops the analysis when a node accumulates over the branch-context cap', () => {
+    // A 129-condition chain whose every false arm converges on `m` delivers one
+    // distinct context per condition, so m crosses the 128-context cap mid-way.
+    const conditions = 129
+    const nodes: FlowNode[] = [start(), ...Array.from({ length: conditions }, (_, i) => condition(`c${i + 1}`)), end('m')]
+    const edges: FlowEdge[] = [edge('start', 'c1')]
+    for (let i = 1; i <= conditions; i++) {
+      const id = `c${i}`
+      edges.push(edge(id, i < conditions ? `c${i + 1}` : 'm', 'true'))
+      edges.push(edge(id, 'm', 'false'))
+    }
+    expectErrors(graph(nodes, edges), 'too complex')
+  })
+
+  it('reports the overflow from an agent feeding a full terminal', () => {
+    // 128 conditions each route a distinct false-arm context into m, filling its
+    // cap; the last condition's true arm passes a 129th distinct context through
+    // the single-edge agent g, so the overflow fires while g delivers to m.
+    const conditions = 128
+    const nodes: FlowNode[] = [
+      start(),
+      ...Array.from({ length: conditions }, (_, i) => condition(`c${i + 1}`)),
+      agent('g'),
+      end('m'),
+    ]
+    const edges: FlowEdge[] = [edge('start', 'c1')]
+    for (let i = 1; i <= conditions; i++) {
+      const id = `c${i}`
+      edges.push(edge(id, i < conditions ? `c${i + 1}` : 'g', 'true'))
+      edges.push(edge(id, 'm', 'false'))
+    }
+    edges.push(edge('g', 'm'))
+    expectErrors(graph(nodes, edges), 'too complex')
   })
 })
 

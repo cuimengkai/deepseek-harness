@@ -10,15 +10,289 @@
   padding: 16px 20px;
 }
 
-.count {
-  color: var(--dsw-alias-label-secondary);
-  font-size: 12px;
-  padding: 12px 20px 4px;
-}
-
+/* Every section body fills the conversation viewport; each body owns exactly
+   one scroll region (the graph canvas, the markdown panel, or sectionScroll). */
 .section {
   display: flex;
   flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The single internal scroll region for flow content (cards and tables). */
+.sectionScroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+/* ── dependency graph bodies: toolbar + full-bleed canvas + floating list ─── */
+
+.graphRoot {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.graphToolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 20px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.graphToolbarLeft {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  min-width: 0;
+}
+
+.graphToolbarRight {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+}
+
+.graphCanvas {
+  position: relative;
+  flex: 1 1 0%;
+  min-height: 0;
+}
+
+.graph {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-module-platform);
+}
+
+/* ── the React Flow topology node ──────────────────────────────────────── */
+
+/* The path card. Content defines the width; React Flow measures it and drives
+   the node's position/transform. */
+.topologyNode {
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  max-width: 220px;
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: var(--dsw-font-markdown-code-block-small);
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+  border: 1px solid var(--dsw-alias-separator-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+  word-break: break-all;
+}
+
+/* A dependency-cycle member: red border and tint. */
+.topologyCycle {
+  border-color: var(--dsw-static-red-500);
+  color: var(--dsw-static-red-500);
+  background: color-mix(in srgb, var(--dsw-static-red-500) 10%, transparent);
+}
+
+/* The hover ring, driven by the caller's hoverNodeId. */
+.topologyHover {
+  border-color: var(--dsw-alias-brand);
+  box-shadow: 0 0 0 1px var(--dsw-alias-brand);
+}
+
+/* The selected emphasis fill, driven by the caller's selectedNodeId. */
+.topologySelected {
+  border-color: var(--dsw-alias-brand);
+  background: color-mix(in srgb, var(--dsw-alias-brand) 14%, transparent);
+}
+
+/* The floating full list, semi-transparent over the canvas. */
+.listOverlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  width: 340px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 10;
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 88%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+}
+
+.listHeader {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: color-mix(in srgb, var(--dsw-alias-bg-module-platform) 80%, transparent);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.listBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.listRow {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: var(--dsw-font-markdown-code-block-small);
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.listRow:hover,
+.listRowHover {
+  background: color-mix(in srgb, var(--dsw-alias-bg-module-platform) 70%, transparent);
+}
+
+.listRowHover {
+  border-left-color: var(--dsw-alias-brand);
+}
+
+.listRowSelected {
+  border-left-color: var(--dsw-alias-brand);
+  background: color-mix(in srgb, var(--dsw-alias-brand) 14%, transparent);
+}
+
+.listRowDim {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.listRowMain {
+  color: var(--dsw-alias-label-primary);
+  word-break: break-all;
+}
+
+.listRowMeta {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+}
+
+.listClose {
+  border: none;
+  background: none;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+}
+
+.listClose:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+/* ── toolbar chrome ─────────────────────────────────────────────────────── */
+
+.toolbarButton,
+.toolbarButtonActive {
+  font-size: 12px;
+  line-height: 24px;
+  padding: 0 10px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.toolbarButton:hover,
+.toolbarButtonActive {
+  color: var(--dsw-alias-label-primary);
+}
+
+.toolbarButtonActive {
+  border-color: var(--dsw-alias-brand);
+}
+
+/* ── inventory cards and tables ─────────────────────────────────────────── */
+
+.card {
+  margin: 12px 20px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+.cardHead {
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-bg-module-platform);
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.cardBody {
+  padding: 10px 12px;
+}
+
+.table {
+  display: flex;
+  flex-direction: column;
+}
+
+.tableRow,
+.tableRowHead {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: var(--dsw-font-markdown-code-block-small);
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.tableRowHead {
+  padding: 6px 12px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  border-top: none;
+}
+
+.tableRowCol {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: var(--dsw-font-markdown-code-block-small);
+  border-top: 1px solid var(--dsw-alias-border-l1);
+}
+
+.tableRowMain {
+  color: var(--dsw-alias-label-primary);
+  word-break: break-all;
 }
 
 .row {
@@ -64,4 +338,67 @@
   font-size: 12px;
   font-family: var(--dsw-font-markdown-code-block-small);
   color: var(--dsw-alias-label-secondary);
+}
+
+/* ── agent-tech sub-tabs, document tabs, and the markdown viewer ─────────── */
+
+.subTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 10px 20px 0;
+}
+
+.subTab,
+.subTabActive {
+  font-size: 12px;
+  line-height: 26px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.subTab:hover {
+  color: var(--dsw-alias-label-primary);
+}
+
+.subTabActive {
+  color: var(--dsw-alias-label-primary);
+  border-color: var(--dsw-alias-brand);
+}
+
+/* One selected document's markdown, scrolled in its own pane. */
+.markdownPanel {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 20px;
+}
+
+/* The active document's path above its rendered markdown. */
+.markdownPath {
+  margin: 0 0 10px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  font-family: var(--dsw-font-markdown-code-block-small);
+  word-break: break-all;
+}
+
+/* The markdown viewer fills the remaining section height under the doc tabs. */
+.markdownBody {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* A muted total/limited line under a document list. */
+.footerNote {
+  flex: none;
+  padding: 6px 20px;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
 }

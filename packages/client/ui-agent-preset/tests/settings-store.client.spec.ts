@@ -356,15 +356,49 @@ describe('the new-session chip controller', () => {
     expect(writes).toEqual([{ ns: 'select', patch: 'minimal' }])
   })
 
-  it('drops the stage against a session that already started', async () => {
+  it('keeps the stage against a session that already started', async () => {
     const writes: Recorded[] = []
     const controller = chip(ROSTER, { id: 's1', blank: false, agentPreset: 'standard' }, { writes })
     await controller.load()
 
     await controller.select('minimal')
 
-    // The host enforces the same rule; the chip simply never asks.
+    // The host enforces the same rule, so the chip never asks — but the pick
+    // still names the NEXT session (a develop pick that precedes an import),
+    // so the stage is not spent.
     expect(writes).toEqual([])
+    expect(controller.store.getSnapshot().current).toBe('minimal')
+  })
+
+  it('carries the stage to the blank session a later connect produces', async () => {
+    const writes: Recorded[] = []
+    // Mutable current, so the test can move the flow onto the session an
+    // import just created.
+    let current: { id: string; blank: boolean; agentPreset?: string } | undefined
+      = { id: 's1', blank: false, agentPreset: 'standard' }
+    const api = {
+      agentPresets: {
+        list: () => Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { presets: ROSTER } } }),
+        select: (payload: { agentPreset: string }) => {
+          writes.push({ ns: 'select', patch: payload.agentPreset })
+          return Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { agentPreset: payload.agentPreset } } })
+        },
+      },
+    } as unknown as IApiClient
+    const controller = new AgentPresetSeatController(api, () => current as SeatSessionSummary | undefined)
+    await controller.load()
+
+    // Picked while the running session is current: the import flow's opening.
+    await controller.select('minimal')
+    expect(writes).toEqual([])
+    expect(controller.store.getSnapshot().current).toBe('minimal')
+
+    // The import's connect lands a fresh blank session; the stage reaches it.
+    current = { id: 's2', blank: true, agentPreset: 'standard' }
+    await controller.apply()
+
+    expect(writes).toEqual([{ ns: 'select', patch: 'minimal' }])
+    expect(controller.store.getSnapshot().current).toBe('minimal')
   })
 
   it('drops the stage when the session already runs it', async () => {

@@ -13,7 +13,7 @@ import type { Mock } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
-import { cascadePosition, chainAddModule, emptyChainGraph } from '../src/client/preset-graph.ts'
+import { cascadePosition, chainAddModule, emptyChainGraph, setAgentModelKind } from '../src/client/preset-graph.ts'
 import { AgentPresetLabel } from '../src/client/AgentPresetLabel.tsx'
 import type { AgentPresetLabelProps } from '../src/client/AgentPresetLabel.tsx'
 import { AgentPresetRow } from '../src/client/AgentPresetRow.tsx'
@@ -22,21 +22,49 @@ import { AgentPresetSeat } from '../src/client/AgentPresetSeat.tsx'
 import type { AgentPresetSeatProps } from '../src/client/AgentPresetSeat.tsx'
 import { AgentPresetComposer } from '../src/client/AgentPresetComposer.tsx'
 import type { AgentPresetComposerActions } from '../src/client/AgentPresetComposer.tsx'
-import type { ComposeDraft, ComposePalette, PresetRow } from '../src/client/section-store.ts'
+import type { ComposeDraft, ComposePalette, ModelCatalog, PresetRow } from '../src/client/section-store.ts'
 import type { AgentPresetSettingsState } from '../src/client/settings-store.ts'
 import type { AgentPresetSeatState } from '../src/client/seat-store.ts'
 import { en } from '../src/client/locales.ts'
+import type { FlowCanvasProps, FlowCanvasSurface } from '@deepseek-ai/dsh-client-ui-flow-editor/client'
 
 afterEach(cleanup)
 
-// jsdom has no pointer capture; the flow canvas's capture calls must be no-ops
-// so the drag/pan handlers run, and its DragEvent is not constructible, so
-// testing-library builds drop events from plain Event and loses clientX/Y.
-// MouseEvent is the browser's DragEvent base and carries the coordinates.
+// The composer drives the shared flow canvas (Part B rewrote it on React Flow,
+// whose gesture fidelity belongs to that package's own jsdom spec). These specs
+// assert the composer's wiring, so the canvas is a mock: it records the latest
+// surface and picker hooks, then renders the graph nodes as data-node-id
+// wrappers. Tests drive the surface and hooks directly and assert the rendered
+// chain through the wrappers.
+const flow: {
+  surface: FlowCanvasSurface | null
+  onAddNode: ((id: string) => void) | null
+  onInsertBetween: ((from: string, to: string) => void) | null
+} = { surface: null, onAddNode: null, onInsertBetween: null }
+
+vi.mock('@deepseek-ai/dsh-client-ui-flow-editor/client', async () => {
+  function MockCanvas(props: FlowCanvasProps) {
+    flow.surface = props.surface
+    flow.onAddNode = props.onAddNode ?? null
+    flow.onInsertBetween = props.onInsertBetween ?? null
+    const graph = props.surface.graph
+    if (graph === null) return null
+    return (
+      <div className="mock-canvas">
+        <div className="mock-canvas-bg" />
+        {graph.nodes.map(node => (
+          <div key={node.id} data-node-id={node.id}>{props.renderNode(node)}</div>
+        ))}
+      </div>
+    )
+  }
+  return { FlowCanvas: MockCanvas }
+})
+
 beforeEach(() => {
-  Element.prototype.setPointerCapture = () => {}
-  Element.prototype.releasePointerCapture = () => {}
-  Object.defineProperty(window, 'DragEvent', { configurable: true, value: window.MouseEvent })
+  flow.surface = null
+  flow.onAddNode = null
+  flow.onInsertBetween = null
 })
 
 /** A chain graph over the given modules, in cascade layout, as the composer edits. */
@@ -66,6 +94,28 @@ const ROSTER: readonly PresetRow[] = [
   { id: 'standard', trust: 'system', isDefault: true },
   { id: 'mine', trust: 'user', isDefault: false },
 ]
+
+/** The model catalog fixture: one group serving text and image, another audio and embedding. */
+const MODEL_CATALOG: ModelCatalog = {
+  status: 'ready',
+  groups: [
+    {
+      id: 'deepseek', name: 'DeepSeek',
+      models: [
+        { id: 'deepseek-chat', name: 'DeepSeek Chat', kinds: ['text'] },
+        { id: 'deepseek-vl', name: 'DeepSeek VL', kinds: ['image'] },
+      ],
+    },
+    {
+      id: 'local', name: 'Local',
+      models: [
+        { id: 'whisper', name: 'Whisper', kinds: ['audio'] },
+        { id: 'local-embed', name: 'Local Embed', kinds: ['embedding'] },
+      ],
+    },
+  ],
+  failures: [],
+}
 
 const ROW_READY: AgentPresetSettingsState = {
   status: 'ready',
@@ -467,12 +517,9 @@ describe('the drag-and-drop composer', () => {
     }
   }
 
-  /** The shared flow canvas's background, where drops and deselects land. */
-  function canvasBackground(): HTMLElement {
-    const content = document.querySelector('[data-view-x]')
-    const canvas = content?.parentElement ?? null
-    if (canvas === null) throw new Error('no flow canvas')
-    return canvas
+  /** Select one node through the canvas mock, as a click would. */
+  function selectNode(id: string): void {
+    act(() => { flow.surface!.selectNode(id) })
   }
 
   /** One node wrapper by its canvas id. */
@@ -487,20 +534,27 @@ describe('the drag-and-drop composer', () => {
     palette: ComposePalette | null = PALETTE,
     roster: readonly PresetRow[] = ROSTER,
     options: { handoff?: boolean } = {},
+    modelCatalog: ModelCatalog | null = MODEL_CATALOG,
+    addRowReturn?: string,
+    addNodeAtReturn?: string,
+    confirmReturns?: boolean,
   ) {
     const creatorDraft = options.handoff === true ? vi.fn() : undefined
     const actions: AgentPresetComposerActions = {
       closeComposer: vi.fn(),
       setComposerId: vi.fn(),
       setComposerName: vi.fn(),
-      addRow: vi.fn(),
-      addNodeAt: vi.fn(),
+      // The picker tests pin what id a picked module gets; the default is a
+      // void stub so the palette's click path asserts the call, not a value.
+      addRow: addRowReturn === undefined ? vi.fn() : vi.fn(() => addRowReturn),
+      addNodeAt: addNodeAtReturn === undefined ? vi.fn() : vi.fn(() => addNodeAtReturn),
       removeRow: vi.fn(),
       removeNode: vi.fn(),
       moveRow: vi.fn(),
       moveNode: vi.fn(),
       reorderNode: vi.fn(),
-      confirmCompose: vi.fn(() => Promise.resolve(true)),
+      updateAgentModelKind: vi.fn(),
+      confirmCompose: vi.fn(() => Promise.resolve(confirmReturns ?? true)),
       ...creatorDraft === undefined ? {} : { startCreatorDraft: creatorDraft },
     }
     // The handoff names the self-referential preset, so it appears only when
@@ -511,6 +565,7 @@ describe('the drag-and-drop composer', () => {
     render(<AgentPresetComposer
       draft={draft(state)}
       palette={palette}
+      modelCatalog={modelCatalog}
       roster={reachable}
       t={(key: keyof typeof en) => en[key]}
       actions={actions}
@@ -574,10 +629,8 @@ describe('the drag-and-drop composer', () => {
 
   it('drops a palette module on the canvas to append it', () => {
     const actions = renderComposer()
-    const data = dragData()
-    data.getData.mockReturnValue('@deepseek-ai/dsh-web-search')
 
-    fireEvent.drop(canvasBackground(), { clientX: 280, clientY: 40, dataTransfer: data })
+    act(() => { flow.surface!.addNodeAt('@deepseek-ai/dsh-web-search', { x: 280, y: 40 }) })
 
     // The drop IS the add: the surface appends the module at the graph point
     // it landed on, and the store selects the new node for the inspector.
@@ -586,15 +639,8 @@ describe('the drag-and-drop composer', () => {
 
   it('connects a port to run the dropped node after the source', () => {
     const actions = renderComposer({ graph: chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-read') })
-    const portOf = (nodeId: string): HTMLElement => {
-      const port = screen.getAllByRole('button', { name: en.connectLabel })
-        .find(candidate => candidate.closest('[data-node-id]')?.getAttribute('data-node-id') === nodeId)
-      if (port === undefined) throw new Error(`no port on ${nodeId}`)
-      return port
-    }
 
-    fireEvent.pointerDown(portOf('agent-1'), { pointerId: 1, clientX: 220, clientY: 30 })
-    fireEvent.pointerUp(nodeOf('agent-2'), { pointerId: 1, clientX: 440, clientY: 30 })
+    act(() => { flow.surface!.addEdge('agent-1', 'agent-2') })
 
     // The connect gesture IS the reorder: the chain relinks so the node the
     // gesture ended on runs right after the node the port came from.
@@ -603,12 +649,22 @@ describe('the drag-and-drop composer', () => {
 
   it('removes the selected node through the delete key', () => {
     const actions = renderComposer()
-    fireEvent.pointerDown(nodeOf('agent-1'), { pointerId: 1 })
-    fireEvent.pointerUp(nodeOf('agent-1'), { pointerId: 1 })
+    selectNode('agent-1')
 
-    fireEvent.keyDown(window, { key: 'Delete' })
+    act(() => { flow.surface!.removeNode('agent-1') })
 
     expect(actions.removeNode).toHaveBeenCalledWith('agent-1')
+  })
+
+  it('refuses to remove the chain terminals', () => {
+    const actions = renderComposer()
+
+    act(() => { flow.surface!.removeNode('start') })
+    act(() => { flow.surface!.removeNode('end') })
+
+    // The terminals are the composition's frame, not rows: a delete key
+    // reaching them is a no-op, never a mutation of the chain.
+    expect(actions.removeNode).not.toHaveBeenCalled()
   })
 
   it('renders an empty composition as the bare chain', () => {
@@ -626,8 +682,7 @@ describe('the drag-and-drop composer', () => {
     // out over the canvas only while a node is selected.
     expect(screen.queryByRole('heading', { name: en.inspectorTitle })).toBeNull()
 
-    fireEvent.pointerDown(nodeOf('agent-1'), { pointerId: 1 })
-    fireEvent.pointerUp(nodeOf('agent-1'), { pointerId: 1 })
+    selectNode('agent-1')
     const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
     expect(within(inspector).getByText(en.rowId)).toBeTruthy()
     expect(within(inspector).getByText('tool-bash')).toBeTruthy()
@@ -636,8 +691,7 @@ describe('the drag-and-drop composer', () => {
 
   it('moves the selected node through the inspector', () => {
     const actions = renderComposer({ graph: chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-read') })
-    fireEvent.pointerDown(nodeOf('agent-2'), { pointerId: 1 })
-    fireEvent.pointerUp(nodeOf('agent-2'), { pointerId: 1 })
+    selectNode('agent-2')
     const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
     // The last node cannot move down; moving it up is the point.
     const moveDown = within(inspector).getByRole('button', { name: en.moveDown })
@@ -650,8 +704,7 @@ describe('the drag-and-drop composer', () => {
 
   it('removes the selected node through the inspector', () => {
     const actions = renderComposer()
-    fireEvent.pointerDown(nodeOf('agent-1'), { pointerId: 1 })
-    fireEvent.pointerUp(nodeOf('agent-1'), { pointerId: 1 })
+    selectNode('agent-1')
     const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
 
     fireEvent.click(within(inspector).getByRole('button', { name: en.removeRow }))
@@ -659,19 +712,141 @@ describe('the drag-and-drop composer', () => {
     expect(actions.removeRow).toHaveBeenCalledWith('tool-bash')
   })
 
+  it('annotates a selected node with the palette category and description', () => {
+    renderComposer(
+      {},
+      {
+        status: 'ready',
+        modules: [
+          { moduleName: '@deepseek-ai/dsh-tool-bash', displayName: 'Bash', category: 'tool', description: 'Runs shell commands.' },
+        ],
+      },
+    )
+    selectNode('agent-1')
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    expect(within(inspector).getByText('tool')).toBeTruthy()
+    expect(within(inspector).getByText('Runs shell commands.')).toBeTruthy()
+  })
+
+  it('explains a node the palette does not know, by its row name', () => {
+    const bare = chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash')
+    // A composition the host served without a stable row id.
+    const bareGraph: FlowGraph = {
+      ...bare,
+      nodes: bare.nodes.map(node => node.type === 'agent'
+        ? { ...node, composition: { module: node.composition!.module } }
+        : node),
+    }
+    const actions = renderComposer(
+      { graph: bareGraph },
+      { status: 'ready', modules: [{ moduleName: '@deepseek-ai/dsh-web-search', displayName: 'Web Search' }] },
+    )
+    selectNode('agent-1')
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    // No inventory annotation: the name falls back to the module, and with no
+    // id the remove key names the module itself.
+    expect(within(inspector).getByText('Bash')).toBeTruthy()
+    expect(within(inspector).queryByText(en.rowId)).toBeNull()
+    fireEvent.click(within(inspector).getByRole('button', { name: en.removeRow }))
+    expect(actions.removeRow).toHaveBeenCalledWith('@deepseek-ai/dsh-tool-bash')
+  })
+
   it('deselects on a canvas-background click', () => {
     renderComposer()
-    fireEvent.pointerDown(nodeOf('agent-1'), { pointerId: 1 })
-    fireEvent.pointerUp(nodeOf('agent-1'), { pointerId: 1 })
+    selectNode('agent-1')
     const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
     expect(within(inspector).getByText('tool-bash')).toBeTruthy()
 
     // A click on the canvas background, not on a node, is an explicit deselect
     // and the inspector floats away again.
-    fireEvent.pointerDown(canvasBackground(), { pointerId: 2 })
-    fireEvent.pointerUp(canvasBackground(), { pointerId: 2 })
+    act(() => { flow.surface!.selectNode(null) })
 
     expect(screen.queryByRole('heading', { name: en.inspectorTitle })).toBeNull()
+  })
+
+  it('offers a provider and model picker per configured model kind', () => {
+    renderComposer()
+    selectNode('agent-1')
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    // The four kinds all have configured providers in the fixture, so all four
+    // rows appear, each pairing a provider select with a model select.
+    expect(within(inspector).getByText(en.modelKindText)).toBeTruthy()
+    expect(within(inspector).getByText(en.modelKindImage)).toBeTruthy()
+    expect(within(inspector).getByText(en.modelKindAudio)).toBeTruthy()
+    expect(within(inspector).getByText(en.modelKindEmbedding)).toBeTruthy()
+    expect(within(inspector).getAllByRole('combobox')).toHaveLength(8)
+  })
+
+  it('binds a provider through the picker, clearing a stale model', () => {
+    const actions = renderComposer()
+    selectNode('agent-1')
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    fireEvent.change(
+      within(inspector).getByLabelText(`${en.modelKindText} · ${en.modelKindProvider}`),
+      { target: { value: 'deepseek' } },
+    )
+
+    // A route is a provider/model pair: picking a provider also clears a model
+    // that was bound under the old one.
+    expect(actions.updateAgentModelKind).toHaveBeenNthCalledWith(1, 'agent-1', 'text', 'provider', 'deepseek')
+    expect(actions.updateAgentModelKind).toHaveBeenNthCalledWith(2, 'agent-1', 'text', 'model', '')
+  })
+
+  it('lists the models the chosen provider serves', () => {
+    const actions = renderComposer({
+      graph: setAgentModelKind(chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash'), 'agent-1', 'text', 'provider', 'deepseek'),
+    })
+    selectNode('agent-1')
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    const modelSelect = within(inspector).getByLabelText(`${en.modelKindText} · ${en.modelKindModel}`) as HTMLSelectElement
+    expect(modelSelect).toHaveProperty('disabled', false)
+    // The bound provider's models, filtered to the kind, are what the select offers.
+    expect([...modelSelect.options].map(option => option.value)).toEqual(['', 'deepseek-chat'])
+
+    fireEvent.change(modelSelect, { target: { value: 'deepseek-chat' } })
+
+    expect(actions.updateAgentModelKind).toHaveBeenCalledWith('agent-1', 'text', 'model', 'deepseek-chat')
+  })
+
+  it('inherits the node default through the placeholder option', () => {
+    const actions = renderComposer({
+      graph: setAgentModelKind(chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash'), 'agent-1', 'text', 'provider', 'deepseek'),
+    })
+    selectNode('agent-1')
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    fireEvent.change(
+      within(inspector).getByLabelText(`${en.modelKindText} · ${en.modelKindProvider}`),
+      { target: { value: '' } },
+    )
+
+    expect(actions.updateAgentModelKind).toHaveBeenNthCalledWith(1, 'agent-1', 'text', 'provider', '')
+    expect(actions.updateAgentModelKind).toHaveBeenNthCalledWith(2, 'agent-1', 'text', 'model', '')
+  })
+
+  it('reports the catalog loading and unavailable states', () => {
+    renderComposer({}, PALETTE, ROSTER, {}, { status: 'loading', groups: [], failures: [] })
+    selectNode('agent-1')
+    expect(within(screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!)
+      .getByText(en.modelKindsLoading)).toBeTruthy()
+    cleanup()
+
+    renderComposer({}, PALETTE, ROSTER, {}, { status: 'unavailable', groups: [], failures: [] })
+    selectNode('agent-1')
+    expect(within(screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!)
+      .getByText(en.modelKindsUnavailable)).toBeTruthy()
+    cleanup()
+
+    // A ready catalog with no configured providers reads as unavailable too.
+    renderComposer({}, PALETTE, ROSTER, {}, { status: 'ready', groups: [], failures: [] })
+    selectNode('agent-1')
+    expect(within(screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!)
+      .getByText(en.modelKindsUnavailable)).toBeTruthy()
   })
 
   it('collapses and reopens the palette overlay', () => {
@@ -793,6 +968,248 @@ describe('the drag-and-drop composer', () => {
     await waitFor(() => { expect(creatorDraft).toHaveBeenCalledTimes(1) })
     expect(actions.confirmCompose).not.toHaveBeenCalled()
   })
+
+  it('opens the node picker from a node add button, anchored on that node', () => {
+    renderComposer()
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+    act(() => { flow.onAddNode!('agent-1') })
+
+    // The node "+" opens the same picker as the palette, anchored so a pick
+    // inserts right after the node the button floated on.
+    const dialog = screen.getByRole('dialog', { name: en.nodePickerTitle })
+    expect(within(dialog).getByText(`${en.nodePickerAfter} agent-1`)).toBeTruthy()
+  })
+
+  it('opens the node picker from an edge insert button, anchored on the edge source', () => {
+    renderComposer({ graph: chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-read') })
+
+    act(() => { flow.onInsertBetween!('agent-1', 'agent-2') })
+
+    // Inserting between two nodes is inserting after the earlier one; the
+    // picker names the source as the anchor.
+    const dialog = screen.getByRole('dialog', { name: en.nodePickerTitle })
+    expect(within(dialog).getByText(`${en.nodePickerAfter} agent-1`)).toBeTruthy()
+  })
+
+  it('inserts a picked module right after the anchor node', () => {
+    const actions = renderComposer(
+      { graph: chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-read') },
+      PALETTE, ROSTER, {}, MODEL_CATALOG, 'agent-3',
+    )
+    act(() => { flow.onAddNode!('agent-1') })
+    const dialog = screen.getByRole('dialog', { name: en.nodePickerTitle })
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /@deepseek-ai\/dsh-web-search/ }))
+
+    expect(actions.addRow).toHaveBeenCalledWith('@deepseek-ai/dsh-web-search')
+    // The new node starts at the chain tail (index 2) and moves to follow
+    // agent-1 (slot 1).
+    expect(actions.moveRow).toHaveBeenCalledWith(2, 1)
+    // A picked node is the new selection, and the picker closes.
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('appends a picked module at the tail when anchored on the end terminal', () => {
+    const actions = renderComposer({}, PALETTE, ROSTER, {}, MODEL_CATALOG, 'agent-2')
+    act(() => { flow.onAddNode!('end') })
+    const dialog = screen.getByRole('dialog', { name: en.nodePickerTitle })
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /@deepseek-ai\/dsh-tool-read/ }))
+
+    // The end terminal keeps the tail: the append already put the new node
+    // last, so no chain move is needed.
+    expect(actions.addRow).toHaveBeenCalledWith('@deepseek-ai/dsh-tool-read')
+    expect(actions.moveRow).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('adds a picked module after start without a redundant move', () => {
+    const actions = renderComposer(
+      { graph: emptyChainGraph('my-agent', 'My agent') },
+      PALETTE, ROSTER, {}, MODEL_CATALOG, 'agent-1',
+    )
+    act(() => { flow.onAddNode!('start') })
+    const dialog = screen.getByRole('dialog', { name: en.nodePickerTitle })
+
+    fireEvent.click(within(dialog).getByRole('button', { name: /@deepseek-ai\/dsh-tool-bash/ }))
+
+    // The new node is the chain's first (slot 0) as added, so the start
+    // anchor needs no move either.
+    expect(actions.addRow).toHaveBeenCalledWith('@deepseek-ai/dsh-tool-bash')
+    expect(actions.moveRow).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('shows a plugin\'s one-line description on its node card', () => {
+    const described: ComposePalette = {
+      status: 'ready',
+      modules: [{ moduleName: '@deepseek-ai/dsh-tool-bash', displayName: 'Bash', description: '持久 bash 会话。' }],
+    }
+    renderComposer({}, described)
+
+    expect(within(nodeOf('agent-1')).getByText('持久 bash 会话。')).toBeTruthy()
+  })
+
+  it('drops an edge selection whose edge the graph no longer carries', () => {
+    renderComposer()
+
+    act(() => { flow.surface!.selectEdge('nope') })
+
+    // A selection outlives its edge only by accident: the id never existed in
+    // this graph, so it reads back as no selection.
+    expect(flow.surface!.selectedEdgeId).toBeNull()
+  })
+
+  it('swallows the removeEdge gesture for preset chains', () => {
+    const actions = renderComposer({ graph: chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-read') })
+
+    act(() => { flow.surface!.removeEdge('e-0') })
+
+    // A preset chain's edges are implicit in the row order, so the gesture is
+    // a no-op that only clears the edge selection.
+    expect(actions.removeNode).not.toHaveBeenCalled()
+    expect(flow.surface!.selectedEdgeId).toBeNull()
+  })
+
+  it('selects the node a canvas drop adds, for the inspector', () => {
+    const actions = renderComposer({}, PALETTE, ROSTER, {}, MODEL_CATALOG, undefined, 'agent-1')
+
+    act(() => { flow.surface!.addNodeAt('@deepseek-ai/dsh-web-search', { x: 280, y: 40 }) })
+
+    // The drop IS the add, and the add answers with the new node id — the
+    // surface selects it so it lands under the inspector, Dify-style.
+    expect(actions.addNodeAt).toHaveBeenCalledWith('@deepseek-ai/dsh-web-search', { x: 280, y: 40 })
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+    expect(within(inspector).getByText('tool-bash')).toBeTruthy()
+  })
+
+  it('selects the row a palette click adds, for the inspector', () => {
+    const actions = renderComposer({}, PALETTE, ROSTER, {}, MODEL_CATALOG, 'agent-1')
+    const palette = screen.getByRole('heading', { name: en.palette }).closest('aside')!
+
+    fireEvent.click(within(palette).getByText('@deepseek-ai/dsh-tool-read'))
+
+    expect(actions.addRow).toHaveBeenCalledWith('@deepseek-ai/dsh-tool-read')
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+    expect(within(inspector).getByText('tool-bash')).toBeTruthy()
+  })
+
+  it('hints the handoff when the composition is empty and Creator mode is reachable', () => {
+    renderComposer({ graph: emptyChainGraph('my-agent', 'My agent') }, PALETTE, ROSTER, { handoff: true })
+
+    expect(screen.getByText(en.handoffHint)).toBeTruthy()
+  })
+
+  it('keeps the draft in the composer when the handoff save is refused', async () => {
+    const actions = renderComposer({}, PALETTE, ROSTER, { handoff: true }, MODEL_CATALOG, undefined, undefined, false)
+    const creatorDraft = actions.startCreatorDraft as unknown as Mock
+
+    fireEvent.click(screen.getByRole('button', { name: en.handoff }))
+
+    await waitFor(() => { expect(actions.confirmCompose).toHaveBeenCalledTimes(1) })
+    expect(creatorDraft).not.toHaveBeenCalled()
+  })
+
+  it('renders nothing for flow-only nodes a preset composition never composes', () => {
+    renderComposer({
+      graph: {
+        id: 'my-agent', name: 'My agent',
+        nodes: [
+          { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+          { id: 'branch', type: 'condition', position: { x: 220, y: 0 }, expression: 'args.flag' },
+          { id: 'end', type: 'end', position: { x: 440, y: 0 } },
+          { id: 'orphan', type: 'agent', position: { x: 220, y: 120 }, prompt: '' },
+        ],
+        edges: [
+          { id: 'e-start', from: 'start', to: 'branch' },
+          { id: 'e-true', from: 'branch', to: 'end', label: 'true' },
+        ],
+      },
+    })
+
+    // The shared canvas knows condition/loop nodes, which a preset composition
+    // never composes; an agent node without a composition row is likewise not
+    // a row. Both render as empty cards on the stage.
+    expect(nodeOf('branch').textContent).toBe('')
+    expect(nodeOf('orphan').textContent).toBe('')
+  })
+
+  it('closes the node picker without picking', () => {
+    renderComposer()
+    act(() => { flow.onAddNode!('agent-1') })
+    const dialog = screen.getByRole('dialog', { name: en.nodePickerTitle })
+
+    fireEvent.click(within(dialog).getByRole('button', { name: en.close }))
+
+    expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('renders a bullet monogram for a module that published no display name', () => {
+    const blank: ComposePalette = {
+      status: 'ready',
+      modules: [{ moduleName: '@deepseek-ai/dsh-tool-bash', displayName: '' }],
+    }
+    renderComposer({}, blank)
+
+    // The display name is empty, so the node's monogram falls back to a bullet.
+    expect(within(nodeOf('agent-1')).getByText('•')).toBeTruthy()
+  })
+
+  it('refuses to drag a module already in the composition', () => {
+    renderComposer()
+    const data = dragData()
+    const palette = screen.getByRole('heading', { name: en.palette }).closest('aside')!
+
+    fireEvent.dragStart(within(palette).getByText('@deepseek-ai/dsh-tool-bash'), { dataTransfer: data })
+
+    expect(data.setData).not.toHaveBeenCalled()
+    expect(data.effectAllowed).toBe('none')
+  })
+
+  it('badges a palette module with its spine category', () => {
+    const categorized: ComposePalette = {
+      status: 'ready',
+      modules: [{ moduleName: '@deepseek-ai/dsh-tool-bash', displayName: 'Bash', category: 'shell' }],
+    }
+    renderComposer({}, categorized)
+    const palette = screen.getByRole('heading', { name: en.palette }).closest('aside')!
+
+    // The category names the palette group AND badges the module card.
+    expect(within(palette).getAllByText('shell')).toHaveLength(2)
+  })
+
+  it('moves the selected node down through the inspector', () => {
+    const actions = renderComposer({ graph: chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-read') })
+    selectNode('agent-1')
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    const moveDown = within(inspector).getByRole('button', { name: en.moveDown })
+    expect(moveDown).toHaveProperty('disabled', false)
+    fireEvent.click(moveDown)
+
+    expect(actions.moveRow).toHaveBeenCalledWith(0, 1)
+  })
+
+  it('serves text to a model that declared no kinds', () => {
+    const bare: ModelCatalog = {
+      status: 'ready',
+      groups: [{ id: 'deepseek', name: 'DeepSeek', models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat' }] }],
+      failures: [],
+    }
+    renderComposer(
+      {
+        graph: setAgentModelKind(chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash'), 'agent-1', 'text', 'provider', 'deepseek'),
+      },
+      PALETTE, ROSTER, {}, bare,
+    )
+    selectNode('agent-1')
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    // A model that declares no kinds serves text by default.
+    const modelSelect = within(inspector).getByLabelText(`${en.modelKindText} · ${en.modelKindModel}`) as HTMLSelectElement
+    expect([...modelSelect.options].map(option => option.value)).toEqual(['', 'deepseek-chat'])
+  })
 })
 
 describe('the read-only composer (a shipped preset\'s view)', () => {
@@ -805,7 +1222,7 @@ describe('the read-only composer (a shipped preset\'s view)', () => {
     ...over,
   })
 
-  function renderView(over: Partial<ComposeDraft> = {}) {
+  function renderView(over: Partial<ComposeDraft> = {}, modelCatalog: ModelCatalog | null = MODEL_CATALOG) {
     const actions: AgentPresetComposerActions = {
       closeComposer: vi.fn(),
       setComposerId: vi.fn(),
@@ -817,12 +1234,14 @@ describe('the read-only composer (a shipped preset\'s view)', () => {
       moveRow: vi.fn(),
       moveNode: vi.fn(),
       reorderNode: vi.fn(),
+      updateAgentModelKind: vi.fn(),
       confirmCompose: vi.fn(() => Promise.resolve(false)),
     }
     render(<AgentPresetComposer
       readOnly
       draft={viewDraft(over)}
       palette={PALETTE}
+      modelCatalog={modelCatalog}
       roster={ROSTER}
       t={(key: keyof typeof en) => en[key]}
       actions={actions}
@@ -857,21 +1276,77 @@ describe('the read-only composer (a shipped preset\'s view)', () => {
 
     // The shipped composition is the known-good copy source, so its chain is
     // legible but cannot be reordered or removed from. Selection still works —
-    // the inspector explains a node — but the editable affordances are gone.
+    // the inspector explains a node — but the editable affordances are gone:
+    // the canvas receives no picker hooks, so no node "+" and no edge "+".
     expect(document.querySelector('[data-node-id="agent-1"]')).toBeTruthy()
     expect(screen.queryByRole('button', { name: en.connectLabel })).toBeNull()
     expect(screen.queryByRole('button', { name: en.removeRow })).toBeNull()
+    expect(flow.onAddNode).toBeNull()
+    expect(flow.onInsertBetween).toBeNull()
   })
 
   it('explains a selected node without the edit actions', () => {
     renderView()
 
-    fireEvent.pointerDown(document.querySelector('[data-node-id="agent-1"]') as HTMLElement, { pointerId: 1 })
+    act(() => { flow.surface!.selectNode('agent-1') })
     const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
     expect(within(inspector).getByText(en.rowId)).toBeTruthy()
     expect(within(inspector).queryByRole('button', { name: en.moveUp })).toBeNull()
     expect(within(inspector).queryByRole('button', { name: en.moveDown })).toBeNull()
     expect(within(inspector).queryByRole('button', { name: en.removeRow })).toBeNull()
+  })
+
+  it('shows the model routes without pickers in the read-only view', () => {
+    renderView({ graph: setAgentModelKind(viewDraft().graph, 'agent-1', 'text', 'provider', 'deepseek') })
+
+    act(() => { flow.surface!.selectNode('agent-1') })
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    // The bound route reads as provider / model; every unbound kind reads as
+    // inherit, and nothing here is a picker.
+    expect(within(inspector).getByText(`DeepSeek / ${en.modelKindInherit}`)).toBeTruthy()
+    expect(within(inspector).getAllByText(en.modelKindInherit)).toHaveLength(3)
+    expect(within(inspector).queryByRole('combobox')).toBeNull()
+  })
+
+  it('shows a fully bound route by provider and model names', () => {
+    const routed = setAgentModelKind(
+      setAgentModelKind(viewDraft().graph, 'agent-1', 'text', 'provider', 'deepseek'),
+      'agent-1', 'text', 'model', 'deepseek-chat',
+    )
+    renderView({ graph: routed })
+    act(() => { flow.surface!.selectNode('agent-1') })
+
+    // Both sides of the route resolve against the catalog, so the read-only
+    // text names the provider and the model rather than their raw ids.
+    expect(screen.getByText('DeepSeek / DeepSeek Chat')).toBeTruthy()
+  })
+
+  it('resolves a bound model under an inherited provider', () => {
+    renderView({ graph: setAgentModelKind(viewDraft().graph, 'agent-1', 'text', 'model', 'deepseek-chat') })
+
+    act(() => { flow.surface!.selectNode('agent-1') })
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    // The route reads provider / model; a provider the node never bound reads
+    // as inherit, and the model resolves raw because no group hosts an
+    // inherited provider.
+    expect(within(inspector).getByText(`${en.modelKindInherit} / deepseek-chat`)).toBeTruthy()
+  })
+
+  it('falls back to the raw route when the catalog knows neither side', () => {
+    const routed = setAgentModelKind(
+      setAgentModelKind(viewDraft().graph, 'agent-1', 'text', 'provider', 'nope'),
+      'agent-1', 'text', 'model', 'x',
+    )
+    renderView({ graph: routed })
+
+    act(() => { flow.surface!.selectNode('agent-1') })
+    const inspector = screen.getByRole('heading', { name: en.inspectorTitle }).closest('aside')!
+
+    // A provider and model the catalog does not serve resolve to themselves;
+    // the read-only view never guesses a display name for an unknown route.
+    expect(within(inspector).getByText('nope / x')).toBeTruthy()
   })
 
   it('closes through Back', () => {

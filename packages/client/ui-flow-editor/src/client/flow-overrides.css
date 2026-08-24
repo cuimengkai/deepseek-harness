@@ -1,0 +1,64 @@
+/* Design-token overrides for the vendored React Flow base stylesheet. The
+   library ships neutral light colors; this layer restyles the surfaces that
+   show through (canvas background, edges, controls, minimap) from the app's
+   tokens so the canvas follows the host theme. Node cards and edge chips are
+   caller-owned and styled in FlowCanvas.module.css. */
+
+.react-flow {
+  background-color: var(--dsw-alias-bg-base);
+  background-image: radial-gradient(
+    circle,
+    var(--dsw-alias-separator-primary) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+/* The pan cursor: grab on the pane, grabbing once a pan commits. React Flow
+   toggles the `dragging` class on the pane while the pointer is down. */
+.react-flow__pane {
+  cursor: grab;
+}
+
+.react-flow__pane.dragging {
+  cursor: grabbing;
+}
+
+.react-flow__node {
+  cursor: grab;
+}
+
+.react-flow__node.dragging {
+  cursor: grabbing;
+}
+
+/* Unselected edge paths rest on the separator color; selection is the
+   brand-accent stroke applied by FlowCanvas.module.css. */
+.react-flow__edge-path {
+  stroke: var(--dsw-alias-separator-primary);
+}
+
+.react-flow__controls {
+  border: 1px solid var(--dsw-alias-separator-primary);
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.react-flow__controls-button {
+  border-bottom: 1px solid var(--dsw-alias-separator-primary);
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+}
+
+.react-flow__controls-button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow__minimap {
+  border: 1px solid var(--dsw-alias-separator-primary);
+  border-radius: 8px;
+}

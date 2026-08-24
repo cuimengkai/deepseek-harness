@@ -1536,9 +1536,10 @@ export function createFixtureFaces(options: FixtureOptions = {}): FixtureWorld {
  * literals stay narrow against the contract unions.
  */
 const FIXTURE_INSIGHT_DOC: ProjectInsightDoc = {
-  formatVersion: 1,
+  formatVersion: 3,
   rootName: 'fixture',
   contentFingerprint: 'fixture-content-fingerprint',
+  statSignature: 'fixture-stat-signature',
   scannedAt: 0,
   sections: {
     techStack: {
@@ -1566,9 +1567,27 @@ const FIXTURE_INSIGHT_DOC: ProjectInsightDoc = {
       count: 1,
     },
     agentTech: {
-      files: [{ path: 'AGENTS.md', kind: 'instructions' }],
+      files: [
+        { path: 'AGENTS.md', kind: 'instructions' },
+        { path: '.mcp.json', kind: 'tool-config' },
+      ],
       tools: [{ name: 'bash', path: 'AGENTS.md' }],
-      count: 1,
+      count: 2,
+      skills: [{
+        name: 'deploy',
+        path: '.agents/skills/deploy/SKILL.md',
+        markdown: '# Deploy\n\nShip the current branch to production with a single command.',
+      }],
+      mcp: [{
+        name: '.mcp.json',
+        path: '.mcp.json',
+        markdown: '```json\n{\n  "mcpServers": {\n    "fixture": {\n      "command": "npx",\n      "env": {\n        "TOKEN": "<redacted>"\n      }\n    }\n  }\n}\n```',
+      }],
+      prompts: [{
+        name: 'AGENTS.md',
+        path: 'AGENTS.md',
+        markdown: '# Harness Rules\n\nFollow the repository rules when touching packages.',
+      }],
     },
   },
 }

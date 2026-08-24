@@ -18,7 +18,7 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { DiscoveredModelView, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
+import { formatCapacity, parseCapacity, ModalityToggle, stringList } from './DeepSeekModelsEditor.tsx'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import { messageOf } from './store.ts'
 import type { en } from './locales.ts'
@@ -116,6 +116,9 @@ function IconTrash(): ReactNode {
 /** The two token counts edited as K/M-suffixed text behind a row's disclosure. */
 type CapacityField = 'contextWindow' | 'maxTokens'
 
+/** The request modalities a pi-ai model entry may declare (`MODALITIES` in pi-ai). */
+const MODALITY_OPTIONS = ['text', 'image'] as const
+
 /**
  * What an empty capacity field is worth, shown as its placeholder so a row left
  * blank does not read as a model with no capacity at all.
@@ -144,8 +147,10 @@ function capacitySpelling(value: number | undefined): string {
 }
 
 /**
- * Adopt a candidate, keeping whatever the provider disclosed (kinds included,
- * so a discovery that reports roles keeps them in the stored profile).
+ * Adopt a candidate, keeping whatever the provider disclosed. The modalities
+ * land on the pi-ai profile's own field — `input`, not the wire-neutral
+ * `inputModalities` — because that is the key pi-ai's schema reads, and the
+ * wire has no `kinds` counterpart in a pi-ai profile at all.
  */
 function adopt(candidate: DiscoveredModelView): ModelDraft {
   return {
@@ -153,8 +158,7 @@ function adopt(candidate: DiscoveredModelView): ModelDraft {
     ...candidate.name === undefined ? {} : { name: candidate.name },
     ...candidate.contextWindow === undefined ? {} : { contextWindow: candidate.contextWindow },
     ...candidate.maxTokens === undefined ? {} : { maxTokens: candidate.maxTokens },
-    ...candidate.inputModalities === undefined ? {} : { inputModalities: [...candidate.inputModalities] },
-    ...candidate.kinds === undefined ? {} : { kinds: [...candidate.kinds] },
+    ...candidate.inputModalities === undefined ? {} : { input: [...candidate.inputModalities] },
   }
 }
 
@@ -215,7 +219,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     })
   }
 
-  const patch = (index: number, next: Record<string, string | number | undefined>): void => {
+  const patch = (index: number, next: Record<string, string | number | readonly string[] | undefined>): void => {
     onChange(models.map((model, at) => {
       if (at !== index) return model
       // Rebuilt rather than spread over: an emptied optional field has to leave
@@ -434,6 +438,20 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
                   />
                 </label>
+                <ModalityToggle
+                  label={t('inputModalities')}
+                  options={MODALITY_OPTIONS}
+                  selected={stringList(model['input'])}
+                  // A hand-added row's effective default is the route's
+                  // text-only fallback, so "image" added to a fresh row means
+                  // multimodal rather than a model that accepts only images.
+                  fallback={['text']}
+                  disabled={disabled}
+                  // Clearing every box removes the key, which pi-ai reads as
+                  // "no answer here" so the installed catalog entry's
+                  // modalities — or the route default — apply.
+                  onChange={(next) => { patch(index, { input: next.length === 0 ? undefined : next }) }}
+                />
               </div>
             )
             : null}

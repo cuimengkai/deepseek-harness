@@ -6,11 +6,12 @@
  * The service is inert outside develop-mode sessions: the auto-scan triggers
  * only when a session's resolved agent preset is in `config.autoScanPresets`
  * (default `['develop']`) AND the session carries a working directory. A scan
- * commits `<root>/.dsh/project-insight.json` atomically and, only after that
- * commit, emits `project-insight/updated` for the sessions waiting on that
- * root — the commit-point rule keeps the event a proof the document is
- * readable. A fresh document (same content fingerprint) is never rewritten and
- * produces no event, so re-opening an already-scanned project is a no-op.
+ * commits `<root>/.dsh/insight/` — a meta file plus six typed section files —
+ * atomically and, only after that commit, emits `project-insight/updated` for
+ * the sessions waiting on that root — the commit-point rule keeps the event a
+ * proof the document is readable. A fresh document (same stat signature) is
+ * never rewritten and produces no event, so re-opening an already-scanned
+ * project is a no-op.
  * @module @deepseek-ai/dsh-project-insight/service
  */
 
@@ -20,7 +21,7 @@ import z from '@deepseek-ai/schemastery'
 import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
 import { MAX_FINGERPRINT_FILES } from './schema.ts'
-import { PROJECT_INSIGHT_DOC_REL, readDocument, writeDocument } from './fingerprint.ts'
+import { PROJECT_INSIGHT_META_REL, ProjectInsightVersionError, readDocument, writeDocument } from './fingerprint.ts'
 import { findProjectRoot } from './paths.ts'
 import { scanProject, type ScanSummary } from './scanner.ts'
 import { errorMessage } from './error.ts'
@@ -123,12 +124,15 @@ export class ProjectInsight extends Service {
   /**
    * Read the stored document for a working directory, without scanning.
    *
-   * Resolves the project root upward from `cwd`, reads `.dsh/project-insight.json`,
-   * and reports fresh/stale by recomputing the content fingerprint. An
-   * over-cap, unparsable, or wrong-version document is a `'error'` result, not
-   * an absent one.
+   * Resolves the project root upward from `cwd`, reads the committed `.dsh/insight/`
+   * document, and reports fresh/stale by recomputing the stat-only structural
+   * signature. An over-cap, unparsable, or missing-section document is a `'error'`
+   * result, not an absent one. A document under an older `formatVersion` is the
+   * one recoverable case: it reads `'stale'` and schedules a debounced background
+   * rebuild, so a format bump self-heals an existing project's committed doc
+   * instead of stranding it in an error state.
    * @param cwd - absolute working directory to resolve the project root from.
-   * @param signal - aborts the fingerprint walk.
+   * @param signal - aborts the stat walk.
    * @returns the document state and, when present, the parsed document.
    */
   async read(cwd: string, signal?: AbortSignal): Promise<ProjectInsightReadResult> {
@@ -139,6 +143,10 @@ export class ProjectInsight extends Service {
       return { status: existing.status, root: basename(root), doc: existing.doc }
     } catch (error) {
       signal?.throwIfAborted()
+      if (error instanceof ProjectInsightVersionError) {
+        this.scheduleScan(root)
+        return { status: 'stale', root: basename(root) }
+      }
       return { status: 'error', root: basename(root), error: errorMessage(error) }
     }
   }
@@ -149,7 +157,9 @@ export class ProjectInsight extends Service {
    * A fresh stored document is left untouched (`'unchanged'`); otherwise the
    * deterministic scanner rebuilds it, the document is written atomically, and
    * — only after the write commits — `project-insight/updated` is emitted for
-   * the caller's session.
+   * the caller's session. A stored document that cannot be read (wrong version,
+   * over-cap, missing section, unparsable) is treated as absent, so a scan is
+   * the operation that repairs it.
    * @param cwd - absolute working directory to resolve the project root from.
    * @param sessionId - session to notify at the commit point; absent skips the event.
    * @param signal - aborts the scan.
@@ -158,17 +168,17 @@ export class ProjectInsight extends Service {
   async scan(cwd: string, sessionId?: SessionId, signal?: AbortSignal): Promise<ProjectInsightScanResult> {
     const root = await findProjectRoot(cwd)
     try {
-      const existing = await readDocument(root, MAX_FINGERPRINT_FILES, signal)
+      const existing = await this.storedDocument(root, signal)
       if (existing?.status === 'fresh') {
-        return { status: 'unchanged', root: basename(root), path: PROJECT_INSIGHT_DOC_REL }
+        return { status: 'unchanged', root: basename(root), path: PROJECT_INSIGHT_META_REL }
       }
       const { doc, summary } = await scanProject(root, signal)
       await writeDocument(root, doc)
       if (sessionId !== undefined) this.ctx.emit('project-insight/updated', sessionId)
-      return { status: 'scanned', root: basename(root), path: PROJECT_INSIGHT_DOC_REL, summary }
+      return { status: 'scanned', root: basename(root), path: PROJECT_INSIGHT_META_REL, summary }
     } catch (error) {
       signal?.throwIfAborted()
-      return { status: 'error', root: basename(root), path: PROJECT_INSIGHT_DOC_REL, error: errorMessage(error) }
+      return { status: 'error', root: basename(root), path: PROJECT_INSIGHT_META_REL, error: errorMessage(error) }
     }
   }
 
@@ -196,12 +206,15 @@ export class ProjectInsight extends Service {
   /**
    * Debounce one root's scan, joining the session to its waiting set.
    * A root with an in-flight scan or a pending timer covers the session.
+   * A `sessionId` is optional because a wrong-version read schedules its own
+   * rebuild without a session to notify; the commit point then only serves
+   * sessions that were already waiting.
    * @param root - absolute project root to scan.
-   * @param sessionId - session to notify when the scan commits.
+   * @param sessionId - session to notify when the scan commits, if any.
    */
-  private scheduleScan(root: string, sessionId: SessionId): void {
+  private scheduleScan(root: string, sessionId?: SessionId): void {
     const waiting = this.waiting.get(root) ?? new Set<SessionId>()
-    waiting.add(sessionId)
+    if (sessionId !== undefined) waiting.add(sessionId)
     this.waiting.set(root, waiting)
     if (this.inflight.has(root)) return
     if (this.timers.has(root)) return
@@ -210,6 +223,27 @@ export class ProjectInsight extends Service {
       void this.runScan(root)
     }, this.scanDebounceMs)
     this.timers.set(root, timer)
+  }
+
+  /**
+   * Read the stored document for a scan decision, treating an unreadable
+   * stored document (wrong version, over-cap, missing section, unparsable) as
+   * absent — the scan is the rebuild that repairs it. Only an aborted read
+   * propagates.
+   * @param root - absolute project root to read.
+   * @param signal - aborts the stored-document read.
+   * @returns the stored document, or `undefined` when absent or unreadable.
+   */
+  private async storedDocument(
+    root: string,
+    signal?: AbortSignal,
+  ): Promise<{ doc: ProjectInsightDoc; status: 'fresh' | 'stale' } | undefined> {
+    try {
+      return await readDocument(root, MAX_FINGERPRINT_FILES, signal)
+    } catch {
+      signal?.throwIfAborted()
+      return undefined
+    }
   }
 
   /**
@@ -224,7 +258,7 @@ export class ProjectInsight extends Service {
   private runScan(root: string): Promise<void> {
     const pending = (async () => {
       try {
-        const existing = await readDocument(root, MAX_FINGERPRINT_FILES)
+        const existing = await this.storedDocument(root)
         if (existing?.status === 'fresh') return
         const { doc } = await scanProject(root)
         await writeDocument(root, doc)

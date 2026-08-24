@@ -444,6 +444,18 @@
   overflow-wrap: anywhere;
 }
 
+/* One node card line for the inventory's one-line description, clamped like
+   the palette card's so a long line never stretches the chain node. */
+.nodeDesc {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--dsw-alias-label-tertiary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* The chain's endpoints, Dify-style: Start carries the brand, End the warn
    amber, so the pipeline's direction is legible at a glance. Each terminal
    fills the flow canvas's node wrapper, so it reads as the same card size as
@@ -536,6 +548,58 @@
   padding-top: 4px;
 }
 
+/* The inspector's model-kind picker: a stacked row per kind — label, provider
+   select, model select — so the four kinds stay scannable in the narrow
+   inspector and a bound route reads as one column. */
+.inspectorSubhead {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.modelKinds {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.modelKindRow {
+  width: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modelKindLabel {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.modelKindSelect {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+}
+
+.modelMuted {
+  margin: 0;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
 .deleteConfirm {
   color: var(--dsw-alias-state-error-primary);
 }
@@ -563,4 +627,55 @@
   justify-content: flex-end;
   gap: 8px;
   padding-top: 4px;
+}
+
+/* The node picker dialog: wider than the default modal, and the module list
+   scrolls inside it instead of growing the dialog past the viewport. */
+.pickerModal {
+  width: min(520px, calc(100vw - 40px));
+  max-height: min(560px, calc(100vh - 80px));
+}
+
+.pickerContent {
+  min-height: 0;
+}
+
+.pickerGroups {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding-right: 2px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* One picker card: the palette card's visual as a button, since the picker
+   adds on click rather than dragging. Spent modules keep the palette's muted
+   treatment. */
+.pickerCard {
+  width: 100%;
+  box-sizing: border-box;
+  appearance: none;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 10px;
+  transition: border-color .16s;
+}
+
+.pickerCard:hover:not(:disabled) {
+  border-color: var(--dsw-alias-label-dimmed);
+}
+
+.pickerCard:disabled {
+  cursor: default;
 }

@@ -283,4 +283,35 @@ describe('compileFlow: embedded sub-graphs', () => {
     const g = embeddingGraph(subGraph())
     expect(compileFlow(g).script).toBe(compileFlow(g).script)
   })
+
+  it('compiles an embedding node that is a terminal (no outgoing edge)', () => {
+    const embed: FlowAgentNode = { id: 'e', type: 'agent', position: { x: 0, y: 0 }, prompt: '', subgraph: subGraph() }
+    const { script } = compileFlow(graph([start(), embed], [edge('start', 'e')]))
+    expect(script).toContain('await visit("e-sub-start")')
+    expect(script).toContain('return OUT')
+  })
+
+  it('compiles an embedding node that fans out to multiple targets', () => {
+    const embed: FlowAgentNode = { id: 'e', type: 'agent', position: { x: 0, y: 0 }, prompt: '', subgraph: subGraph() }
+    const outer = graph([start(), embed, agent('t1'), agent('t2')], [edge('start', 'e'), edge('e', 't1'), edge('e', 't2')])
+    const { script } = compileFlow(outer)
+    expect(script).toContain('await visit("e-sub-start")')
+    expect(script).toContain('return await parallel([() => visit("t1"), () => visit("t2")])')
+  })
+
+  it('refuses to compile a condition whose edges are not one true and one false', () => {
+    const g = graph(
+      [start(), condition('c'), agent('t'), agent('f')],
+      [edge('start', 'c'), edge('c', 't', 'true'), edge('c', 'f', 'true')],
+    )
+    expect(() => compileFlow(g)).toThrow(/missing a true\/false edge/)
+  })
+
+  it('refuses to compile a loop whose edges are not one body and one after', () => {
+    const g = graph(
+      [start(), loop('l'), agent('body'), agent('after')],
+      [edge('start', 'l'), edge('l', 'body', 'body'), edge('l', 'after', 'body')],
+    )
+    expect(() => compileFlow(g)).toThrow(/missing a body\/after edge/)
+  })
 })

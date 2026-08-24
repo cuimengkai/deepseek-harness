@@ -16,8 +16,45 @@ import { AgentPresetSection } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionProps } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionState, ComposeDraft, ComposePalette, CopyDraft } from '../src/client/section-store.ts'
 import { en } from '../src/client/locales.ts'
+import type { FlowCanvasProps, FlowCanvasSurface } from '@deepseek-ai/dsh-client-ui-flow-editor/client'
 
 afterEach(cleanup)
+
+// The composer drives the shared flow canvas (Part B rewrote it on React Flow,
+// whose gesture fidelity belongs to that package's own jsdom spec). These specs
+// assert the section's wiring, so the canvas is a mock: it records the latest
+// surface and picker hooks, then renders the graph nodes as data-node-id
+// wrappers that the design-page assertions read.
+const flow: {
+  surface: FlowCanvasSurface | null
+  onAddNode: ((id: string) => void) | null
+  onInsertBetween: ((from: string, to: string) => void) | null
+} = { surface: null, onAddNode: null, onInsertBetween: null }
+
+vi.mock('@deepseek-ai/dsh-client-ui-flow-editor/client', async () => {
+  function MockCanvas(props: FlowCanvasProps) {
+    flow.surface = props.surface
+    flow.onAddNode = props.onAddNode ?? null
+    flow.onInsertBetween = props.onInsertBetween ?? null
+    const graph = props.surface.graph
+    if (graph === null) return null
+    return (
+      <div className="mock-canvas">
+        <div className="mock-canvas-bg" />
+        {graph.nodes.map(node => (
+          <div key={node.id} data-node-id={node.id}>{props.renderNode(node)}</div>
+        ))}
+      </div>
+    )
+  }
+  return { FlowCanvas: MockCanvas }
+})
+
+beforeEach(() => {
+  flow.surface = null
+  flow.onAddNode = null
+  flow.onInsertBetween = null
+})
 
 const READY: AgentPresetSectionState = {
   status: 'ready',
@@ -32,6 +69,7 @@ const READY: AgentPresetSectionState = {
   view: null,
   composer: null,
   palette: null,
+  modelCatalog: null,
   pendingDelete: null,
   deleting: false,
   revealedPaths: {},
@@ -275,11 +313,17 @@ describe('the preset list', () => {
     fireEvent.click(within(rowFor('mine')).getByRole('button', { name: `${en.openLocation}: mine` }))
     fireEvent.click(within(rowFor('mine')).getByRole('button', { name: `${en.duplicate}: mine` }))
     fireEvent.click(within(rowFor('standard')).getByRole('button', { name: `${en.view}: ${en.presetStandardName}` }))
+    // The composer entry creates from nothing; a custom row's edit reopens its
+    // own composition in place.
+    fireEvent.click(screen.getByRole('button', { name: en.newAgent }))
+    fireEvent.click(within(rowFor('mine')).getByRole('button', { name: `${en.compose}: mine` }))
 
     expect(actions.makeDefault).toHaveBeenCalledWith('mine')
     expect(actions.openLocation).toHaveBeenCalledWith('mine')
     expect(actions.beginCopy).toHaveBeenCalledWith('mine')
     expect(actions.view).toHaveBeenCalledWith('standard')
+    expect(actions.beginCompose).toHaveBeenCalledWith(null)
+    expect(actions.beginCompose).toHaveBeenCalledWith('mine')
   })
 
   it('reaches Creator mode from the composer handoff and leaves settings', async () => {

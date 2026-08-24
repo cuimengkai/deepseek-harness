@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-23-workspace-pick-preset-fallback.md
-2026-08-23-workspace-pick-preset-fallback.md: 64d1766999526493e8887d7c2c6568f362dbfd2e
-2026-08-23-workspace-pick-preset-fallback.zh.md: 23a2117b53564af162053b0a5e9bbb2d22842884
+2026-08-23-workspace-pick-preset-fallback.md: 71e2a0c4b33e8bbda2f6cb0d5045597825c7b01f
+2026-08-23-workspace-pick-preset-fallback.zh.md: 83cae6bcc2159abe1b8385201e8e046b4827d6d5

@@ -165,6 +165,7 @@ export class FlowEngine extends Service {
     const nodeStatuses = new Map<string, FlowNodeStatus>()
     for (const node of expanded.graph.nodes) nodeStatuses.set(node.id, 'pending')
     nodeStatuses.set(
+      /* v8 ignore next -- a validated graph always has a root start that owns itself */
       expanded.graph.nodes.find(node => node.type === 'start' && expanded.owner.get(node.id) === node.id)?.id ?? '',
       'done',
     )
@@ -183,11 +184,11 @@ export class FlowEngine extends Service {
     }
     this.runs.set(runId, entry)
     this.runIdByWorkflow.set(workflowRun.id, runId)
-    let resolveOutcome: (outcome: FlowRunOutcome) => void = () => {}
     const result = new Promise<FlowRunOutcome>((resolve) => {
-      resolveOutcome = resolve
+      // The executor runs synchronously, so the resolver is registered before
+      // `run()` returns and any `workflow/end` can arrive.
+      this.outcomeResolvers.set(runId, resolve)
     })
-    this.outcomeResolvers.set(runId, resolveOutcome)
     return {
       runId,
       result,
@@ -297,6 +298,7 @@ export class FlowEngine extends Service {
     const runId = this.runIdFor(info.id)
     if (runId === undefined) return
     const entry = this.runs.get(runId)
+    /* v8 ignore next -- runs and runIdByWorkflow are written and pruned together, so a mapped id always has an entry */
     if (entry === undefined) return
     this.clearGate(entry)
     if (entry.nodeTypes.get(title) === 'condition' || entry.nodeTypes.get(title) === 'loop') {
@@ -310,6 +312,7 @@ export class FlowEngine extends Service {
     const runId = this.runIdFor(info.id)
     if (runId === undefined) return
     const entry = this.runs.get(runId)
+    /* v8 ignore next -- runs and runIdByWorkflow are written and pruned together, so a mapped id always has an entry */
     if (entry === undefined) return
     this.clearGate(entry)
     if (agent.phase !== undefined && entry.nodeTypes.has(agent.phase)) {
@@ -322,6 +325,7 @@ export class FlowEngine extends Service {
     const runId = this.runIdFor(info.id)
     if (runId === undefined) return
     const entry = this.runs.get(runId)
+    /* v8 ignore next -- runs and runIdByWorkflow are written and pruned together, so a mapped id always has an entry */
     if (entry === undefined) return
     if (agent.phase === undefined || !entry.nodeTypes.has(agent.phase)) return
     const status: FlowNodeStatus = agent.outcome === 'completed' ? 'done' : agent.outcome === 'failed' ? 'failed' : 'cancelled'
@@ -333,6 +337,7 @@ export class FlowEngine extends Service {
     const runId = this.runIdFor(info.id)
     if (runId === undefined) return
     const entry = this.runs.get(runId)
+    /* v8 ignore next -- runs and runIdByWorkflow are written and pruned together, so a mapped id always has an entry */
     if (entry === undefined) return
     if (entry.status !== 'running') return // already settled (idempotent guard)
     entry.status = result.stopReason
@@ -349,6 +354,7 @@ export class FlowEngine extends Service {
       if (type === 'end') entry.nodeStatuses.set(id, 'done')
     }
     const resolve = this.outcomeResolvers.get(runId)
+    /* v8 ignore next -- a resolver is only removed after settling, so every running end has one */
     if (resolve !== undefined) {
       resolve({
         status: result.stopReason,

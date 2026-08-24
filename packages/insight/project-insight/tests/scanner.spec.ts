@@ -5,13 +5,20 @@
  * entered, and a committed document reads back fresh until the tree changes.
  */
 
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { scanProject } from '../src/scanner.ts'
-import { MAX_FINGERPRINT_FILES, MAX_SOURCE_BYTES, MAX_SOURCE_FILES } from '../src/schema.ts'
+import {
+  MAX_AGENT_TECH_MARKDOWN_BYTES, MAX_AGENT_TECH_MARKDOWN_ROWS,
+  MAX_FINGERPRINT_FILES, MAX_SOURCE_BYTES, MAX_SOURCE_FILES,
+} from '../src/schema.ts'
 import { readDocument, writeDocument } from '../src/fingerprint.ts'
+
+/** A pinned mtime (seconds, year 2096) an edited file is bumped to, so the
+ * stale assertion never depends on filesystem timestamp granularity. */
+const FUTURE_MTIME = 4_000_000_000
 
 let roots: string[] = []
 
@@ -56,10 +63,12 @@ describe('project-insight scanner', () => {
     // Runtime metadata differs; everything the document is judged on does not.
     expect(first.doc.scannedAt).not.toBe(second.doc.scannedAt)
     expect(first.doc.contentFingerprint).toBe(second.doc.contentFingerprint)
+    expect(first.doc.statSignature).toBe(second.doc.statSignature)
+    expect(first.doc.statSignature).toMatch(/^[0-9a-f]{64}$/)
     expect(first.doc.rootName).toBe(second.doc.rootName)
     expect(first.doc.sections).toEqual(second.doc.sections)
     expect(first.summary).toEqual(second.summary)
-    expect(first.doc.formatVersion).toBe(1)
+    expect(first.doc.formatVersion).toBe(3)
   })
 
   it('never leaks an absolute host path into the document', async () => {
@@ -156,7 +165,7 @@ describe('project-insight scanner', () => {
       '.git/config': '[core]',
       'dist/bundle.js': '// bundle',
       'build/out.ts': 'export {}',
-      '.dsh/project-insight.json': '{}',
+      '.dsh/insight/meta.json': '{}',
     })
     const { doc } = await scanProject(root)
     const json = JSON.stringify(doc)
@@ -180,6 +189,10 @@ describe('project-insight scanner', () => {
     expect(fresh?.status).toBe('fresh')
 
     await writeFile(join(root, 'src/a.ts'), 'export const a = 2')
+    // The mtime bump is what turns the tree stale (the edit is same-size, so
+    // only the stat mtime changes); pin it forward so the assertion never
+    // depends on filesystem timestamp granularity.
+    await utimes(join(root, 'src/a.ts'), FUTURE_MTIME, FUTURE_MTIME)
     const stale = await readDocument(root, MAX_FINGERPRINT_FILES)
     expect(stale?.status).toBe('stale')
   })
@@ -211,5 +224,63 @@ describe('project-insight scanner', () => {
     expect(agentTech.files).toContainEqual({ path: '.agents/skills/deploy/SKILL.md', kind: 'agent-config' })
     expect(agentTech.files).toContainEqual({ path: '.github/workflows/ci.yml', kind: 'tool-config' })
     expect(agentTech.tools).toContainEqual({ name: 'deploy', path: '.agents/skills/deploy/SKILL.md' })
+    expect(agentTech.skills).toContainEqual({
+      name: 'deploy', path: '.agents/skills/deploy/SKILL.md', markdown: '# Deploy',
+    })
+  })
+
+  it('embeds skill, mcp, and prompt content with mcp env values redacted', async () => {
+    const root = await tempProject()
+    await seed(root, {
+      'package.json': '{}',
+      '.agents/skills/deploy/SKILL.md': '# Deploy\n\nShip the build.',
+      '.claude/skills/review/SKILL.md': '# Review\n\nCheck the diff.',
+      '.mcp.json': JSON.stringify({
+        mcpServers: { github: { command: 'npx', env: { TOKEN: 'secret-value' } } },
+      }),
+      'AGENTS.md': '# Repo instructions',
+      '.claude/prompts/fix.prompt.md': '# Fix\n\nResolve the issue.',
+    })
+    const { doc } = await scanProject(root)
+    const agentTech = doc.sections.agentTech
+
+    // Skills: one row per SKILL.md, sorted by path, name is the skill directory.
+    expect(agentTech.skills.map(row => row.name)).toEqual(['deploy', 'review'])
+    expect(agentTech.skills).toContainEqual({
+      name: 'deploy', path: '.agents/skills/deploy/SKILL.md', markdown: '# Deploy\n\nShip the build.',
+    })
+
+    // MCP: one row per config, env values redacted, rendered as a JSON block.
+    expect(agentTech.mcp).toHaveLength(1)
+    expect(agentTech.mcp[0]?.path).toBe('.mcp.json')
+    expect(agentTech.mcp[0]?.markdown).toContain('```json')
+    expect(agentTech.mcp[0]?.markdown).toContain('github')
+    expect(agentTech.mcp[0]?.markdown).toContain('<redacted>')
+    expect(agentTech.mcp[0]?.markdown).not.toContain('secret-value')
+
+    // Prompts: agent-native prompt directories count alongside the root prompts.
+    expect(agentTech.prompts.map(row => row.path)).toContain('.claude/prompts/fix.prompt.md')
+    expect(agentTech.prompts.map(row => row.path)).toContain('AGENTS.md')
+    expect(doc.sections.prompts.count).toBe(2)
+
+    // The mcp config is also classified as a tool-config file in the inventory.
+    expect(agentTech.files).toContainEqual({ path: '.mcp.json', kind: 'tool-config' })
+  })
+
+  it('caps and bounds the agent-tech markdown content deterministically', async () => {
+    const root = await tempProject()
+    const files: Record<string, string> = {}
+    for (let index = 0; index < MAX_AGENT_TECH_MARKDOWN_ROWS + 5; index += 1) {
+      files[`.agents/skills/skill${String(index).padStart(2, '0')}/SKILL.md`] = `# Skill ${index}`
+    }
+    files['.agents/skills/huge/SKILL.md'] = 'x'.repeat(MAX_AGENT_TECH_MARKDOWN_BYTES + 1)
+    await seed(root, files)
+    const { doc } = await scanProject(root)
+    const agentTech = doc.sections.agentTech
+    expect(agentTech.skills).toHaveLength(MAX_AGENT_TECH_MARKDOWN_ROWS)
+    // A skill over the per-row byte cap is skipped, not embedded.
+    expect(agentTech.skills.some(row => row.name === 'huge')).toBe(false)
+    const second = await scanProject(root)
+    expect(second.doc.sections.agentTech).toEqual(agentTech)
   })
 })

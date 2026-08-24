@@ -478,6 +478,34 @@ describe('ModelsSection', () => {
     })
   })
 
+  it('declares input modalities and roles on a DeepSeek catalog row', async () => {
+    const { mutate } = await mountDeepSeekCard({
+      mutate: vi.fn(() => Promise.resolve(ok(wireNamespaces()[0]))),
+    })
+    fireEvent.click(screen.getByText(en.customized))
+    expandRow(1)
+    // A row without a declaration reads as the adapter's text default, so text
+    // is pre-checked and the other boxes start unchecked — adding "image" then
+    // means multimodal instead of a model that accepts only images.
+    expect((screen.getByLabelText(`${en.inputModalities} text`) as HTMLInputElement).checked).toBe(true)
+    const image = screen.getByLabelText(`${en.inputModalities} image`) as HTMLInputElement
+    const audio = screen.getByLabelText(`${en.modelKinds} audio`) as HTMLInputElement
+    expect(image.checked).toBe(false)
+    expect(audio.checked).toBe(false)
+
+    fireEvent.click(image)
+    fireEvent.click(audio)
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    const call = mutate.mock.calls[0]?.[0] as { ops: { path: string[]; value: unknown }[] } | undefined
+    const value = call?.ops[0]?.value as Record<string, unknown>[] | undefined
+    expect(value?.[0]).toEqual({
+      ...DEFAULT_DEEPSEEK_MODELS[0],
+      inputModalities: ['text', 'image'],
+      kinds: ['text', 'audio'],
+    })
+  })
+
   it('rejects duplicate DeepSeek model ids before writing', async () => {
     const { mutate } = await mountDeepSeekCard()
     fireEvent.click(screen.getByText(en.customized))
@@ -512,6 +540,19 @@ describe('ModelsSection', () => {
     expect(validateDeepSeekModels([{ id: 'model', maxTokens: 0 }]))
       .toEqual({ index: 0, key: 'modelMaxTokensInvalid' })
     expect(validateDeepSeekModels([{ id: 'model', maxTokens: 8192 }])).toBeUndefined()
+    // Modality lists must be non-empty, on the menu, and duplicate-free — the
+    // adapter's own load-time rules, mirrored here so a hand-written catalog
+    // fails in the editor instead of at mount.
+    expect(validateDeepSeekModels([{ id: 'model', inputModalities: [] }]))
+      .toEqual({ index: 0, key: 'modelInputModalitiesInvalid' })
+    expect(validateDeepSeekModels([{ id: 'model', inputModalities: ['audio'] }]))
+      .toEqual({ index: 0, key: 'modelInputModalitiesInvalid' })
+    expect(validateDeepSeekModels([{ id: 'model', inputModalities: ['text', 'text'] }]))
+      .toEqual({ index: 0, key: 'modelInputModalitiesInvalid' })
+    expect(validateDeepSeekModels([{ id: 'model', inputModalities: ['text', 'image'] }])).toBeUndefined()
+    expect(validateDeepSeekModels([{ id: 'model', kinds: ['multimodal'] }]))
+      .toEqual({ index: 0, key: 'modelKindsInvalid' })
+    expect(validateDeepSeekModels([{ id: 'model', kinds: ['text', 'audio', 'embedding', 'image'] }])).toBeUndefined()
   })
 
   it('reads context windows written as counts, thousands, or millions', () => {

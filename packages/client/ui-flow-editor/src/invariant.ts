@@ -15,11 +15,11 @@ export const name = 'client-ui-flow-editor-invariant'
 export const inject = ['invariants']
 
 /**
- * No runtime invariant: a pure-consumer plugin — it emits no cordis events and
- * owns no cross-plugin state. Its view-slot registration is a plain effect
- * whose disposal the slot ledger's own specs observe; the graph-authoring and
- * run-surface state machines are asserted by this package's store and view
- * specs against the connection fixture.
+ * No runtime invariant: a pure component provider — it emits no cordis events,
+ * owns no cross-plugin state, and its empty `apply` mounts nothing. The canvas
+ * gesture↔surface mapping is asserted by this package's own rf-map and
+ * editor-dom specs, and the vendored React Flow base stylesheet's
+ * touch-action by the styles spec.
  */
 const install: InvariantInstaller = () => {}
 

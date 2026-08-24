@@ -12,7 +12,7 @@ declare module '@deepseek-ai/cordis' {
     /**
      * A project-insight scan for one session's workspace committed to disk.
      * Emitted only after the atomic write succeeds, so listeners treat the
-     * event as proof the `.dsh/project-insight.json` document is readable.
+     * event as proof the `.dsh/insight/` document is readable.
      * @param sessionId - the session whose workspace was scanned.
      * @mode emit
      */

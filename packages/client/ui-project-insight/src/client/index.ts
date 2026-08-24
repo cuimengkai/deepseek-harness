@@ -1,6 +1,6 @@
 /**
  * Browser project-insight plugin: six develop-mode conversation view tabs that
- * render the session project's committed `project-insight.json` document. Each
+ * render the session project's committed project-insight document. Each
  * tab is a plain 'conversation.view' list entry gated to the `develop` agent
  * preset through the per-session `modes` filter, so the ring shows them only
  * while a session runs the develop preset — and hides them the moment it does

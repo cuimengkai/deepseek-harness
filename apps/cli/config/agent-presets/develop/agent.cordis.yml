@@ -9,7 +9,7 @@
 #
 # The `projectInsight` SERVICE stays on the host plane (base composition):
 # every profile shares the one instance, and the browser reads the committed
-# `.dsh/project-insight.json` through the RPC domain. This preset only mounts
+# `.dsh/insight/` through the RPC domain. This preset only mounts
 # the model-facing tool, exactly as `tool-goal`/`tool-ask-user` mount their
 # host-plane registries' consumers — no realm is needed.
 #

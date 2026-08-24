@@ -10,7 +10,7 @@ Status: implemented
 
 ## Decision
 
-`@deepseek-ai/dsh-project-insight` 是新的 `insight/` 组下的 RELEASE host 平面包：一个确定性离线扫描器、一个带会话生命周期自动扫描钩子的服务、以及面向模型的 `scan_project` 工具。扫描器是树字节的纯函数——无 LLM、无网络、无凭证——因此扫描两次相同的受限树会得到逐字节一致的文档，且 `scannedAt` 不参与内容指纹。`<root>/.dsh/project-insight.json` 文档携带六个区段（模块拓扑、组件依赖、技术栈、组件、提示词、agent 相关技术），每个集合都按稳定键排序、每个路径都相对项目根，并带有硬上限（`MAX_SOURCE_FILES`、`MAX_EDGES`、`MAX_DOC_BYTES`），同时约束线上数据与浏览器渲染。
+`@deepseek-ai/dsh-project-insight` 是新的 `insight/` 组下的 RELEASE host 平面包：一个确定性离线扫描器、一个带会话生命周期自动扫描钩子的服务、以及面向模型的 `scan_project` 工具。扫描器是树字节的纯函数——无 LLM、无网络、无凭证——因此扫描两次相同的受限树会得到逐字节一致的文档，且 `scannedAt` 不参与内容指纹。`<root>/.dsh/insight/` 文档携带六个区段（模块拓扑、组件依赖、技术栈、组件、提示词、agent 相关技术），每个集合都按稳定键排序、每个路径都相对项目根，并带有硬上限（`MAX_SOURCE_FILES`、`MAX_EDGES`、`MAX_DOC_BYTES`），同时约束线上数据与浏览器渲染。agent 相关技术区段把项目内置的 agent 工具链作为受限的 markdown 集合嵌入——技能 `SKILL.md` 文件、MCP 服务器配置（每个 `env` 值都替换为 `<redacted>`，因为它们可能携带密钥）、以及 `.agents/prompts/`、`.claude/prompts/` 或根目录下的提示词文件——每条都在工作台的二级标签上以 markdown 渲染。
 
 自动扫描钩子在 host 平面监听 `session/created` 与 `agent-preset/selected`，通过 `resolveSessionPreset`（最新的选择生效）解析会话 preset，仅当 preset 属于 `autoScanPresets`（默认 `['develop']`）且会话携带 `cwd` 时触发。扫描按根去抖且单飞；扫描期间到达的会话加入等待集合。文档以原子方式写入，且 `project-insight/updated` 仅在写入提交后发出——该事件是文档可读的证明。全新文档永不重写、也不发事件，因此重新打开已扫描项目是空操作。模型通过 `scan_project` 只看到紧凑摘要（绝不看到完整文档），`presentationMeta { code, modules, components }` 使结果满足模型可见 ⟺ 已记录。
 
@@ -32,4 +32,4 @@ Status: implemented
 
 ## Consequences
 
-开发模式会话对项目自动扫描一次；其他 preset 保持惰性，因为服务以已解析 preset 与 `cwd` 为门槛。切换进 develop 会重新触发对空白会话工作区的扫描。第二次打开已扫描项目会立即读取已提交文档；编辑使其 `stale`，下一次扫描刷新它。文档位于项目自己的树中，harness 不会将其加入 `.gitignore`——提交一切的项目会跟踪该缓存（记录在包 README 的已知局限中）。大树的首次扫描受上限约束且尽力而为（源码扫描与启发式，而非构建或类型检查）。`modes` 过滤器使标签环通用地感知模式：未来模式声明自己的标签，切换 preset 即可重渲染环，无需改动 trajectory 插件。
+开发模式会话对项目自动扫描一次；其他 preset 保持惰性，因为服务以已解析 preset 与 `cwd` 为门槛。切换进 develop 会重新触发对空白会话工作区的扫描。第二次打开已扫描项目会立即读取已提交文档；编辑使其 `stale`，下一次扫描刷新它。低于旧格式版本的已提交文档会自愈而不是困在错误状态：`read()` 把它报告为 `stale` 并调度一次去抖的后台重建，`scan()` 把无法读取的已存文档（版本错误、超限、缺区段）视为不存在并重建——因此提升 `PROJECT_INSIGHT_FORMAT_VERSION`（当前为 3）会在下一次读取时重建既有项目已提交的文档。文档位于项目自己的树中，harness 不会将其加入 `.gitignore`——提交一切的项目会跟踪该缓存（记录在包 README 的已知局限中）。大树的首次扫描受上限约束且尽力而为（源码扫描与启发式，而非构建或类型检查）。`modes` 过滤器使标签环通用地感知模式：未来模式声明自己的标签，切换 preset 即可重渲染环，无需改动 trajectory 插件。

@@ -145,18 +145,29 @@ export const agentTechToolRowSchema = z.object({
   path: z.string(),
 }) satisfies z.ZodType<Wire<{ name: string; path: string }>>
 
+/** AgentTechMarkdownRow row of the agent-related-technology section. */
+export const agentTechMarkdownRowSchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  markdown: z.string(),
+}) satisfies z.ZodType<Wire<{ name: string; path: string; markdown: string }>>
+
 /** The agent-related-technology section. */
 export const agentTechSectionSchema = z.object({
   files: z.array(agentTechFileRowSchema),
   tools: z.array(agentTechToolRowSchema),
   count: z.number().int().nonnegative(),
+  skills: z.array(agentTechMarkdownRowSchema),
+  mcp: z.array(agentTechMarkdownRowSchema),
+  prompts: z.array(agentTechMarkdownRowSchema),
 })
 
-/** The committed `project-insight.json` document. */
+/** The committed `.dsh/insight/` document. */
 export const projectInsightDocSchema = z.object({
-  formatVersion: z.literal(1),
+  formatVersion: z.literal(3),
   rootName: z.string(),
   contentFingerprint: z.string(),
+  statSignature: z.string(),
   scannedAt: z.number().int().nonnegative(),
   sections: z.object({
     techStack: techStackSectionSchema,

@@ -1,20 +1,24 @@
 /**
  * The project-insight auto-scan hook: a develop-mode session with a working
- * directory auto-scans its workspace into `.dsh/project-insight.json` after a
+ * directory auto-scans its workspace into `.dsh/insight/` after a
  * per-root debounce, and `project-insight/updated` fires only at the commit
  * point. Sessions under another preset and sessions without a cwd stay inert,
  * while a session that switches into develop mid-lifecycle re-triggers a scan.
  */
 
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
-import { PROJECT_INSIGHT_DOC_REL } from '../src/fingerprint.ts'
+import { PROJECT_INSIGHT_META_REL } from '../src/fingerprint.ts'
 import { ProjectInsight } from '../src/service.ts'
 import type {} from '../src/types.ts'
+
+/** A pinned mtime (seconds, year 2096) an edited file is bumped to, so the
+ * stale assertion never depends on filesystem timestamp granularity. */
+const FUTURE_MTIME = 4_000_000_000
 
 let roots: string[] = []
 
@@ -37,7 +41,7 @@ const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(r
 
 async function docExists(root: string): Promise<boolean> {
   try {
-    await readFile(join(root, PROJECT_INSIGHT_DOC_REL))
+    await readFile(join(root, PROJECT_INSIGHT_META_REL))
     return true
   } catch {
     return false
@@ -45,9 +49,9 @@ async function docExists(root: string): Promise<boolean> {
 }
 
 /** Poll a condition until it holds or the deadline elapses. */
-async function until(predicate: () => boolean, label: string, ms = 2000): Promise<void> {
+async function until(predicate: () => boolean | Promise<boolean>, label: string, ms = 2000): Promise<void> {
   const deadline = Date.now() + ms
-  while (!predicate()) {
+  while (!(await predicate())) {
     if (Date.now() > deadline) throw new Error(`timed out waiting for: ${label}`)
     await sleep(10)
   }
@@ -98,7 +102,7 @@ describe('project-insight auto-scan hook', () => {
       const read = await ctx.projectInsight.read(root)
       expect(read.status).toBe('fresh')
       expect(read.root).toBe(basename(root))
-      expect(read.doc?.formatVersion).toBe(1)
+      expect(read.doc?.formatVersion).toBe(3)
     } finally {
       await dispose(ctx)
     }
@@ -174,7 +178,7 @@ describe('project-insight auto-scan hook', () => {
       // A fresh document reads back; a second scan is a no-op.
       const fresh = await ctx.projectInsight.read(root)
       expect(fresh.status).toBe('fresh')
-      expect(fresh.doc?.formatVersion).toBe(1)
+      expect(fresh.doc?.formatVersion).toBe(3)
       const again = await ctx.projectInsight.scan(root, session.id)
       expect(again.status).toBe('unchanged')
 
@@ -185,8 +189,70 @@ describe('project-insight auto-scan hook', () => {
 
       // Editing a scanned source file turns the document stale.
       await writeFile(join(root, 'src', 'index.ts'), 'export const x = 2\n')
+      await utimes(join(root, 'src', 'index.ts'), FUTURE_MTIME, FUTURE_MTIME)
       const stale = await ctx.projectInsight.read(root)
       expect(stale.status).toBe('stale')
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('a read never schedules a re-scan', async () => {
+    const root = await tempProject()
+    await seed(root, {
+      'package.json': '{}',
+      'src/index.ts': 'export const x = 1\n',
+    })
+    const { ctx, updated } = await setup()
+    try {
+      ctx.sessions.create(SessionId('session-f'), { meta: { cwd: root, agentPreset: 'develop' } })
+      await until(() => updated.length > 0, 'project-insight/updated')
+      const committed = updated.length
+
+      // Editing turns the document stale, but reading must not schedule a
+      // re-scan: the stale document persists until an explicit trigger.
+      await writeFile(join(root, 'src', 'index.ts'), 'export const x = 2\n')
+      await utimes(join(root, 'src', 'index.ts'), FUTURE_MTIME, FUTURE_MTIME)
+      const stale = await ctx.projectInsight.read(root)
+      expect(stale.status).toBe('stale')
+      await sleep(150) // well past the 10 ms debounce
+      expect(updated).toHaveLength(committed)
+      expect((await ctx.projectInsight.read(root)).status).toBe('stale')
+    } finally {
+      await dispose(ctx)
+    }
+  })
+
+  it('self-heals a document committed under an older format version', async () => {
+    const root = await tempProject()
+    await seed(root, {
+      'package.json': '{}',
+      'src/index.ts': 'export const x = 1\n',
+    })
+    const { ctx, updated } = await setup()
+    try {
+      ctx.sessions.create(SessionId('session-g'), { meta: { cwd: root, agentPreset: 'develop' } })
+      await until(() => updated.length > 0, 'project-insight/updated')
+
+      // Rewrite the committed meta at a format the reader refuses, simulating a
+      // document left behind by an older release: the read must surface it as
+      // stale (and schedule a rebuild) rather than strand it in a permanent error.
+      const metaPath = join(root, PROJECT_INSIGHT_META_REL)
+      const meta = JSON.parse(await readFile(metaPath, 'utf8')) as Record<string, unknown>
+      await writeFile(metaPath, JSON.stringify({ ...meta, formatVersion: 2 }))
+
+      const read = await ctx.projectInsight.read(root)
+      expect(read.status).toBe('stale')
+      expect(read.doc).toBeUndefined()
+
+      // The read schedules a background rebuild at the current format.
+      await until(async () => {
+        const rebuilt = JSON.parse(await readFile(metaPath, 'utf8')) as { formatVersion: number }
+        return rebuilt.formatVersion === 3
+      }, 'self-healed meta at formatVersion 3')
+      const healed = await ctx.projectInsight.read(root)
+      expect(healed.status).toBe('fresh')
+      expect(healed.doc?.formatVersion).toBe(3)
     } finally {
       await dispose(ctx)
     }

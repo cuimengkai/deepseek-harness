@@ -28,6 +28,23 @@ export type ProjectInsightKey =
   | 'label.count'
   | 'label.defaultExport'
   | 'label.hasProps'
+  | 'label.fullList'
+  | 'label.capped'
+  | 'label.list'
+  | 'label.imports'
+  | 'label.notInGraph'
+  | 'label.close'
+  | 'label.promptCount'
+  | 'label.kind'
+  | 'label.path'
+  | 'label.package'
+  | 'label.versionScope'
+  | 'label.language'
+  | 'label.fileLines'
+  | 'subtab.inventory'
+  | 'subtab.skills'
+  | 'subtab.mcp'
+  | 'subtab.prompts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -61,6 +78,23 @@ export const zh: Record<ProjectInsightKey, string> = {
   'label.count': '{count} 项',
   'label.defaultExport': '默认导出',
   'label.hasProps': '有 props',
+  'label.fullList': '完整列表',
+  'label.capped': '图表已截断 — 省略 {nodes} 个节点、{edges} 条边',
+  'label.list': '列表',
+  'label.imports': '导入 {count} 项',
+  'label.notInGraph': '未在图中',
+  'label.close': '收起列表',
+  'label.promptCount': '共 {count} 个提示词文件 · 已展示 {shown} 个',
+  'label.kind': '类型',
+  'label.path': '路径',
+  'label.package': '包',
+  'label.versionScope': '版本 · 范围',
+  'label.language': '语言',
+  'label.fileLines': '文件 · 行数',
+  'subtab.inventory': '清单',
+  'subtab.skills': '技能',
+  'subtab.mcp': 'MCP',
+  'subtab.prompts': '提示词',
 }
 
 /** English dictionary. */
@@ -88,4 +122,21 @@ export const en: Record<ProjectInsightKey, string> = {
   'label.count': '{count} items',
   'label.defaultExport': 'default export',
   'label.hasProps': 'has props',
+  'label.fullList': 'Full list',
+  'label.capped': 'Graph capped — {nodes} nodes and {edges} edges omitted',
+  'label.list': 'List',
+  'label.imports': '{count} imports',
+  'label.notInGraph': 'not in graph',
+  'label.close': 'Collapse list',
+  'label.promptCount': '{count} prompt files · {shown} shown',
+  'label.kind': 'Kind',
+  'label.path': 'Path',
+  'label.package': 'Package',
+  'label.versionScope': 'Version · Scope',
+  'label.language': 'Language',
+  'label.fileLines': 'File · Lines',
+  'subtab.inventory': 'Inventory',
+  'subtab.skills': 'Skills',
+  'subtab.mcp': 'MCP',
+  'subtab.prompts': 'Prompts',
 }

@@ -320,10 +320,12 @@
     - id: ui-project-insight
       name: '@deepseek-ai/dsh-client-ui-project-insight'
 
-    # The flow canvas: one conversation view entry (order 15) that authors,
-    # runs, and watches branching agent flows through the host flow engine
-    # (the `flow` host row below). Sessions whose composition lacks the engine
-    # render a read-only notice.
+    # The flow canvas as a component provider: the agent-preset composer
+    # requires `@deepseek-ai/dsh-client-ui-flow-editor/client` from the module
+    # table, so this row stays mounted to serve those bundle bytes. It registers
+    # no conversation view — flow orchestration moved to 新建Agent's composer,
+    # and the session-level run surface is gone (Known Limitation in this
+    # package's README).
     - id: ui-flow-editor
       name: '@deepseek-ai/dsh-client-ui-flow-editor'
 

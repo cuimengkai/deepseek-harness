@@ -18,12 +18,14 @@
  * composition changes more than the row it targeted.
  */
 
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  IApiClient, ModelCatalogFailure, ModelKind, ModelProviderGroup,
+} from '@deepseek-ai/dsh-api-remotes/client'
 import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import {
   cascadePosition, chainAddModule, chainAgents, chainMoveIndex, chainMoveNode,
-  chainRemoveNode, chainReorder, emptyChainGraph, graphLayoutEqual, graphRows,
+  chainRemoveNode, chainReorder, emptyChainGraph, graphLayoutEqual, graphRows, setAgentModelKind,
 } from './preset-graph.ts'
 import { beginRosterRead, messageOf, writeDefaultPreset } from './settings-store.ts'
 
@@ -124,6 +126,20 @@ export interface ComposePalette {
   modules: readonly PaletteModule[]
 }
 
+/**
+ * The configured model catalog the composer's model-kind picker reads over
+ * `llm.models`. Each kind's row filters the groups by the kinds the models
+ * declare, so the picker offers the models Settings actually configures rather
+ * than free text.
+ */
+export interface ModelCatalog {
+  status: 'loading' | 'ready' | 'unavailable'
+  /** Provider groups in catalog order, when the host answered. */
+  groups: readonly ModelProviderGroup[]
+  /** Providers whose catalog lookup failed, when any did. */
+  failures: readonly ModelCatalogFailure[]
+}
+
 /** Installed-plugin source for the composer palette (host inventory over RPC). */
 export interface ModuleSource {
   /**
@@ -153,6 +169,11 @@ export interface AgentPresetSectionState {
   composer: ComposeDraft | null
   /** The composer palette's last load; null while the composer is closed. */
   palette: ComposePalette | null
+  /**
+   * The model catalog for the composer's model-kind picker; null while no
+   * composer overlay is open.
+   */
+  modelCatalog: ModelCatalog | null
   /** The preset awaiting delete confirmation. */
   pendingDelete: string | null
   /** Whether a delete is in flight. */
@@ -174,6 +195,7 @@ const INITIAL: AgentPresetSectionState = {
   view: null,
   composer: null,
   palette: null,
+  modelCatalog: null,
   pendingDelete: null,
   deleting: false,
   revealedPaths: {},
@@ -279,7 +301,7 @@ export class AgentPresetSectionController {
   readonly store: SnapshotStore<AgentPresetSectionState> = createSnapshotStore(INITIAL)
 
   constructor(
-    private readonly api: Pick<IApiClient, 'agentPresets' | 'settings'>,
+    private readonly api: Pick<IApiClient, 'agentPresets' | 'settings' | 'llm'>,
     /**
      * Called after this page changes the roster DIRECTORY, so the other
      * surfaces reading the same roster re-read it. A settings field moving is
@@ -318,6 +340,30 @@ export class AgentPresetSectionController {
       // The palette is an offering, not a gate: an edit already in the
       // composer keeps its graph, and only new drags lose the list.
       this.set({ palette: { status: 'unavailable', modules: [] } })
+    }
+  }
+
+  /**
+   * Load the configured model catalog for the composer's model-kind picker,
+   * degrading to unavailable without disturbing an edit in progress. One load
+   * stays in flight until it settles; a later event still triggers a fresh one.
+   */
+  async loadModelCatalog(): Promise<void> {
+    const before = this.store.getSnapshot().modelCatalog
+    if (before !== null && before.status === 'loading') return
+    this.set({ modelCatalog: { status: 'loading', groups: [], failures: [] } })
+    try {
+      const response = await this.api.llm.models({})
+      if (!response.result.ok) {
+        this.set({ modelCatalog: { status: 'unavailable', groups: [], failures: [] } })
+        return
+      }
+      const { groups, failures } = response.result.value
+      this.set({ modelCatalog: { status: 'ready', groups, failures } })
+    } catch {
+      // The catalog is an offering, not a gate: an edit already in the
+      // composer keeps its graph, and only the picker loses the list.
+      this.set({ modelCatalog: { status: 'unavailable', groups: [], failures: [] } })
     }
   }
 
@@ -361,6 +407,7 @@ export class AgentPresetSectionController {
   async view(id: string): Promise<void> {
     this.set({ error: null, copy: null, composer: null })
     void this.loadPalette()
+    void this.loadModelCatalog()
     try {
       const response = await this.api.agentPresets.readGraph({ agentPreset: id })
       if (!response.result.ok) {
@@ -376,7 +423,7 @@ export class AgentPresetSectionController {
 
   /** Close the read-only composition view. */
   closeView(): void {
-    this.set({ view: null, palette: null })
+    this.set({ view: null, palette: null, modelCatalog: null })
   }
 
   /**
@@ -389,6 +436,7 @@ export class AgentPresetSectionController {
   async beginCompose(id: string | null): Promise<void> {
     this.set({ error: null, copy: null, view: null, palette: { status: 'loading', modules: [] } })
     void this.loadPalette()
+    void this.loadModelCatalog()
     if (id === null) {
       const graph = emptyChainGraph('', '')
       this.set({
@@ -422,7 +470,7 @@ export class AgentPresetSectionController {
 
   /** Close the composer, discarding whatever was assembled. */
   closeComposer(): void {
-    this.set({ composer: null, palette: null })
+    this.set({ composer: null, palette: null, modelCatalog: null })
   }
 
   /**
@@ -522,6 +570,24 @@ export class AgentPresetSectionController {
   }
 
   /**
+   * Bind one model kind's route on one composition node — the inspector's
+   * model-kind picker. The edit lands on the draft graph in place, so it is
+   * part of the composition an overwrite writes and wakes the save button.
+   * @param nodeId - the canvas node id the row selected.
+   * @param kind - the model kind being bound.
+   * @param field - which side of the binding is edited.
+   * @param value - the provider or model id, or '' to clear that side.
+   */
+  updateAgentModelKind(nodeId: string, kind: ModelKind, field: 'provider' | 'model', value: string): void {
+    const composer = this.store.getSnapshot().composer
+    if (composer === null) return
+    this.patchComposer({
+      graph: setAgentModelKind(composer.graph, nodeId, kind, field, value),
+      error: null,
+    })
+  }
+
+  /**
    * Reorder the composition so one node runs right after another — the connect
    * gesture.
    * @param fromNodeId - the node the dragged port came from.
@@ -559,7 +625,7 @@ export class AgentPresetSectionController {
         this.patchComposer({ saving: false, error: response.result.error.message })
         return false
       }
-      this.set({ composer: null, palette: null })
+      this.set({ composer: null, palette: null, modelCatalog: null })
       await this.load()
       this.rosterChanged()
       return true

@@ -1,18 +1,22 @@
 /**
- * The versioned `project-insight.json` document vocabulary and its scan-time
- * bounds. The document is the single data contract between the deterministic
- * scanner, the model-facing `scan_project` tool, and the browser's six insight
- * tabs: everything the workbench renders derives from one committed JSON file
- * under `<projectRoot>/.dsh/`.
+ * The versioned `.dsh/insight/` document vocabulary and its scan-time bounds.
+ * The document is the single data contract between the deterministic scanner,
+ * the model-facing `scan_project` tool, and the browser's six insight tabs:
+ * everything the workbench renders derives from one committed document, stored
+ * under `<projectRoot>/.dsh/insight/` as a meta file plus six typed section
+ * files.
  * @module @deepseek-ai/dsh-project-insight/schema
  */
 
 /**
  * On-disk document format version, monotonic like `SESSION_FORMAT_VERSION`.
  * The reader refuses any other version; while the harness is unreleased no
- * compatibility is implied and no migration is provided.
+ * compatibility is implied and no migration is provided. A stored document
+ * under an older version is read as `stale` by the service and rebuilt in the
+ * background, so a format bump self-heals an existing project's committed doc
+ * instead of stranding it in an error state.
  */
-export const PROJECT_INSIGHT_FORMAT_VERSION = 1
+export const PROJECT_INSIGHT_FORMAT_VERSION = 3
 
 /** Source files the module topology emits; the walk itself is bounded by {@link MAX_FINGERPRINT_FILES}. */
 export const MAX_SOURCE_FILES = 300
@@ -24,10 +28,14 @@ export const MAX_SOURCE_BYTES = 256 * 1024
 export const MAX_MANIFEST_BYTES = 1 * 1024 * 1024
 /** Files the content-fingerprint projection walks before truncation. */
 export const MAX_FINGERPRINT_FILES = 5000
-/** Whole-document byte guard applied when a stored document is read. */
+/** Per-file byte guard applied when a stored document file is read. */
 export const MAX_DOC_BYTES = 1 * 1024 * 1024
-/** Relative path of the committed document under the project root. */
-export const PROJECT_INSIGHT_FILE = 'project-insight.json'
+/** Markdown content rows the agent-tech section embeds per collection (skills, mcp, prompts). */
+export const MAX_AGENT_TECH_MARKDOWN_ROWS = 16
+/** UTF-8 byte cap for one embedded content row; larger files are skipped. */
+export const MAX_AGENT_TECH_MARKDOWN_BYTES = 64 * 1024
+/** Total UTF-8 byte budget across all agent-tech markdown content, applied in sorted order. */
+export const MAX_AGENT_TECH_MARKDOWN_TOTAL = 512 * 1024
 
 /** One detected dependency manifest (package.json, lockfile, …). */
 export interface ManifestRow {
@@ -176,6 +184,16 @@ export interface AgentTechToolRow {
   readonly path: string
 }
 
+/** One embedded agent-related document the workbench renders as markdown. */
+export interface AgentTechMarkdownRow {
+  /** Display name: skill directory name, mcp config basename, or prompt basename. */
+  readonly name: string
+  /** Root-relative file path. */
+  readonly path: string
+  /** The file's markdown source (mcp configs render as a fenced JSON block). */
+  readonly markdown: string
+}
+
 /** The agent-related-technology section. */
 export interface AgentTechSection {
   /** Agent-related files, top 100 sorted by path. */
@@ -184,21 +202,33 @@ export interface AgentTechSection {
   readonly tools: AgentTechToolRow[]
   /** Total agent-related files counted before the emitted set was capped. */
   readonly count: number
+  /** Skill `SKILL.md` content, sorted by path and bounded by the markdown caps. */
+  readonly skills: AgentTechMarkdownRow[]
+  /** MCP config content, sorted by path and bounded by the markdown caps. */
+  readonly mcp: AgentTechMarkdownRow[]
+  /** Prompt-file content, sorted by path and bounded by the markdown caps. */
+  readonly prompts: AgentTechMarkdownRow[]
 }
 
 /**
- * The committed `project-insight.json` document. Deterministic: scanning the
- * same bounded file tree yields a byte-identical document, because every
- * emitted collection is sorted by a stable key and no absolute path,
- * randomness, or clock value participates in any comparison.
+ * The committed `.dsh/insight/` document. Deterministic: scanning the same
+ * bounded file tree yields a byte-identical document, because every emitted
+ * collection is sorted by a stable key and no absolute path, randomness, or
+ * clock value participates in any comparison.
  */
 export interface ProjectInsightDoc {
   /** Monotonic format version; readers refuse any other value. */
-  readonly formatVersion: 1
+  readonly formatVersion: 3
   /** Basename of the project root — identity only, never a host path. */
   readonly rootName: string
   /** sha256 hex over the sorted `(relativePath, size, content)` projection of the bounded file set. */
   readonly contentFingerprint: string
+  /**
+   * sha256 hex over the sorted `(relativePath, size, mtimeMs)` stat projection
+   * of the bounded file set — the cheap read-path fresh/stale key, recorded at
+   * scan time.
+   */
+  readonly statSignature: string
   /** Epoch milliseconds of the scan; runtime metadata, excluded from the fingerprint. */
   readonly scannedAt: number
   /** The six scanned sections. */

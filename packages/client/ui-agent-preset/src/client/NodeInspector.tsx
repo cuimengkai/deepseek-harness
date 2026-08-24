@@ -7,9 +7,11 @@
 
 import type { ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { ComposeRow } from '@deepseek-ai/dsh-api-remotes/client'
-import { displayNameFor, type PaletteModule } from './section-store.ts'
+import type { ComposeRow, ModelKind } from '@deepseek-ai/dsh-api-remotes/client'
+import type { FlowModelKindBinding } from '@deepseek-ai/dsh-flow/types'
+import { displayNameFor, type ModelCatalog, type PaletteModule } from './section-store.ts'
 import { categoryColor, glyphLetter } from './ComposerPalette.tsx'
+import { ModelKindPicker } from './ModelKindPicker.tsx'
 import type { AgentPresetSettingsKey } from './locales.ts'
 import css from './AgentPresetComposer.module.css'
 
@@ -19,6 +21,12 @@ export interface NodeInspectorProps {
   row: ComposeRow
   /** The palette's annotation for the row's module, when the inventory knows it. */
   module: PaletteModule | undefined
+  /** The selected node's per-kind model routes, absent until one is bound. */
+  modelKinds: Readonly<Partial<Record<ModelKind, FlowModelKindBinding>>> | undefined
+  /** The configured model catalog; null while no composer overlay is open. */
+  catalog: ModelCatalog | null
+  /** Bind one kind's route on the selected node (the inspector's model picker). */
+  onModelBinding: (kind: ModelKind, field: 'provider' | 'model', value: string) => void
   canMoveUp: boolean
   canMoveDown: boolean
   /** Remove the selected node, by its row id or the module name when none was set. */
@@ -37,7 +45,7 @@ export interface NodeInspectorProps {
  * @returns the inspector panel.
  */
 export function NodeInspector(props: NodeInspectorProps): ReactNode {
-  const { row, module, canMoveUp, canMoveDown, onRemove, onMove, t, readOnly = false } = props
+  const { row, module, modelKinds, catalog, onModelBinding, canMoveUp, canMoveDown, onRemove, onMove, t, readOnly = false } = props
   return (
     <aside className={css.inspector}>
       <h3 className={css.columnHead}>{t('inspectorTitle')}</h3>
@@ -67,6 +75,13 @@ export function NodeInspector(props: NodeInspectorProps): ReactNode {
               <code>{row.id}</code>
             </p>
           )}
+        <ModelKindPicker
+          modelKinds={modelKinds}
+          catalog={catalog}
+          readOnly={readOnly}
+          onBinding={onModelBinding}
+          t={t}
+        />
         {readOnly
           ? null
           : (

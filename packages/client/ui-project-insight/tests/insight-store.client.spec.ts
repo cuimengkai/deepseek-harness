@@ -12,9 +12,10 @@ import { POLL_INTERVAL_MS, ProjectInsightController } from '../src/client/insigh
 
 /** A minimal committed document; sections are empty to keep the fixture light. */
 const DOC: ProjectInsightDoc = {
-  formatVersion: 1,
+  formatVersion: 3,
   rootName: 'fake-root',
   contentFingerprint: 'deadbeef',
+  statSignature: 'deadbeef-stat',
   scannedAt: 0,
   sections: {
     techStack: { manifests: [], dependencies: [], runtimes: [], files: [] },
@@ -22,7 +23,7 @@ const DOC: ProjectInsightDoc = {
     componentDependencies: { components: [], cycles: [] },
     components: { components: [], count: 0 },
     prompts: { files: [], count: 0 },
-    agentTech: { files: [], tools: [], count: 0 },
+    agentTech: { files: [], tools: [], count: 0, skills: [], mcp: [], prompts: [] },
   },
 }
 

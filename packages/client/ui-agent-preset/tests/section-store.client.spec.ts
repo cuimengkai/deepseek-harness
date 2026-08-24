@@ -8,20 +8,25 @@
  */
 
 import { describe, expect, it, vi } from 'vitest'
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
-import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
+import type { IApiClient, ModelProviderGroup } from '@deepseek-ai/dsh-api-remotes/client'
+import type { FlowAgentComposition, FlowAgentNode, FlowGraph } from '@deepseek-ai/dsh-flow/types'
 import {
   AgentPresetSectionController, composeBlocker, composeDirty, displayNameFor, draftBlocker,
   handoffBlocker, rowIdFor,
 } from '../src/client/section-store.ts'
 import {
   cascadePosition, chainAddModule, chainAgents, chainMoveIndex, chainMoveNode,
-  chainRemoveNode, chainReorder, emptyChainGraph, graphLayoutEqual, graphRows,
+  chainRemoveNode, chainReorder, compositionToRow, emptyChainGraph, graphLayoutEqual, graphRows, insertSlot, setAgentModelKind,
 } from '../src/client/preset-graph.ts'
 import type { ComposeDraft, CopyDraft, PaletteModule, PresetRow } from '../src/client/section-store.ts'
 
 interface FakePreset { trust: 'system' | 'user'; content: string; name?: string; graph?: FlowGraph }
 interface Recorded { method: string; payload: unknown }
+
+/** The agent node with this id, narrowed out of the node union. */
+function agentNode(graph: FlowGraph, id: string): FlowAgentNode | undefined {
+  return graph.nodes.find((node): node is FlowAgentNode => node.type === 'agent' && node.id === id)
+}
 
 interface FakeOptions {
   /** Every call the controller made, in order. */
@@ -40,6 +45,8 @@ interface FakeOptions {
   failRemove?: string
   /** Reject `settings.update` with this message. */
   failSettings?: string
+  /** Reject `llm.models` with this message. */
+  failModels?: string
   /** Throw from `list` rather than answering, as a dead transport does. */
   throwList?: boolean
   /** Throw from `readGraph`, as a dead transport does. */
@@ -50,6 +57,8 @@ interface FakeOptions {
   throwCompose?: boolean
   /** Throw from `openDocument`, as a dead transport does. */
   throwOpen?: boolean
+  /** Throw from `llm.models`, as a dead transport does. */
+  throwModels?: boolean
   /** Whether the deployment configures a writable root. */
   authorable?: boolean
   /** Whether the host can open a preset directory on a desktop. */
@@ -62,6 +71,8 @@ interface FakeOptions {
   modules?: readonly PaletteModule[]
   /** Make the palette load fail, as a deployment without an inventory does. */
   failPalette?: boolean
+  /** The model catalog `llm.models` serves; empty by default. */
+  modelGroups?: readonly ModelProviderGroup[]
 }
 
 const ok = (value: unknown) => Promise.resolve({ rpcId: 'r', result: { ok: true as const, value } })
@@ -93,7 +104,7 @@ function fakeApi(
   presets: Map<string, FakePreset>,
   defaultId: { id: string },
   options: FakeOptions = {},
-): Pick<IApiClient, 'agentPresets' | 'settings'> {
+): Pick<IApiClient, 'agentPresets' | 'settings' | 'llm'> {
   const record = (method: string, payload: unknown): void => { options.calls?.push({ method, payload }) }
   return {
     agentPresets: {
@@ -190,7 +201,15 @@ function fakeApi(
         return ok({})
       },
     },
-  } as unknown as Pick<IApiClient, 'agentPresets' | 'settings'>
+    llm: {
+      models: () => {
+        record('llm.models', {})
+        if (options.throwModels === true) return Promise.reject(new Error('socket closed'))
+        if (options.failModels !== undefined) return fail(options.failModels)
+        return ok({ groups: options.modelGroups ?? [], failures: [] })
+      },
+    },
+  } as unknown as Pick<IApiClient, 'agentPresets' | 'settings' | 'llm'>
 }
 
 function seed(): Map<string, FakePreset> {
@@ -623,7 +642,7 @@ describe('deleting', () => {
         remove: () => Promise.reject(new Error('socket closed')),
       },
       settings: {},
-    } as unknown as Pick<IApiClient, 'agentPresets' | 'settings'>)
+    } as unknown as Pick<IApiClient, 'agentPresets' | 'settings' | 'llm'>)
     broken.confirmDelete('mine')
 
     await broken.remove()
@@ -644,6 +663,20 @@ describe('a controller with no roster listener', () => {
     await alone.remove()
 
     expect(alone.store.getSnapshot().rows.map(row => row.id)).not.toContain('mine')
+  })
+
+  it('loads an empty palette from the default module source', async () => {
+    // The module source is optional wiring too: a controller mounted with none
+    // serves a palette with nothing to offer, so the composer still opens.
+    const presets = seed()
+    const alone = new AgentPresetSectionController(fakeApi(presets, { id: 'standard' }))
+    await alone.load()
+
+    await alone.beginCompose(null)
+
+    await vi.waitFor(() => {
+      expect(alone.store.getSnapshot().palette).toEqual({ status: 'ready', modules: [] })
+    })
   })
 })
 
@@ -731,6 +764,137 @@ describe('the composition graph helpers', () => {
     const moved = chainMoveNode(graph, 'agent-1', { x: 400, y: 120 })
     expect(moved.nodes.find(node => node.id === 'agent-1')?.position).toEqual({ x: 400, y: 120 })
     expect(graphRows(moved)).toEqual(graphRows(graph))
+  })
+
+  it('maps an anchor node to its successor slot', () => {
+    const graph = chainGraph('a', '', '@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-read')
+    const agents = chainAgents(graph)
+    // The start terminal's pick lands first; an agent's pick lands right after
+    // it; the end terminal and an absent node keep the module at the tail.
+    expect(insertSlot('start', agents)).toBe(0)
+    expect(insertSlot('agent-1', agents)).toBe(1)
+    expect(insertSlot('agent-2', agents)).toBe(2)
+    expect(insertSlot('end', agents)).toBeNull()
+    expect(insertSlot('agent-9', agents)).toBeNull()
+  })
+
+  it('walks a graph with branching in edge order', () => {
+    // The composer only ever composes chains, but the projection walks any
+    // graph: a node with several successors visits each in edge order.
+    const graph: FlowGraph = {
+      id: 'x', name: 'X',
+      nodes: [
+        { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+        { id: 'a', type: 'agent', position: { x: 220, y: 0 }, prompt: '', composition: { module: '@deepseek-ai/dsh-tool-read' } },
+        { id: 'b', type: 'agent', position: { x: 220, y: 120 }, prompt: '', composition: { module: '@deepseek-ai/dsh-web-search' } },
+        { id: 'end', type: 'end', position: { x: 440, y: 0 } },
+      ],
+      edges: [
+        { id: 'e1', from: 'start', to: 'a' },
+        { id: 'e2', from: 'start', to: 'b' },
+        { id: 'e3', from: 'a', to: 'end' },
+        { id: 'e4', from: 'b', to: 'end' },
+      ],
+    }
+    expect(chainAgents(graph).map(node => node.composition?.module))
+      .toEqual(['@deepseek-ai/dsh-tool-read', '@deepseek-ai/dsh-web-search'])
+  })
+
+  it('appends a node the chain never reaches, in node order', () => {
+    // A chain is fully reachable from start; a stray agent with no edges is a
+    // malformed remainder the projection still shows, deterministically.
+    const graph: FlowGraph = {
+      id: 'x', name: 'X',
+      nodes: [
+        { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+        { id: 'orphan', type: 'agent', position: { x: 220, y: 0 }, prompt: '', composition: { module: '@deepseek-ai/dsh-tool-read' } },
+        { id: 'end', type: 'end', position: { x: 440, y: 0 } },
+      ],
+      edges: [{ id: 'e1', from: 'start', to: 'end' }],
+    }
+    expect(chainAgents(graph).map(node => node.id)).toEqual(['orphan'])
+  })
+
+  it('distinguishes graphs with equal rows but different node counts', () => {
+    const base = chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash')
+    const extra: FlowGraph = {
+      ...base,
+      nodes: [...base.nodes, { id: 'stray', type: 'condition', position: { x: 0, y: 200 }, expression: 'false' }],
+    }
+    // The rows match (one agent), but a graph with an extra non-row node is a
+    // different composition, so the dirty check must catch it.
+    expect(graphLayoutEqual(base, extra)).toBe(false)
+  })
+
+  it('clearing an unbound kind leaves a node without options alone', () => {
+    const base = chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash')
+    const cleared = setAgentModelKind(base, 'agent-1', 'text', 'provider', '')
+
+    // A node that never carried agentOptions must not be invented one, or the
+    // edit would stay "dirty" against a graph that never changed.
+    expect(agentNode(cleared, 'agent-1')?.agentOptions).toBeUndefined()
+  })
+
+  it('keeps a node\'s own provider when a kind is cleared', () => {
+    const graph: FlowGraph = {
+      id: 'x', name: 'X',
+      nodes: [
+        { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+        { id: 'agent-1', type: 'agent', position: { x: 220, y: 0 }, prompt: '', composition: { module: '@deepseek-ai/dsh-tool-bash' }, agentOptions: { provider: 'deepseek' } },
+        { id: 'end', type: 'end', position: { x: 440, y: 0 } },
+      ],
+      edges: [{ id: 'e1', from: 'start', to: 'agent-1' }, { id: 'e2', from: 'agent-1', to: 'end' }],
+    }
+    const cleared = setAgentModelKind(graph, 'agent-1', 'text', 'provider', '')
+
+    // The node's own provider is authored content, not a kind binding, so
+    // clearing a kind leaves it where the graph carried it.
+    expect(agentNode(cleared, 'agent-1')?.agentOptions).toEqual({ provider: 'deepseek' })
+  })
+
+  it('keeps a node\'s own model when a kind is cleared', () => {
+    const graph: FlowGraph = {
+      id: 'x', name: 'X',
+      nodes: [
+        { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+        { id: 'agent-1', type: 'agent', position: { x: 220, y: 0 }, prompt: '', composition: { module: '@deepseek-ai/dsh-tool-bash' }, agentOptions: { model: 'deepseek-chat' } },
+        { id: 'end', type: 'end', position: { x: 440, y: 0 } },
+      ],
+      edges: [{ id: 'e1', from: 'start', to: 'agent-1' }, { id: 'e2', from: 'agent-1', to: 'end' }],
+    }
+    const cleared = setAgentModelKind(graph, 'agent-1', 'text', 'provider', '')
+
+    // Symmetry: a node that authored only a model keeps it the same way.
+    expect(agentNode(cleared, 'agent-1')?.agentOptions).toEqual({ model: 'deepseek-chat' })
+  })
+
+  it('projects a composition row, keeping only the fields the node carried', () => {
+    const bare: FlowAgentComposition = { module: '@deepseek-ai/dsh-tool-bash' }
+    expect(compositionToRow(bare)).toEqual({ name: '@deepseek-ai/dsh-tool-bash' })
+
+    const full: FlowAgentComposition = {
+      module: '@deepseek-ai/dsh-tool-bash', id: 'mine', config: { key: 'v' },
+      group: true, disabled: false, inject: ['extra'],
+    }
+    expect(compositionToRow(full)).toEqual({
+      name: '@deepseek-ai/dsh-tool-bash', id: 'mine', config: { key: 'v' },
+      group: true, disabled: false, inject: ['extra'],
+    })
+  })
+
+  it('walks a chain that ends without the end terminal', () => {
+    // A chain may stop at an agent with no successor — the projection walks
+    // it to the dead end rather than dropping the tail.
+    const graph: FlowGraph = {
+      id: 'x', name: 'X',
+      nodes: [
+        { id: 'start', type: 'start', position: { x: 0, y: 0 } },
+        { id: 'dead', type: 'agent', position: { x: 220, y: 0 }, prompt: '', composition: { module: '@deepseek-ai/dsh-tool-read' } },
+        { id: 'end', type: 'end', position: { x: 440, y: 0 } },
+      ],
+      edges: [{ id: 'e1', from: 'start', to: 'dead' }],
+    }
+    expect(chainAgents(graph).map(node => node.id)).toEqual(['dead'])
   })
 
   it('reports graphs equal only when rows AND layout match', () => {
@@ -893,6 +1057,26 @@ describe('the composer', () => {
     expect(kept.map(row => row.id)).toEqual(['tool-bash'])
   })
 
+  it('removes a row by its module name when the node carried no id', async () => {
+    const { controller, presets } = harness({ modules: paletteOf('@deepseek-ai/dsh-tool-read') })
+    await controller.load()
+    // A composition the host served without stable row ids: the removal falls
+    // back to the module name, the way a legacy row reads.
+    const mine = presets.get('mine')!
+    const graph = mine.graph!
+    mine.graph = {
+      ...graph,
+      nodes: graph.nodes.map(node => node.type === 'agent'
+        ? { ...node, composition: { module: node.composition!.module } }
+        : node),
+    }
+
+    await controller.beginCompose('mine')
+    controller.removeRow('@deepseek-ai/dsh-tool-read')
+
+    expect(graphRows(controller.store.getSnapshot().composer!.graph)).toEqual([])
+  })
+
   it('types the target id and display name', async () => {
     const { controller } = harness()
     await controller.load()
@@ -1028,12 +1212,59 @@ describe('the composer', () => {
     controller.setComposerId('typed-into-nothing')
     controller.setComposerName('nameless')
     controller.addRow('@deepseek-ai/dsh-tool-bash')
+    controller.addNodeAt('@deepseek-ai/dsh-tool-bash', { x: 0, y: 0 })
     controller.removeRow('x')
+    controller.removeNode('agent-1')
     controller.moveRow(0, 1)
+    controller.moveNode('agent-1', { x: 0, y: 0 })
+    controller.reorderNode('agent-1', 'agent-2')
     await controller.confirmCompose()
 
     expect(controller.store.getSnapshot().composer).toBeNull()
     expect(calls.some(call => call.method === 'saveGraph')).toBe(false)
+  })
+
+  it('folds a dead composition read into the page error', async () => {
+    const { controller } = harness({ throwRead: true })
+    await controller.load()
+
+    await controller.beginCompose('mine')
+
+    expect(controller.store.getSnapshot().composer).toBeNull()
+    expect(controller.store.getSnapshot().error).toContain('socket closed')
+  })
+
+  it('drops, removes, moves, and reorders nodes through the canvas gestures', async () => {
+    const { controller } = harness({ modules: paletteOf('@deepseek-ai/dsh-tool-bash', '@deepseek-ai/dsh-tool-read') })
+    await controller.load()
+    await controller.beginCompose(null)
+
+    // The drop path appends at the graph position and refuses a spent module.
+    const bashId = controller.addNodeAt('@deepseek-ai/dsh-tool-bash', { x: 400, y: 120 })
+    expect(bashId).toBe('agent-1')
+    expect(controller.addNodeAt('@deepseek-ai/dsh-tool-bash', { x: 420, y: 120 })).toBeUndefined()
+    expect(controller.addRow('@deepseek-ai/dsh-tool-bash')).toBeUndefined()
+    const readId = controller.addNodeAt('@deepseek-ai/dsh-tool-read', { x: 620, y: 120 })!
+    expect(controller.store.getSnapshot().composer!.graph.nodes.find(node => node.id === bashId)?.position)
+      .toEqual({ x: 400, y: 120 })
+
+    // A remove for a row the composition never carried is a no-op.
+    controller.removeRow('nope')
+
+    // The drag gesture repositions without reordering the chain.
+    controller.moveNode(bashId!, { x: 500, y: 40 })
+    expect(controller.store.getSnapshot().composer!.graph.nodes.find(node => node.id === bashId)?.position)
+      .toEqual({ x: 500, y: 40 })
+
+    // The connect gesture relinks so the dropped node runs right after the source.
+    controller.reorderNode(readId, bashId!)
+    expect(graphRows(controller.store.getSnapshot().composer!.graph).map(row => row.name))
+      .toEqual(['@deepseek-ai/dsh-tool-read', '@deepseek-ai/dsh-tool-bash'])
+
+    // The delete key removes by canvas id.
+    controller.removeNode(bashId!)
+    expect(graphRows(controller.store.getSnapshot().composer!.graph).map(row => row.name))
+      .toEqual(['@deepseek-ai/dsh-tool-read'])
   })
 
   it('refuses to submit while blocked or already saving', async () => {
@@ -1077,5 +1308,216 @@ describe('the composer', () => {
     const state = controller.store.getSnapshot()
     expect(state.composer).toBeNull()
     expect(state.palette).toBeNull()
+  })
+})
+
+describe('the model-kind routes', () => {
+  const chain = (): FlowGraph => chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash')
+
+  it('binds a provider and model onto a kind, preserving the node', () => {
+    const bound = setAgentModelKind(chain(), 'agent-1', 'text', 'provider', 'deepseek')
+    const boundModel = setAgentModelKind(bound, 'agent-1', 'text', 'model', 'deepseek-chat')
+
+    const node = agentNode(boundModel, 'agent-1')
+    expect(node?.agentOptions).toEqual({ modelKinds: { text: { provider: 'deepseek', model: 'deepseek-chat' } } })
+    // The route rides the node's agentOptions; the composition and canvas
+    // position the chain gave it are untouched.
+    expect(node).toMatchObject({ id: 'agent-1', composition: { module: '@deepseek-ai/dsh-tool-bash' } })
+  })
+
+  it('keeps the other side when one side is edited', () => {
+    const bound = setAgentModelKind(chain(), 'agent-1', 'text', 'provider', 'deepseek')
+
+    const rebind = setAgentModelKind(bound, 'agent-1', 'text', 'model', 'deepseek-v3')
+
+    expect(agentNode(rebind, 'agent-1')?.agentOptions)
+      .toEqual({ modelKinds: { text: { provider: 'deepseek', model: 'deepseek-v3' } } })
+  })
+
+  it('keeps the bound side when the other is cleared', () => {
+    const bound = setAgentModelKind(chain(), 'agent-1', 'text', 'provider', 'deepseek')
+    const withModel = setAgentModelKind(bound, 'agent-1', 'text', 'model', 'deepseek-chat')
+
+    const clearModel = setAgentModelKind(withModel, 'agent-1', 'text', 'model', '')
+
+    expect(agentNode(clearModel, 'agent-1')?.agentOptions)
+      .toEqual({ modelKinds: { text: { provider: 'deepseek' } } })
+  })
+
+  it('clearing both sides of a row drops the kind back to inherit', () => {
+    const bound = setAgentModelKind(chain(), 'agent-1', 'text', 'provider', 'deepseek')
+    const withModel = setAgentModelKind(bound, 'agent-1', 'text', 'model', 'deepseek-chat')
+    const clearModel = setAgentModelKind(withModel, 'agent-1', 'text', 'model', '')
+    const clearProvider = setAgentModelKind(clearModel, 'agent-1', 'text', 'provider', '')
+
+    // The node is back to exactly what the chain carried before any edit; an
+    // empty binding must not survive as a no-op that keeps the node "dirty".
+    expect(agentNode(clearProvider, 'agent-1')?.agentOptions).toBeUndefined()
+    expect(graphLayoutEqual(clearProvider, chain())).toBe(true)
+  })
+
+  it('leaves a graph alone for a missing or non-agent node', () => {
+    const base = chain()
+
+    expect(setAgentModelKind(base, 'agent-99', 'text', 'provider', 'deepseek')).toBe(base)
+    expect(setAgentModelKind(base, 'end', 'text', 'provider', 'deepseek')).toBe(base)
+  })
+
+  it('counts a route edit as an authored change', () => {
+    const base = chain()
+    const bound = setAgentModelKind(base, 'agent-1', 'text', 'provider', 'deepseek')
+    expect(graphLayoutEqual(base, bound)).toBe(false)
+    const other = setAgentModelKind(base, 'agent-1', 'text', 'provider', 'openai')
+    expect(graphLayoutEqual(bound, other)).toBe(false)
+    // The same route on a freshly built graph is equal, whatever object identity.
+    const same = setAgentModelKind(chain(), 'agent-1', 'text', 'provider', 'deepseek')
+    expect(graphLayoutEqual(bound, same)).toBe(true)
+  })
+})
+
+describe('the model catalog', () => {
+  const MODEL_GROUPS: readonly ModelProviderGroup[] = [
+    {
+      id: 'deepseek', name: 'DeepSeek',
+      models: [{ id: 'deepseek-chat', name: 'DeepSeek Chat', kinds: ['text'] }],
+    },
+    {
+      id: 'local', name: 'Local',
+      models: [{ id: 'whisper', name: 'Whisper', kinds: ['audio'] }],
+    },
+  ]
+  const roster: PresetRow[] = [
+    { id: 'standard', trust: 'system', isDefault: true },
+    { id: 'mine', trust: 'user', isDefault: false },
+  ]
+
+  it('loads the configured provider groups and failures', async () => {
+    const { controller, calls } = harness({ modelGroups: MODEL_GROUPS })
+    await controller.load()
+    await controller.beginCompose(null)
+
+    await vi.waitFor(() => {
+      expect(controller.store.getSnapshot().modelCatalog?.status).toBe('ready')
+    })
+    expect(controller.store.getSnapshot().modelCatalog)
+      .toEqual({ status: 'ready', groups: MODEL_GROUPS, failures: [] })
+    expect(calls.some(call => call.method === 'llm.models')).toBe(true)
+  })
+
+  it('degrades to unavailable on a catalog refusal', async () => {
+    const { controller } = harness({ failModels: 'catalog off' })
+    await controller.load()
+    await controller.beginCompose(null)
+
+    await vi.waitFor(() => {
+      expect(controller.store.getSnapshot().modelCatalog?.status).toBe('unavailable')
+    })
+  })
+
+  it('folds a dead transport into unavailable', async () => {
+    const { controller } = harness({ throwModels: true })
+    await controller.load()
+    await controller.beginCompose(null)
+
+    await vi.waitFor(() => {
+      expect(controller.store.getSnapshot().modelCatalog?.status).toBe('unavailable')
+    })
+  })
+
+  it('keeps one catalog load in flight rather than stacking reads', async () => {
+    const { controller, calls } = harness({ modelGroups: MODEL_GROUPS })
+    await controller.load()
+
+    await Promise.all([controller.loadModelCatalog(), controller.loadModelCatalog()])
+
+    expect(calls.filter(call => call.method === 'llm.models')).toHaveLength(1)
+  })
+
+  it('loads the catalog with the read-only view, and closes it with the view', async () => {
+    const { controller, calls } = harness({ modelGroups: MODEL_GROUPS })
+    await controller.load()
+    await controller.view('standard')
+    await vi.waitFor(() => {
+      expect(controller.store.getSnapshot().modelCatalog?.status).toBe('ready')
+    })
+    expect(calls.some(call => call.method === 'llm.models')).toBe(true)
+
+    controller.closeView()
+
+    expect(controller.store.getSnapshot().modelCatalog).toBeNull()
+  })
+
+  it('closes the catalog with the composer that loaded it', async () => {
+    const { controller } = harness()
+    await controller.load()
+    await controller.beginCompose(null)
+    await vi.waitFor(() => {
+      expect(controller.store.getSnapshot().modelCatalog?.status).toBe('ready')
+    })
+
+    controller.closeComposer()
+
+    expect(controller.store.getSnapshot().modelCatalog).toBeNull()
+  })
+
+  it('drops the catalog when the composition saves', async () => {
+    const { controller } = harness()
+    await controller.load()
+    await controller.beginCompose(null)
+    controller.setComposerId('my-agent')
+    controller.addRow('@deepseek-ai/dsh-tool-bash')
+
+    await controller.confirmCompose()
+
+    expect(controller.store.getSnapshot().modelCatalog).toBeNull()
+  })
+
+  it('edits the draft graph through the controller', async () => {
+    const { controller } = harness()
+    await controller.load()
+    await controller.beginCompose(null)
+    const nodeId = controller.addRow('@deepseek-ai/dsh-tool-bash')!
+    controller.updateAgentModelKind(nodeId, 'text', 'provider', 'deepseek')
+    controller.updateAgentModelKind(nodeId, 'text', 'model', 'deepseek-chat')
+
+    const node = agentNode(controller.store.getSnapshot().composer!.graph, nodeId)
+    expect(node?.agentOptions).toEqual({ modelKinds: { text: { provider: 'deepseek', model: 'deepseek-chat' } } })
+  })
+
+  it('saves the composition with the bound model kinds', async () => {
+    const { controller, calls } = harness()
+    await controller.load()
+    await controller.beginCompose(null)
+    controller.setComposerId('my-agent')
+    const nodeId = controller.addRow('@deepseek-ai/dsh-tool-bash')!
+    controller.updateAgentModelKind(nodeId, 'text', 'provider', 'deepseek')
+    controller.updateAgentModelKind(nodeId, 'text', 'model', 'deepseek-chat')
+
+    await controller.confirmCompose()
+
+    const payload = calls.find(call => call.method === 'saveGraph')?.payload as { graph: FlowGraph }
+    const node = agentNode(payload.graph, nodeId)
+    expect(node?.agentOptions).toEqual({ modelKinds: { text: { provider: 'deepseek', model: 'deepseek-chat' } } })
+  })
+
+  it('wakes the save blocker from unchanged when a route is bound', () => {
+    const base = chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash')
+    const untouched = draft({ original: { id: 'my-agent', name: 'My agent', graph: base } })
+    expect(composeBlocker(untouched, roster)).toBe('unchanged')
+
+    const bound = setAgentModelKind(base, 'agent-1', 'text', 'provider', 'deepseek')
+    expect(composeBlocker(
+      draft({ graph: bound, original: { id: 'my-agent', name: 'My agent', graph: base } }),
+      roster,
+    )).toBeUndefined()
+  })
+
+  it('ignores a kind edit with no composer open', async () => {
+    const { controller } = harness()
+    await controller.load()
+
+    controller.updateAgentModelKind('agent-1', 'text', 'provider', 'deepseek')
+
+    expect(controller.store.getSnapshot().composer).toBeNull()
   })
 })

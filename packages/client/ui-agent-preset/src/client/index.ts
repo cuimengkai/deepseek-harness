@@ -11,7 +11,7 @@
  * before-the-fact, while the header only reports what a session already runs.
  */
 
-import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ConnectionHandle, ModelKind } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the ctx.remote merge and the forwarded-event key face
@@ -43,13 +43,14 @@ export type { AgentPresetSeatState, SeatSessionSummary } from './seat-store.ts'
 export {
   composeBlocker, composeDirty, displayNameFor, draftBlocker, handoffBlocker, rowIdFor,
   type AgentPresetSectionState, type ComposeDraft, type ComposePalette, type CopyDraft,
-  type ModuleSource, type PaletteModule, type PresetRow, type PresetView,
+  type ModelCatalog, type ModuleSource, type PaletteModule, type PresetRow, type PresetView,
 } from './section-store.ts'
 export {
   cascadePosition, chainAddModule, chainAgents, chainMoveIndex, chainMoveNode,
   chainRemoveNode, chainReorder, compositionToRow, emptyChainGraph, graphLayoutEqual,
-  graphRows,
+  graphRows, insertSlot, setAgentModelKind,
 } from './preset-graph.ts'
+export { filterAndGroupPalette, type PaletteGroup } from './palette-group.ts'
 export type { AgentPresetOption, AgentPresetSettingsState } from './settings-store.ts'
 export { AGENT_PRESET_SETTINGS_NS, writeDefaultPreset } from './settings-store.ts'
 
@@ -123,6 +124,25 @@ export function apply(ctx: ClientContext): void {
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-agent-preset: settings refresh')
 
+  ctx.effect(() => {
+    // The configured model catalog can move while the composer is open: adapter
+    // topology commits and settings documents both feed it, and the picker
+    // re-reads so a provider or model that changed mid-edit shows up. The
+    // composer owns the section while open, so an overlay check is all the
+    // gate needed — no namespace filter, exactly like the model selection
+    // surface's own refresh.
+    const refresh = (): void => {
+      const state = section.store.getSnapshot()
+      if (state.composer === null && state.view === null) return
+      void section.loadModelCatalog()
+    }
+    const disposers = [
+      ctx.remote.$on('llm/adapters-updated', refresh),
+      ctx.remote.$on('settings/document-updated', refresh),
+    ]
+    return () => { for (const dispose of disposers) dispose() }
+  }, 'ui-agent-preset: model catalog refresh')
+
   // The settings section's conversational authoring entry: stage the
   // self-referential preset and land a new session on it. Bound inside the
   // conversation scope below (the seat and the session flow live there) and
@@ -195,10 +215,10 @@ export function apply(ctx: ClientContext): void {
       // a preset authored to be used is missing from the one place it is used.
       const readRoster = (): void => { void seat.load() }
       rosterReaders.add(readRoster)
-      // Stage WITHOUT applying — the still-current running session would
-      // refuse the swap and drop the stage — then start the session it lands
-      // on: the chip's list-change applier composes the blank session the
-      // workspace connect produces or reuses.
+      // Stage WITHOUT applying — the still-current running session cannot take
+      // the choice, and the connect this entry starts is what carries it —
+      // then start the session it lands on: the chip's list-change applier
+      // composes the blank session the workspace connect produces or reuses.
       creatorDraft = () => {
         // The introduce cue makes the chip announce the pick the user never
         // made on this screen — the stage happened back in settings.
@@ -251,6 +271,9 @@ export function apply(ctx: ClientContext): void {
     moveRow: (from: number, to: number) => { section.moveRow(from, to) },
     moveNode: (nodeId: string, position: { x: number; y: number }) => { section.moveNode(nodeId, position) },
     reorderNode: (fromNodeId: string, toNodeId: string) => { section.reorderNode(fromNodeId, toNodeId) },
+    updateAgentModelKind: (nodeId: string, kind: ModelKind, field: 'provider' | 'model', value: string) => {
+      section.updateAgentModelKind(nodeId, kind, field, value)
+    },
     confirmCompose: () => section.confirmCompose(),
     openLocation: (id: string) => section.openLocation(id),
     ...creatorDraft === undefined ? {} : { startCreatorDraft: creatorDraft },

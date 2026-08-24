@@ -520,6 +520,39 @@
   line-height: 18px;
 }
 
+/* A modality/kind checkbox row inside a row's disclosure. It spans the whole
+   advanced grid so its label and chips do not fight the capacity columns. */
+.modelModalities {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.modalityOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modalityChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.modalityChip input {
+  margin: 0;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+
 .modelEmpty {
   padding: 12px;
   border: 1px dashed var(--dsw-alias-border-l3);

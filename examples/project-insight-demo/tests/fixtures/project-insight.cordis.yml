@@ -4,7 +4,7 @@
 # agent-spine mounts a single `main` agent whose `cwd` points at the fixture
 # project the test seeds (resolved through `DSH_DEMO_PROJECT_DIR`). The first
 # mock stream emits the tool call; the tool resolves the workspace and commits
-# `<fixture>/fixture-project/.dsh/project-insight.json`. Nothing here touches
+# `<fixture>/fixture-project/.dsh/insight/`. Nothing here touches
 # the network or reads a credential.
 - id: project-insight-mock-llm
   name: './project-insight-mock-llm.ts'

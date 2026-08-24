@@ -79,10 +79,10 @@ export class AgentPresetSeatController {
      */
     private readonly onStage?: (agentPreset: string) => void,
     /**
-     * Report that the stage settled — applied, dropped as unservable, or
-     * rejected — so the workspace can drop the pending preset it recorded for
-     * the next connect. A settled stage must not ride a later unrelated
-     * connect.
+     * Report that the stage settled — applied to a session, already consumed
+     * by one, or rejected — so the workspace can drop the pending preset it
+     * recorded for the next connect. A settled stage must not ride a later
+     * unrelated connect.
      */
     private readonly onStageSettled?: () => void,
   ) {}
@@ -160,6 +160,9 @@ export class AgentPresetSeatController {
    *
    * Called both by `select()` and by whoever observes the current session
    * changing, because the session may appear either before or after the pick.
+   * A started session cannot take the choice, but the stage is not dropped for
+   * it — the pick names the NEXT session, and a pick that precedes an import
+   * must survive until the connect consumes it.
    * @returns once the switch settled, or immediately when there is nothing to do.
    */
   async apply(): Promise<void> {
@@ -167,8 +170,12 @@ export class AgentPresetSeatController {
     const session = this.currentSession()
     if (staged === undefined || session === undefined) return
     // A started session's history was produced under its own composition; the
-    // host refuses the swap, so the stage is no longer meaningful.
-    if (!session.blank || session.agentPreset === staged) {
+    // host refuses the swap. The stage still names the session the next
+    // connect is about to create (a develop pick that precedes an import), so
+    // it stays pending instead of settling as unservable.
+    if (!session.blank) return
+    // The session already runs the staged preset: the stage is consumed.
+    if (session.agentPreset === staged) {
       this.staged = undefined
       this.onStageSettled?.()
       return

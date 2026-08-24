@@ -32,10 +32,10 @@ export interface ProjectInsightApi {
   /**
    * Read the stored project-insight document for a working directory.
    *
-   * Resolves the project root upward from `cwd`, reads `.dsh/project-insight.json`,
-   * and reports fresh/stale by recomputing the content fingerprint. A project
-   * never scanned reports `none`; an over-cap, unparsable, or wrong-version
-   * document reports `error`. No scan is triggered here — the host-plane
+   * Resolves the project root upward from `cwd`, reads the committed `.dsh/insight/`
+   * document, and reports fresh/stale by recomputing the stat-only structural
+   * signature. A project never scanned reports `none`; an over-cap, unparsable,
+   * or wrong-version document reports `error`. No scan is triggered here — the host-plane
    * auto-scan hook owns that, and the client learns of completion through the
    * forwarded `project-insight/updated` event — so a stale result is the
    * caller's signal to wait for the scan or re-open.

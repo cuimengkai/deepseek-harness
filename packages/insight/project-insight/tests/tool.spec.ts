@@ -115,16 +115,17 @@ describe('scan_project tool', () => {
       expect(result.value).toMatchObject({
         status: 'scanned',
         root: root.split('/').pop(),
-        path: '.dsh/project-insight.json',
+        path: '.dsh/insight/meta.json',
         summary: { files: 2, modules: 2, edges: 1, components: 0, prompts: 0, agentTechFiles: 0 },
       })
       expect(result.meta).toMatchObject({ code: 'scanned', modules: 2, components: 0 })
 
-      // The document is committed to the project's own .dsh directory.
+      // The document is committed to the project's own `.dsh/insight/` directory.
       const { readFile } = await import('node:fs/promises')
-      const doc = JSON.parse(await readFile(join(root, '.dsh', 'project-insight.json'), 'utf8')) as { formatVersion: number; contentFingerprint: string }
-      expect(doc.formatVersion).toBe(1)
+      const doc = JSON.parse(await readFile(join(root, '.dsh', 'insight', 'meta.json'), 'utf8')) as { formatVersion: number; contentFingerprint: string; statSignature: string }
+      expect(doc.formatVersion).toBe(3)
       expect(doc.contentFingerprint).toBeTruthy()
+      expect(doc.statSignature).toMatch(/^[0-9a-f]{64}$/)
 
       // A second scan is a no-op while the document is fresh.
       const again = await run('session-a', 'scan_project', {}, { cwd: root })

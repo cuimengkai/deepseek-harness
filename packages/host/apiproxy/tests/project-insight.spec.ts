@@ -25,9 +25,10 @@ function request<P>(payload: P): RpcRequest<P> {
 
 /** A committed doc a fresh read returns; typed so the wire literals stay narrow. */
 const FRESH_DOC: ProjectInsightDoc = {
-  formatVersion: 1,
+  formatVersion: 3,
   rootName: 'fixture',
   contentFingerprint: 'test-fingerprint',
+  statSignature: 'test-stat-signature',
   scannedAt: 0,
   sections: {
     techStack: { manifests: [], dependencies: [], runtimes: [], files: [] },
@@ -35,7 +36,7 @@ const FRESH_DOC: ProjectInsightDoc = {
     componentDependencies: { components: [], cycles: [] },
     components: { components: [], count: 0 },
     prompts: { files: [], count: 0 },
-    agentTech: { files: [], tools: [], count: 0 },
+    agentTech: { files: [], tools: [], count: 0, skills: [], mcp: [], prompts: [] },
   },
 }
 

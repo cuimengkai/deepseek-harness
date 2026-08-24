@@ -14,8 +14,8 @@
  * what the dirty check relies on.
  */
 
-import type { FlowAgentComposition, FlowAgentNode, FlowGraph } from '@deepseek-ai/dsh-flow/types'
-import type { ComposeRow } from '@deepseek-ai/dsh-api-remotes/client'
+import type { FlowAgentComposition, FlowAgentNode, FlowAgentOptions, FlowGraph, FlowModelKindBinding, FlowNode } from '@deepseek-ai/dsh-flow/types'
+import type { ComposeRow, ModelKind } from '@deepseek-ai/dsh-api-remotes/client'
 
 /** The cascade x-offset between chain nodes in a fresh layout. */
 const CASCADE_X = 220
@@ -99,7 +99,7 @@ export function graphRows(graph: FlowGraph): ComposeRow[] {
   })
 }
 
-/** Whether two graphs carry the same authored content: rows AND node positions. */
+/** Whether two graphs carry the same authored content: rows, node positions, AND the per-node agent routes. */
 export function graphLayoutEqual(a: FlowGraph, b: FlowGraph): boolean {
   const aRows = graphRows(a)
   const bRows = graphRows(b)
@@ -113,7 +113,98 @@ export function graphLayoutEqual(a: FlowGraph, b: FlowGraph): boolean {
   if (a.nodes.length !== b.nodes.length) return false
   const positions = (graph: FlowGraph): string =>
     graph.nodes.map(node => `${node.id}:${node.position.x},${node.position.y}`).join('|')
-  return positions(a) === positions(b)
+  if (positions(a) !== positions(b)) return false
+  // A model-kind binding is authored content, so a route edit wakes Save like
+  // a row or layout edit does. Keyed by node id so a relabeled route is caught
+  // wherever it sits.
+  const routes = (graph: FlowGraph): string =>
+    graph.nodes
+      .map(node => node.type === 'agent' ? `${node.id}:${JSON.stringify(node.agentOptions ?? {})}` : node.id)
+      .join('|')
+  return routes(a) === routes(b)
+}
+
+/**
+ * The next binding after editing one side of a model-kind route: the edited
+ * field takes `value` ('' clears it), the other keeps what the node bound.
+ * @param binding - the kind's current binding, absent before the first edit.
+ * @param field - which side is edited.
+ * @param value - the provider or model id, or '' to clear that side.
+ * @returns the next binding, or undefined when both sides are clear.
+ */
+function bindModelKindField(
+  binding: FlowModelKindBinding | undefined,
+  field: 'provider' | 'model',
+  value: string,
+): FlowModelKindBinding | undefined {
+  const provider = field === 'provider' ? value : binding?.provider
+  const model = field === 'model' ? value : binding?.model
+  // A binding cleared to nothing routes the node's own default, so it is the
+  // same as a kind never bound — the empty entry must not survive as a no-op.
+  const next = {
+    ...provider === undefined || provider === '' ? {} : { provider },
+    ...model === undefined || model === '' ? {} : { model },
+  }
+  return Object.keys(next).length === 0 ? undefined : next
+}
+
+/**
+ * Bind one model kind's route on one agent node, writing `agentOptions.modelKinds`.
+ * The first edit on a kind creates its binding; clearing a field omits it from
+ * the binding, and clearing both drops the kind entry entirely — an omitted
+ * kind routes the node's own default. The node's own `provider`/`model` (if
+ * the graph carried any) are left alone.
+ * @param graph - the chain before the edit.
+ * @param nodeId - the agent node's canvas id.
+ * @param kind - the model kind being bound.
+ * @param field - which side of the binding is edited.
+ * @param value - the provider or model id, or '' to clear that side.
+ * @returns the graph with the node's route bound, or the same graph when the
+ * node is absent or is not an agent.
+ */
+export function setAgentModelKind(
+  graph: FlowGraph,
+  nodeId: string,
+  kind: ModelKind,
+  field: 'provider' | 'model',
+  value: string,
+): FlowGraph {
+  const nodes = graph.nodes.map((node): FlowNode => {
+    if (node.id === nodeId && node.type === 'agent') {
+      const options = node.agentOptions
+      const kinds = { ...(options?.modelKinds ?? {}) } as Partial<Record<ModelKind, FlowModelKindBinding>>
+      const next = bindModelKindField(kinds[kind], field, value)
+      let modelKinds: Partial<Record<ModelKind, FlowModelKindBinding>> | undefined
+      if (next === undefined) {
+        // Rebuild without the dynamic key rather than deleting it, so no null
+        // binding survives to keep the edit "dirty".
+        const { [kind]: _dropped, ...withoutKind } = kinds
+        modelKinds = Object.keys(withoutKind).length === 0 ? undefined : withoutKind
+      } else {
+        modelKinds = { ...kinds, [kind]: next }
+      }
+      // Clearing the last binding restores the node exactly: the node's own
+      // provider/model survive, and a node that never carried agentOptions
+      // must not be invented one, or the edit would stay "dirty" against it.
+      if (modelKinds === undefined) {
+        const rest: FlowAgentOptions | undefined = options === undefined
+          ? undefined
+          : {
+            ...options.provider === undefined ? {} : { provider: options.provider },
+            ...options.model === undefined ? {} : { model: options.model },
+          }
+        if (rest === undefined) return node
+        if (rest.provider === undefined && rest.model === undefined) {
+          const { agentOptions: _dropped, ...bare } = node
+          return bare
+        }
+        return { ...node, agentOptions: rest }
+      }
+      return { ...node, agentOptions: { ...options, modelKinds } }
+    }
+    return node
+  })
+  return nodes.some((node, index) => node !== graph.nodes[index]) ? { ...graph, nodes } : graph
 }
 
 /**
@@ -271,7 +362,24 @@ export function chainMoveIndex(graph: FlowGraph, fromIndex: number, toIndex: num
   const ids = chainAgents(graph).map(node => node.id)
   if (fromIndex < 0 || fromIndex >= ids.length) return graph
   const moved = ids.splice(fromIndex, 1)[0]
+  /* v8 ignore next -- the range guard above guarantees a moved element */
   if (moved === undefined) return graph
   ids.splice(Math.min(Math.max(toIndex, 0), ids.length), 0, moved)
   return withAgentOrder(graph, ids)
+}
+
+/**
+ * The chain slot a module picked for one node lands at: the slot right after
+ * that node. A pick for the start terminal goes first; one for the end
+ * terminal or for a missing node keeps the chain tail — the caller already
+ * appended the new module there, so returning null means no move.
+ * @param after - the canvas node id the pick follows.
+ * @param agents - the chain's agent nodes, in chain order.
+ * @returns the target chain index, or null to keep the module at the tail.
+ */
+export function insertSlot(after: string, agents: readonly FlowAgentNode[]): number | null {
+  if (after === 'start') return 0
+  if (after === 'end') return null
+  const index = agents.findIndex(node => node.id === after)
+  return index === -1 ? null : index + 1
 }

@@ -16,7 +16,7 @@ Two scoped changes make the pick resilient on preset problems without weakening 
 
 1. **The fresh-create arm falls back to the deployment default.** `ensureSession`'s `createFreshAgent` tries the requested preset, and on `UnknownPresetError` (from resolve) or `PresetMountError` (from setup's mount) retries with `undefined` — the deployment default. Only the fresh arm uses this fallback: the create rolled back cleanly (a setup rejection publishes neither id), so a same-sessionId retry is safe. Adoption and resume keep strict refusal — they compose the preset the session already runs, and a bad stored composition keeps refusing loud so its owner can repair it. The memoized `sessionCreations` now resolves to `{ agent, effectiveRequest }`, and the final `assertPresetUnchanged` gate compares the yielded agent against the effective request — what the create ACTUALLY honored — so a fallback result (agent on the default) is not rejected as a requested-preset mismatch.
 
-2. **A settled stage clears the workspace pending.** The workspaces service gains `clearPendingAgentPreset()`, and the seat reports stage settlement through a new `onStageSettled` callback fired at all three staged-consumption points: dropped as unservable, applied, or rejected. The workspace pending is cleared at each, so a stale staged preset never rides a later unrelated connect.
+2. **A settled stage clears the workspace pending.** The workspaces service gains `clearPendingAgentPreset()`, and the seat reports stage settlement through a new `onStageSettled` callback fired when a stage is applied, consumed by a session that already runs it, or rejected. The workspace pending is cleared at each, so a stale staged preset never rides a later unrelated connect. A stage made against a session that already started is kept, not settled — a develop pick that precedes an import must reach the next connect ([develop-pick-survives-started-session](../bug-fix/2026-08-24-develop-pick-survives-started-session.md)).
 
 ## Alternatives considered
 
@@ -29,4 +29,4 @@ Two scoped changes make the pick resilient on preset problems without weakening 
 - A workspace pick that named a bad preset still opens the workspace, on the default composition.
 - Adoption and resume keep their strict preset identity: stored-preset-wins and `agent-preset-conflict` are unchanged.
 - The `workspaceError` alert in the conversation hero now fires only for genuine failures (cwd conflict, busy subagent, host internal) — preset problems no longer reach it.
-- A stage that never reaches a session is dropped everywhere, so a later connect starts from the deployment default.
+- A stage that settles is dropped everywhere, so a later connect starts from the deployment default; a stage still waiting on a started session survives for the connect that consumes it.

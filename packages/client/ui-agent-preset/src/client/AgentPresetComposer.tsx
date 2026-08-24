@@ -26,17 +26,19 @@
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { ModelKind } from '@deepseek-ai/dsh-api-remotes/client'
 import type { FlowNode } from '@deepseek-ai/dsh-flow/types'
 import { FlowCanvas } from '@deepseek-ai/dsh-client-ui-flow-editor/client'
 import {
   composeBlocker, handoffBlocker,
-  type ComposeDraft, type ComposePalette, type PaletteModule, type PresetRow,
+  type ComposeDraft, type ComposePalette, type ModelCatalog, type PaletteModule, type PresetRow,
 } from './section-store.ts'
-import { chainAgents, compositionToRow } from './preset-graph.ts'
+import { chainAgents, compositionToRow, insertSlot } from './preset-graph.ts'
 import { presetFlowSurface, type PresetSurfaceActions } from './preset-flow-controller.ts'
 import type { AgentPresetSettingsKey } from './locales.ts'
 import { ComposerPalette, categoryColor, glyphLetter } from './ComposerPalette.tsx'
 import { NodeInspector } from './NodeInspector.tsx'
+import { NodePickerModal } from './NodePickerModal.tsx'
 import css from './AgentPresetComposer.module.css'
 
 /** Composer actions the section forwards from the controller. */
@@ -64,6 +66,11 @@ export interface AgentPresetComposerActions {
   moveNode: (nodeId: string, position: { x: number; y: number }) => void
   /** Reorder the composition so `to` runs right after `from` (the connect gesture). */
   reorderNode: (fromNodeId: string, toNodeId: string) => void
+  /**
+   * Bind one model kind's route on one composition node — the inspector's
+   * model-kind picker. The route is part of the draft, so an edit wakes Save.
+   */
+  updateAgentModelKind: (nodeId: string, kind: ModelKind, field: 'provider' | 'model', value: string) => void
   confirmCompose: () => Promise<boolean>
   /** Stage the self-referential preset and start a session on it. */
   startCreatorDraft?: () => void
@@ -77,6 +84,8 @@ export interface AgentPresetComposerProps {
   draft: ComposeDraft
   /** The palette's last load; null only before the composer opened. */
   palette: ComposePalette | null
+  /** The model catalog for the inspector's model-kind picker. */
+  modelCatalog: ModelCatalog | null
   /** The roster, for the create/id-collision and overwrite checks. */
   roster: readonly PresetRow[]
   /** Active Web locale lookup. */
@@ -98,13 +107,15 @@ export interface AgentPresetComposerProps {
  * @returns the composer view.
  */
 export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode {
-  const { draft, palette, roster, t, actions, readOnly = false } = props
+  const { draft, palette, modelCatalog, roster, t, actions, readOnly = false } = props
   /** The selected node's canvas id, null when none is selected. */
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
   /** The selected edge's id, null when none is selected. */
   const [selectedEdgeId, setSelectedEdgeId] = useState<string | null>(null)
   /** Whether the palette floats over the canvas, or hides behind its tab. */
   const [paletteOpen, setPaletteOpen] = useState(true)
+  /** The node picker's anchor — which node the picked module follows. */
+  const [picker, setPicker] = useState<{ after: string } | null>(null)
 
   const blocker = composeBlocker(draft, roster)
   const message = draft.error ?? (blocker === undefined ? null : t(blocker))
@@ -143,8 +154,29 @@ export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode 
 
   /** Move the selected node one slot, for the inspector's move buttons. */
   function handleMove(delta: -1 | 1): void {
+    /* v8 ignore next -- the inspector mounts only with a selection, so this never fires */
     if (selectedIndex === -1) return
     actions.moveRow(selectedIndex, selectedIndex + delta)
+  }
+
+  /**
+   * Insert a picked module after the anchor the picker opened for. The add
+   * appends the new node at the chain tail (its index is the pre-add length),
+   * then moves it to the anchor's slot — start lands first, an agent follows
+   * it, the end terminal keeps the tail.
+   */
+  function handlePick(moduleName: string): void {
+    const at = picker?.after
+    /* v8 ignore next -- the picker is mounted only while `picker` is set, so its onPick can never fire for a closed picker. */
+    if (at === undefined) return
+    const index = agents.length
+    const id = actions.addRow(moduleName)
+    /* v8 ignore next -- the picker disables spent modules, so a pick always appends */
+    if (id === undefined) return
+    const slot = insertSlot(at, agents)
+    if (slot !== null && slot !== index) actions.moveRow(index, slot)
+    setSelectedNodeId(id)
+    setPicker(null)
   }
 
   // The surface the shared canvas gestures against: selection is this
@@ -191,6 +223,9 @@ export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode 
         </span>
         <span className={css.nodeBody}>
           <span className={css.nodeName}>{module?.displayName ?? composition.module}</span>
+          {module?.description === undefined
+            ? null
+            : <span className={css.nodeDesc}>{module.description}</span>}
           <code className={css.nodeModule}>{composition.module}</code>
         </span>
       </div>
@@ -302,8 +337,17 @@ export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode 
             surface={surface}
             renderNode={renderNode}
             dropMime="text/plain"
-            canvasHint={readOnly ? undefined : t('canvasHint')}
             connectAriaLabel={t('connectLabel')}
+            {...(readOnly ? {} : { canvasHint: t('canvasHint') })}
+            // The node add and edge insert buttons open the same picker, whose
+            // anchor is the node the new one will follow. Read-only omits the
+            // hooks (exactOptionalPropertyTypes: absent, not undefined).
+            {...(readOnly ? {} : {
+              onAddNode: (id: string) => { setPicker({ after: id }) },
+              addNodeAriaLabel: t('nodeAddLabel'),
+              onInsertBetween: (from: string) => { setPicker({ after: from }) },
+              insertBetweenAriaLabel: t('nodeInsertLabel'),
+            })}
           />
           {selectedRow === undefined || selectedAgent === undefined
             ? null
@@ -312,6 +356,11 @@ export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode 
                 readOnly={readOnly}
                 row={selectedRow}
                 module={moduleFor(selectedRow.name)}
+                modelKinds={selectedAgent.agentOptions?.modelKinds}
+                catalog={modelCatalog}
+                onModelBinding={(kind, field, value) => {
+                  actions.updateAgentModelKind(selectedAgent.id, kind, field, value)
+                }}
                 canMoveUp={selectedIndex > 0}
                 canMoveDown={selectedIndex !== -1 && selectedIndex < agents.length - 1}
                 onRemove={actions.removeRow}
@@ -352,6 +401,18 @@ export function AgentPresetComposer(props: AgentPresetComposerProps): ReactNode 
           </div>
         </>
       )}
+      {picker === null
+        ? null
+        : (
+          <NodePickerModal
+            after={picker.after}
+            palette={palette}
+            inComposition={inComposition}
+            onPick={handlePick}
+            onClose={() => { setPicker(null) }}
+            t={t}
+          />
+        )}
     </div>
   )
 }

@@ -1,18 +1,23 @@
 /**
  * The deterministic offline analyzer that turns a project tree into the
- * `project-insight.json` document. It is a pure function of the tree's bytes:
+ * `.dsh/insight/` document. It is a pure function of the tree's bytes:
  * no network, no credentials, no LLM, no clock — scanning the same bounded
  * tree twice yields a byte-identical document, because every emitted
  * collection is sorted by a stable key and all paths are root-relative.
  * `scannedAt` is present on the document but excluded from the content
- * fingerprint, so a re-scan of an unchanged tree also leaves the identity alone.
+ * fingerprint, so a re-scan of an unchanged tree also leaves the identity
+ * alone; the stat-only `statSignature` records the tree identity at scan time
+ * so reads can judge freshness without re-reading content.
  * @module @deepseek-ai/dsh-project-insight/scanner
  */
 
 import { basename, posix } from 'node:path'
 import {
+  MAX_AGENT_TECH_MARKDOWN_BYTES, MAX_AGENT_TECH_MARKDOWN_ROWS, MAX_AGENT_TECH_MARKDOWN_TOTAL,
   MAX_EDGES, MAX_FINGERPRINT_FILES, MAX_MANIFEST_BYTES, MAX_SOURCE_BYTES, MAX_SOURCE_FILES,
-  type AgentTechFileRow, type AgentTechKind, type AgentTechSection, type AgentTechToolRow,
+  PROJECT_INSIGHT_FORMAT_VERSION,
+  type AgentTechFileRow, type AgentTechKind, type AgentTechMarkdownRow, type AgentTechSection,
+  type AgentTechToolRow,
   type ComponentDependenciesSection, type ComponentDependencyRow, type ComponentKind, type ComponentRow,
   type ComponentsSection, type DependencyRow, type ManifestRow, type ModuleFileRow, type ModuleTopologySection,
   type ProjectInsightDoc, type PromptRow, type PromptsSection, type RuntimeRow, type SourceFileRow,
@@ -23,7 +28,7 @@ import {
   countLines, extractImportSpecifiers, extractVueScript, isSourceFile, languageOf, readBounded,
 } from './parse.ts'
 import { readPathAliases, type PathAlias } from './paths.ts'
-import { walkProject, type WalkedFile } from './walk.ts'
+import { statProject, walkProject, type WalkedFile } from './walk.ts'
 
 /** The compact, model-facing summary of one scan. */
 export interface ScanSummary {
@@ -94,6 +99,7 @@ const SKILL_ENTRY_RE = /^\.(agents|claude)\/skills\/[^/]+\/SKILL\.md$/
 export async function scanProject(root: string, signal?: AbortSignal): Promise<ScanProjectResult> {
   const walked = await walkProject(root, MAX_FINGERPRINT_FILES, signal)
   const contentFingerprint = await fingerprintOf(walked, signal)
+  const stat = await statProject(root, MAX_FINGERPRINT_FILES, signal)
   const byRel = new Map(walked.map(file => [file.rel, file]))
   const relSet = new Set(walked.map(file => file.rel))
 
@@ -128,9 +134,10 @@ export async function scanProject(root: string, signal?: AbortSignal): Promise<S
   const agentTech = await buildAgentTech(walked, signal)
 
   const doc: ProjectInsightDoc = {
-    formatVersion: 1,
+    formatVersion: PROJECT_INSIGHT_FORMAT_VERSION,
     rootName: basename(root),
     contentFingerprint,
+    statSignature: stat.signature,
     scannedAt: Date.now(),
     sections: {
       techStack: techStack.section,
@@ -456,6 +463,7 @@ async function buildPrompts(walked: readonly WalkedFile[], signal?: AbortSignal)
 function isPromptFile(rel: string): boolean {
   if (PROMPT_BASENAMES.has(basename(rel))) return true
   if (rel.endsWith('.prompt.md')) return true
+  if (rel.startsWith('.agents/prompts/') || rel.startsWith('.claude/prompts/')) return true
   const slash = rel.indexOf('/')
   const head = slash < 0 ? rel : rel.slice(0, slash)
   return head === 'prompts'
@@ -500,7 +508,109 @@ async function buildAgentTech(walked: readonly WalkedFile[], signal?: AbortSigna
     return true
   })
 
-  return { files: files.slice(0, 100), tools: unique.slice(0, 50), count }
+  const content = await buildAgentTechMarkdown(walked, signal)
+  return {
+    files: files.slice(0, 100), tools: unique.slice(0, 50), count,
+    skills: content.skills, mcp: content.mcp, prompts: content.prompts,
+  }
+}
+
+/** MCP config files whose JSON the agent-tech section embeds, env values redacted. */
+function isMcpConfig(rel: string): boolean {
+  return rel === '.mcp.json' || rel === 'mcp.json' || rel === '.claude/mcp.json' || rel === '.mcp/mcp.json'
+}
+
+/** A parsed `.mcp.json`-style config: only the `env` blocks are redacted. */
+interface McpConfigJson {
+  readonly mcpServers?: Readonly<Record<string, Readonly<Record<string, unknown>>>>
+}
+
+/**
+ * Redact every `mcpServers.*.env` value so an embedded config never commits
+ * secrets to the insight document; server names, command, and args survive.
+ * An unparsable config embeds verbatim (its own syntax is already the problem).
+ * @param content - the raw config text.
+ * @returns the config re-serialized with env values replaced, or the raw text.
+ */
+function redactMcpEnv(content: string): string {
+  let parsed: McpConfigJson
+  try {
+    parsed = JSON.parse(content) as McpConfigJson
+  } catch {
+    return content
+  }
+  if (parsed.mcpServers === undefined) return content
+  const redacted: Record<string, Record<string, unknown>> = {}
+  for (const [name, server] of Object.entries(parsed.mcpServers)) {
+    redacted[name] = typeof server.env === 'object' && server.env !== null
+      ? { ...server, env: redactedEnv(server.env) }
+      : { ...server }
+  }
+  return JSON.stringify({ ...parsed, mcpServers: redacted }, null, 2)
+}
+
+function redactedEnv(env: object): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const key of Object.keys(env)) out[key] = '<redacted>'
+  return out
+}
+
+/** One collection's embedded markdown rows. */
+interface AgentTechMarkdown {
+  readonly skills: AgentTechMarkdownRow[]
+  readonly mcp: AgentTechMarkdownRow[]
+  readonly prompts: AgentTechMarkdownRow[]
+}
+
+/**
+ * Embed the agent-related markdown content the workbench sub-tabs render:
+ * skill `SKILL.md` files, mcp config files, and prompt files. Each collection
+ * is sorted by path and bounded by the per-collection row cap and a shared
+ * total byte budget applied in sorted order; a row over the per-row cap is
+ * skipped. MCP configs have their `env` values redacted before embedding.
+ * @param walked - the bounded file set.
+ * @param signal - aborts the bounded reads.
+ * @returns the three sorted, capped collections.
+ */
+async function buildAgentTechMarkdown(
+  walked: readonly WalkedFile[],
+  signal?: AbortSignal,
+): Promise<AgentTechMarkdown> {
+  const skills: AgentTechMarkdownRow[] = []
+  const mcp: AgentTechMarkdownRow[] = []
+  const prompts: AgentTechMarkdownRow[] = []
+  let budget = MAX_AGENT_TECH_MARKDOWN_TOTAL
+  const push = (row: AgentTechMarkdownRow, rows: AgentTechMarkdownRow[]): void => {
+    if (rows.length >= MAX_AGENT_TECH_MARKDOWN_ROWS) return
+    const bytes = Buffer.byteLength(row.markdown, 'utf8')
+    if (bytes > budget) return
+    budget -= bytes
+    rows.push(row)
+  }
+  for (const file of walked) {
+    if (SKILL_ENTRY_RE.test(file.rel)) {
+      const markdown = await readBounded(file.abs, MAX_AGENT_TECH_MARKDOWN_BYTES, signal)
+      if (markdown === undefined) continue
+      const segments = file.rel.split('/')
+      const name = segments[segments.length - 2]
+      if (name !== undefined) push({ name, path: file.rel, markdown }, skills)
+    } else if (isMcpConfig(file.rel)) {
+      const content = await readBounded(file.abs, MAX_AGENT_TECH_MARKDOWN_BYTES, signal)
+      if (content === undefined) continue
+      push({
+        name: basename(file.rel), path: file.rel,
+        markdown: '```json\n' + redactMcpEnv(content) + '\n```',
+      }, mcp)
+    } else if (isPromptFile(file.rel)) {
+      const markdown = await readBounded(file.abs, MAX_AGENT_TECH_MARKDOWN_BYTES, signal)
+      if (markdown === undefined) continue
+      push({ name: basename(file.rel), path: file.rel, markdown }, prompts)
+    }
+  }
+  skills.sort(compareByPath)
+  mcp.sort(compareByPath)
+  prompts.sort(compareByPath)
+  return { skills, mcp, prompts }
 }
 
 function agentTechKindOf(rel: string): AgentTechKind {
@@ -511,6 +621,7 @@ function agentTechKindOf(rel: string): AgentTechKind {
   if (rel.startsWith('.claude/')) return 'tool-config'
   if (rel.startsWith('.github/workflows/')) return 'tool-config'
   if (rel.startsWith('.vscode/')) return 'tool-config'
+  if (isMcpConfig(rel)) return 'tool-config'
   if (isToolConfigBasename(basename(rel))) return 'tool-config'
   return 'other'
 }

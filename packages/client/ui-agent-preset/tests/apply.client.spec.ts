@@ -11,6 +11,7 @@ import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-runtime/client'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
+import type { PluginEntryId } from '@deepseek-ai/dsh-host-plugin-inventory'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-agent-preset/client'
 import { AgentPresetLabel } from '../src/client/AgentPresetLabel.tsx'
@@ -71,7 +72,34 @@ const ROSTER_MOVED = {
   },
 }
 
-async function bench() {
+/** A pluginInventory list reply: the installed entries, or a refusal. */
+type InventoryReply = () => Promise<{ ok: boolean; value?: unknown; error?: unknown }>
+
+/** A host that mounts no plugin inventory: the palette degrades to unavailable. */
+const REFUSED_INVENTORY: InventoryReply = () => Promise.resolve({
+  ok: false,
+  error: { code: 'no-inventory', message: 'no inventory mounted', details: {} },
+})
+
+/** The default answer: no entries, which is all a closed composer needs. */
+const EMPTY_INVENTORY: InventoryReply = () => Promise.resolve({
+  ok: true,
+  value: { entries: [] },
+})
+
+/** Two Loader entries shipping the same module, plus one categorized and one described. */
+const RICH_INVENTORY: InventoryReply = () => Promise.resolve({
+  ok: true,
+  value: {
+    entries: [
+      { entryId: 'bash-a' as PluginEntryId, moduleName: '@deepseek-ai/dsh-tool-bash', enabled: true, fiberPhase: 'active', category: 'tool' },
+      { entryId: 'bash-b' as PluginEntryId, moduleName: '@deepseek-ai/dsh-tool-bash', enabled: true, fiberPhase: 'active', category: 'tool' },
+      { entryId: 'read-a' as PluginEntryId, moduleName: '@deepseek-ai/dsh-tool-read', enabled: true, fiberPhase: 'active', description: 'Read files.' },
+    ],
+  },
+})
+
+async function bench(inventory: InventoryReply = EMPTY_INVENTORY) {
   const ctx = new Context()
   // The host's answer, mutable so a spec can move the default the way the
   // settings surface does and watch who re-reads it.
@@ -84,12 +112,12 @@ async function bench() {
   // The plugins inject `remote`; forwarded events reach them through the
   // same `$dispatch` handoff the connection sink makes.
   new TestRemote(ctx)
-  // The composer palette reads the installed-plugin inventory through the
-  // generated Remote; this bench never opens the composer, so an empty list
-  // is all the mount needs.
-  ctx.provide('remote.pluginInventory', {
-    list: () => Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { entries: [] } } }),
-  })
+  // The composer palette reads `ctx.remote.pluginInventory.list()` — the
+  // generated namespace this double does not mount — so the fixture stands in
+  // for it on the instance, and the same service is provided for the inject
+  // gate the apply requires.
+  ;(ctx.remote as unknown as { pluginInventory: { list: InventoryReply } }).pluginInventory = { list: inventory }
+  ctx.provide('remote.pluginInventory', { list: inventory })
   const calls: string[] = []
   ctx.provide('connection', {
     api: {
@@ -151,6 +179,15 @@ async function bench() {
           result: { ok: true as const, value: { writable: true, hasDocument: true, namespaces: [] } },
         }),
         update: (payload: { patch: unknown }) => { calls.push(`settings:${JSON.stringify(payload.patch)}`); return Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: {} } }) },
+      },
+      llm: {
+        models: () => {
+          calls.push('llm.models')
+          return Promise.resolve({
+            rpcId: 'r',
+            result: { ok: true as const, value: { groups: [], failures: [] } },
+          })
+        },
       },
     },
   } as never)
@@ -293,6 +330,63 @@ describe('ui-agent-preset apply', () => {
     expect(section.hooks.agentPresetSection.getSnapshot().rows).toHaveLength(2)
   })
 
+  it('composes a preset through the injected actions against a rich inventory', async () => {
+    const { ctx, slots } = await bench(RICH_INVENTORY)
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+    await section.load()
+
+    await section.beginCompose(null)
+    await vi.waitFor(() => {
+      const palette = section.hooks.agentPresetSection.getSnapshot().palette
+      expect(palette?.status).toBe('ready')
+      // Two Loader entries ship the same module; the palette is a set of
+      // installable plugins, so the duplicate collapses into one card.
+      expect(palette?.modules).toHaveLength(2)
+      expect(palette?.modules).toContainEqual({
+        moduleName: '@deepseek-ai/dsh-tool-bash', displayName: 'Bash', category: 'tool',
+      })
+    })
+
+    section.setComposerId('composed')
+    section.setComposerName('Composed')
+    expect(section.addRow('@deepseek-ai/dsh-tool-bash')).toBe('agent-1')
+    expect(section.addNodeAt('@deepseek-ai/dsh-tool-read', { x: 220, y: 0 })).toBe('agent-2')
+    section.moveNode('agent-2', { x: 300, y: 0 })
+    section.reorderNode('agent-1', 'agent-2')
+    section.moveRow(0, 1)
+    section.updateAgentModelKind('agent-1', 'text', 'provider', 'deepseek')
+    section.removeNode('agent-2')
+    section.removeRow('tool-bash')
+    expect(section.addRow('@deepseek-ai/dsh-tool-read')).toBe('agent-1')
+
+    // A valid composition saves, closes the composer, and re-reads the roster.
+    await expect(section.confirmCompose()).resolves.toBe(true)
+    expect(section.hooks.agentPresetSection.getSnapshot().composer).toBeNull()
+
+    // Opening again for the close path: the composer discards without a save.
+    await section.beginCompose(null)
+    section.closeComposer()
+    expect(section.hooks.agentPresetSection.getSnapshot().composer).toBeNull()
+  })
+
+  it('degrades the composer palette when the inventory refuses', async () => {
+    const { ctx, slots } = await bench(REFUSED_INVENTORY)
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+
+    await section.beginCompose(null)
+
+    // A host that mounts no plugin inventory reads as unavailable; an edit in
+    // progress keeps its graph and only new drags lose the list.
+    await vi.waitFor(() => {
+      expect(section.hooks.agentPresetSection.getSnapshot().palette?.status).toBe('unavailable')
+    })
+    expect(section.hooks.agentPresetSection.getSnapshot().composer).not.toBeNull()
+  })
+
   it('refreshes a showing surface when its namespace changes, and ignores others', async () => {
     const { ctx, slots, calls } = await bench()
     declareRoot(slots)
@@ -325,6 +419,31 @@ describe('ui-agent-preset apply', () => {
 
     // A reconnect can land on a host whose roster changed under the browser.
     await vi.waitFor(() => { expect(calls.length).toBe(before + 2) })
+  })
+
+  it('refreshes the model catalog on adapter and settings changes while the composer is open', async () => {
+    const { ctx, slots, calls } = await bench()
+    declareRoot(slots)
+    await ctx.plugin({ inject: [...inject], apply }).await()
+    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+    await section.load()
+
+    // Composer closed: an adapter change moves nothing — the catalog belongs to
+    // the overlay that owns it, so refreshing while it is shut is a wasted read.
+    ctx.remote.$dispatch('llm/adapters-updated', [])
+    await Promise.resolve()
+    expect(calls.some(call => call === 'llm.models')).toBe(false)
+
+    await section.beginCompose('standard')
+    await vi.waitFor(() => { expect(calls.filter(call => call === 'llm.models')).toHaveLength(1) })
+
+    ctx.remote.$dispatch('llm/adapters-updated', [])
+    await vi.waitFor(() => { expect(calls.filter(call => call === 'llm.models')).toHaveLength(2) })
+
+    // A settings document move re-reads the catalog with no namespace gate: a
+    // provider or model edited under any namespace shows up in the picker.
+    ctx.remote.$dispatch('settings/document-updated', ['llm-deepseek', 1])
+    await vi.waitFor(() => { expect(calls.filter(call => call === 'llm.models')).toHaveLength(3) })
   })
 
   it('leaves the section alone until it has been opened once', async () => {
@@ -554,7 +673,7 @@ describe('ui-agent-preset apply', () => {
     await vi.waitFor(() => { expect(workspaces.pending).toEqual(['note', 'clear']) })
   })
 
-  it('clears the workspace pending when the stage is dropped as unservable', async () => {
+  it('keeps the workspace pending when the current session already started', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
     declareConversation(slots)
@@ -572,11 +691,49 @@ describe('ui-agent-preset apply', () => {
       .inject as unknown as () => AgentPresetSeatInjected)()
 
     await chip.load()
-    // The flow's session already ran a turn, so the swap is refused: the stage
-    // must not linger for some later connect to pick up.
+    // The flow's session already ran a turn, so the host would refuse the
+    // swap — but the pick names the NEXT session, so the pending preset
+    // survives for the connect an import is about to make.
     await chip.select('minimal')
 
-    expect(workspaces.pending).toEqual(['note', 'clear'])
+    expect(workspaces.pending).toEqual(['note'])
+  })
+
+  it('carries a develop pick through the import that creates the session', async () => {
+    const { ctx, slots, calls } = await bench()
+    declareRoot(slots)
+    declareConversation(slots)
+    ctx.provide('conversation', {} as never)
+    const state: {
+      current?: string
+      byId: Record<string, { id: string; blank: boolean; agentPreset?: string }>
+    } = {
+      current: 's1',
+      byId: { s1: { id: 's1', blank: false, agentPreset: 'standard' } },
+    }
+    const sessions = sessionsDouble(state)
+    ctx.provide('sessions', sessions as never)
+    const workspaces = workspacesDouble()
+    ctx.provide('workspaces', workspaces as never)
+    await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'workspaces'], apply }).await()
+    const chip = (slots.entries('conversation.hero.agentPreset')[0]!
+      .inject as unknown as () => AgentPresetSeatInjected)()
+
+    await chip.load()
+    // Picked while the running session is current — the import flow's opening.
+    await chip.select('minimal')
+    expect(workspaces.pending).toEqual(['note'])
+    expect(calls).not.toContain('select:minimal')
+
+    // The import connects a fresh blank session; the staged pick lands there.
+    state.current = 's2'
+    state.byId['s2'] = { id: 's2', blank: true, agentPreset: 'standard' }
+    sessions.notify()
+
+    await vi.waitFor(() => {
+      expect(calls).toContain('select:minimal')
+      expect(workspaces.pending).toEqual(['note', 'clear'])
+    })
   })
 
   it('clears the workspace pending when the apply is rejected', async () => {

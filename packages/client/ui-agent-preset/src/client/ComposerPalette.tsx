@@ -8,7 +8,8 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import type { ComposePalette, PaletteModule } from './section-store.ts'
+import type { ComposePalette } from './section-store.ts'
+import { filterAndGroupPalette } from './palette-group.ts'
 import type { AgentPresetSettingsKey } from './locales.ts'
 import css from './AgentPresetComposer.module.css'
 
@@ -73,30 +74,9 @@ export interface ComposerPaletteProps {
 export function ComposerPalette(props: ComposerPaletteProps): ReactNode {
   const { palette, inComposition, onAdd, onDragModule, onCollapse, t } = props
   const [search, setSearch] = useState('')
-  const query = search.trim().toLowerCase()
-  const offered = palette === null || palette.status !== 'ready'
-    ? []
-    : palette.modules.filter(module =>
-      module.moduleName.toLowerCase().includes(query)
-      || module.displayName.toLowerCase().includes(query)
-      || module.category !== undefined && module.category.toLowerCase().includes(query)
-      || module.description !== undefined && module.description.toLowerCase().includes(query))
-
-  // Group by category in first-seen order; modules the inventory did not
-  // categorize share the Other bucket, which is never a real category.
-  const other = t('paletteCategoryOther')
-  const groups: Array<{ key: string; modules: PaletteModule[] }> = []
-  const byKey = new Map<string, PaletteModule[]>()
-  for (const module of offered) {
-    const key = module.category ?? other
-    let list = byKey.get(key)
-    if (list === undefined) {
-      list = []
-      byKey.set(key, list)
-      groups.push({ key, modules: list })
-    }
-    list.push(module)
-  }
+  // Search-and-group lives in palette-group.ts so the node picker offers the
+  // same match and the same category order.
+  const groups = filterAndGroupPalette(palette, search, t('paletteCategoryOther'))
 
   return (
     <aside className={css.paletteZone}>
@@ -123,7 +103,7 @@ export function ComposerPalette(props: ComposerPaletteProps): ReactNode {
         ? <p className={css.paletteNote}>{t('paletteLoading')}</p>
         : palette.status === 'unavailable'
           ? <p className={css.paletteNote}>{t('paletteUnavailable')}</p>
-          : offered.length === 0
+          : groups.length === 0
             ? <p className={css.paletteNote}>{t('paletteEmpty')}</p>
             : (
               <div className={css.paletteGroups}>

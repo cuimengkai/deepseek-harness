@@ -59,12 +59,16 @@ export function compileFlow(graph: FlowGraph): CompiledFlow {
 
   // The root start is the top-level start (a sub-graph's start is owned by its
   // embedding node); the script must begin at the outer entry point.
+  /* v8 ignore start -- a validated graph always has a root start that owns itself */
   const startId = expanded.graph.nodes.find(
     node => node.type === 'start' && expanded.owner.get(node.id) === node.id,
   )?.id ?? ''
+  /* v8 ignore stop */
+  /* v8 ignore start -- outBySource is seeded for every node id above */
   const entries = expanded.graph.nodes.map(node =>
     `  [${q(node.id)}, async () => ${compileNodeBody(node, outBySource.get(node.id) ?? [])}],`,
   )
+  /* v8 ignore stop */
 
   const script = [
     'const OUT = {}',
@@ -99,6 +103,7 @@ function compileNodeBody(node: FlowNode, out: FlowEdge[]): string {
   switch (node.type) {
     case 'start': {
       const edge = out[0]
+      /* v8 ignore next -- a start with no outgoing edge fails validation before the compiler emits it */
       if (edge === undefined) throw new Error(`start node "${node.id}" has no outgoing edge`)
       return `{ return await visit(${q(edge.to)}) }`
     }
@@ -153,6 +158,7 @@ function agentBody(node: FlowAgentNode, out: FlowEdge[]): string {
   }
   if (out.length === 1) {
     const next = out[0]
+    /* v8 ignore next -- a length-1 edge list always has an element; the guard answers out[0]'s optional type */
     if (next === undefined) throw new Error(`agent node "${node.id}" edge target is missing`)
     return `{
   ${call}
@@ -176,6 +182,7 @@ function agentBody(node: FlowAgentNode, out: FlowEdge[]): string {
  */
 function embeddingBody(node: FlowAgentNode, out: FlowEdge[]): string {
   const subStartId = node.subgraph?.nodes.find(node => node.type === 'start')?.id
+  /* v8 ignore next -- validation requires exactly one start per level, so the find always succeeds */
   if (subStartId === undefined) {
     throw new Error(`agent node "${node.id}" subgraph has no start node`)
   }
@@ -188,6 +195,7 @@ function embeddingBody(node: FlowAgentNode, out: FlowEdge[]): string {
   }
   if (out.length === 1) {
     const next = out[0]
+    /* v8 ignore next -- a length-1 edge list always has an element; the guard answers out[0]'s optional type */
     if (next === undefined) throw new Error(`agent node "${node.id}" edge target is missing`)
     return `{
   ${run}

@@ -17,7 +17,7 @@ import styles from './ModelsSection.module.css'
 export type DeepSeekModelDraft = Record<string, unknown>
 
 /** The catalog fields this editor writes. */
-type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens'
+type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens' | 'inputModalities' | 'kinds'
 
 /** The two token counts edited as K/M-suffixed text behind a row's disclosure. */
 type CapacityField = 'contextWindow' | 'maxTokens'
@@ -68,13 +68,99 @@ export function formatCapacity(value: number): string {
   return String(value)
 }
 
+/**
+ * The request modalities a catalog entry may declare. Mirrors the adapter's
+ * own `MODEL_MODALITIES`; the checkboxes exist so a catalog model can admit
+ * images without the value being stripped on the wire.
+ */
+const INPUT_MODALITIES = ['text', 'image'] as const
+/** The model roles a catalog entry may declare (the adapter's `MODEL_KINDS`). */
+const MODEL_KINDS = ['text', 'image', 'audio', 'embedding'] as const
+
+/** A draft field that may hold a list, read as the strings it names. */
+export function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : []
+}
+
+/** Props of {@link ModalityToggle}. */
+export interface ModalityToggleProps {
+  /** Copy label naming the field, e.g. "Input modalities". */
+  label: string
+  /** The offered values, in display order. */
+  options: readonly string[]
+  /** The values currently declared. */
+  selected: readonly string[]
+  /**
+   * The values shown as checked while nothing is declared. A fresh row reads
+   * as its adapter default — text — rather than as accepting nothing, so
+   * adding "image" means multimodal instead of silently narrowing to image.
+   * Empty by default.
+   */
+  fallback?: readonly string[]
+  /** Replace the declared values; an empty array means "inherit the default". */
+  onChange: (next: string[]) => void
+  /** Disable the checkboxes. */
+  disabled: boolean
+}
+
+/**
+ * One multi-select of modality/kind checkboxes inside a row's disclosure.
+ * Both editors render it: the DeepSeek catalog edits `inputModalities`/`kinds`
+ * and the pi-ai list edits `input`, so the field mapping stays with the caller.
+ * @param props - the field label, options, selection, and writes.
+ * @returns the checkbox row.
+ */
+export function ModalityToggle({
+  label, options, selected, fallback = [], onChange, disabled,
+}: ModalityToggleProps): ReactNode {
+  // The rendered selection is the declared one when there is one, else the
+  // fallback — so toggling is relative to what a fresh row effectively is.
+  const effective = selected.length > 0 ? selected : fallback
+  return (
+    <div className={styles['modelModalities']}>
+      <span className={styles['modelFieldLabel']}>{label}</span>
+      <div className={styles['modalityOptions']}>
+        {options.map(option => (
+          <label key={option} className={styles['modalityChip']}>
+            <input
+              type="checkbox"
+              aria-label={`${label} ${option}`}
+              checked={effective.includes(option)}
+              disabled={disabled}
+              onChange={() => {
+                onChange(effective.includes(option)
+                  ? effective.filter(value => value !== option)
+                  : [...effective, option])
+              }}
+            />
+            {option}
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 /** A localized validation failure for one user-owned model array. */
 export interface DeepSeekModelsValidationFailure {
   /** Zero-based model position. */
   index: number
   /** Message key owned by the Models settings section. */
   key: 'modelIdRequired' | 'modelIdDuplicate' | 'modelNameInvalid' | 'modelContextInvalid'
-  | 'modelMaxTokensInvalid'
+  | 'modelMaxTokensInvalid' | 'modelInputModalitiesInvalid' | 'modelKindsInvalid'
+}
+
+/** Whether a draft field fails the adapter's list constraint: not an array, empty, foreign, or duplicated. */
+function invalidModalityList(value: unknown, allowed: readonly string[]): boolean {
+  if (!Array.isArray(value)) return true
+  if (value.length === 0) return true
+  const seen = new Set<string>()
+  for (const item of value) {
+    if (typeof item !== 'string' || !allowed.includes(item)) return true
+    if (seen.has(item)) return true
+    seen.add(item)
+  }
+  return false
 }
 
 /** Convert a schema-validated catalog value into records without dropping hidden fields. */
@@ -117,6 +203,14 @@ export function validateDeepSeekModels(value: unknown): DeepSeekModelsValidation
     if (maxTokens !== undefined
       && (typeof maxTokens !== 'number' || !Number.isInteger(maxTokens) || maxTokens <= 0)) {
       return { index, key: 'modelMaxTokensInvalid' }
+    }
+    const inputModalities = model['inputModalities']
+    if (inputModalities !== undefined && invalidModalityList(inputModalities, INPUT_MODALITIES)) {
+      return { index, key: 'modelInputModalitiesInvalid' }
+    }
+    const kinds = model['kinds']
+    if (kinds !== undefined && invalidModalityList(kinds, MODEL_KINDS)) {
+      return { index, key: 'modelKindsInvalid' }
     }
   }
   return undefined
@@ -343,6 +437,25 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                     <div className={styles['modelAdvanced']}>
                       {capacityField(model, index, 'contextWindow', props.defaultContextWindow)}
                       {capacityField(model, index, 'maxTokens', props.defaultMaxTokens)}
+                      <ModalityToggle
+                        label={props.t('inputModalities')}
+                        options={INPUT_MODALITIES}
+                        selected={stringList(model['inputModalities'])}
+                        fallback={['text']}
+                        disabled={props.disabled}
+                        // Clearing every box means "inherit the default", which
+                        // the adapter spells as `['text']`; an empty array is
+                        // rejected, so the key is removed instead.
+                        onChange={(next) => { update(index, 'inputModalities', next.length === 0 ? undefined : next) }}
+                      />
+                      <ModalityToggle
+                        label={props.t('modelKinds')}
+                        options={MODEL_KINDS}
+                        selected={stringList(model['kinds'])}
+                        fallback={['text']}
+                        disabled={props.disabled}
+                        onChange={(next) => { update(index, 'kinds', next.length === 0 ? undefined : next) }}
+                      />
                     </div>
                   )
                   : null}

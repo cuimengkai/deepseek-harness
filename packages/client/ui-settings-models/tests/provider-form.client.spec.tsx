@@ -217,6 +217,39 @@ describe('model list editing', () => {
     })
   })
 
+  it('declares input modalities on a pi-ai model row', async () => {
+    const { mutate } = await mountSection({
+      providers: {
+        openai: {
+          apiKeyEnv: 'OPENAI_API_KEY',
+          baseURL: 'https://proxy.example/v1',
+          models: [{ id: 'acme-large', contextWindow: 131_072 }],
+        },
+      },
+    })
+    openEditor('openai')
+    expandModel(1)
+    // A row without an `input` key reads as the text fallback, so text is
+    // pre-checked; adding image then declares the multimodal pair rather than
+    // narrowing the model to image-only.
+    expect((screen.getByLabelText(`${en.inputModalities} text`) as HTMLInputElement).checked).toBe(true)
+    const image = screen.getByLabelText(`${en.inputModalities} image`) as HTMLInputElement
+    expect(image.checked).toBe(false)
+    fireEvent.click(image)
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalled() })
+    expect(firstMutate(mutate)).toMatchObject({
+      ns: 'llm-pi-ai',
+      expectedRevision: 3,
+      ops: [{
+        op: 'set',
+        path: ['providers', 'openai', 'models'],
+        value: [{ id: 'acme-large', contextWindow: 131_072, input: ['text', 'image'] }],
+      }],
+    })
+  })
+
   it('names a duplicate model id in the edit flow too', async () => {
     const { mutate } = await mountSection({
       providers: { openai: { baseURL: 'https://proxy.example/v1', models: [{ id: 'dup' }] } },
@@ -489,10 +522,12 @@ describe('endpoint interrogation', () => {
 
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
-    // Adopting a candidate keeps the disclosed roles, not just its capacities.
+    // Adopting a candidate keeps its modalities on the pi-ai profile's own
+    // field — `input`, not the wire-neutral `inputModalities` — and the wire's
+    // `kinds` has no pi-ai counterpart, so it is not carried into the profile.
     expect(firstMutate(mutate).ops[0]?.value).toEqual([
       { id: 'kept', contextWindow: 111 },
-      { id: 'fresh', contextWindow: 4096, name: 'Fresh', inputModalities: ['text'], kinds: ['embedding'] },
+      { id: 'fresh', contextWindow: 4096, name: 'Fresh', input: ['text'] },
     ])
   })
 

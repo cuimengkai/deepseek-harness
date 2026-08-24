@@ -27,6 +27,8 @@ import type { FlowAgentNode, FlowConditionNode, FlowEdge, FlowGraph, FlowLoopNod
 class StubEngine extends WorkflowEngine {
   requests: WorkflowStartRequest[] = []
   cancels: string[] = []
+  /** How many `WorkflowRun.dispose()` calls the returned runs recorded. */
+  disposedRuns = 0
 
   start(request: WorkflowStartRequest): WorkflowRun {
     this.requests.push(request)
@@ -41,7 +43,9 @@ class StubEngine extends WorkflowEngine {
         this.cancels.push(reason ?? 'cancelled')
         this.end(request, { stopReason: 'cancelled', ...(reason === undefined ? {} : { error: reason }), agentsStarted: 0 })
       },
-      dispose: async () => {},
+      dispose: async () => {
+        this.disposedRuns += 1
+      },
     }
   }
 
@@ -219,6 +223,132 @@ describe('FlowEngine run lifecycle', () => {
     expect(engine.listRuns()).toHaveLength(2)
     expect(engine.getRun(first.runId)).toBeUndefined()
     expect(engine.getRun(second.runId)).not.toBeUndefined()
+  })
+
+  it('passes the input args and a cancel signal through to the engine', async () => {
+    const { engine, stub, parent } = await setup()
+    const signal = new AbortController().signal
+    engine.run({ graph: linearGraph(), input: { items: [1, 2] }, parent, signal })
+    expect(stub.requests[0]!.args).toEqual({ items: [1, 2] })
+    expect(stub.requests[0]!.signal).toBe(signal)
+  })
+
+  it('cancels a run through the handle with a custom reason', async () => {
+    const { engine, stub, parent } = await setup()
+    const handle = engine.run({ graph: linearGraph(), parent })
+    handle.cancel('changed my mind')
+    expect(stub.cancels).toEqual(['changed my mind'])
+    await expect(handle.result).resolves.toEqual({ status: 'cancelled', error: 'changed my mind', agentsStarted: 0 })
+  })
+
+  it('cancels a run through the handle with the default reason', async () => {
+    const { engine, stub, parent } = await setup()
+    const handle = engine.run({ graph: linearGraph(), parent })
+    handle.cancel()
+    expect(stub.cancels).toEqual(['cancelled by the user'])
+  })
+
+  it('ignores workflow events for runs this service did not start', async () => {
+    const { ctx, engine, stub, parent } = await setup()
+    const handle = engine.run({ graph: linearGraph(), parent })
+    const request = stub.requests[0]!
+    stub.agentStart(request, { seq: 1, label: 'a', phase: 'a', childId: 'c1' as never })
+    // A foreign run id is not in runIdByWorkflow, so every event type returns
+    // before touching the tracked run.
+    const foreign = { id: WorkflowRunId('foreign'), meta: { name: 'x', description: 'd' } }
+    ctx.emit('workflow/phase', foreign, 'ghost')
+    ctx.emit('workflow/agent-start', foreign, { seq: 2, label: 'x', phase: 'a', childId: 'c2' as never })
+    ctx.emit('workflow/agent-end', foreign, { seq: 2, label: 'x', phase: 'a', outcome: 'completed', childId: 'c2' as never })
+    ctx.emit('workflow/end', foreign, { stopReason: 'completed', agentsStarted: 0 })
+    expect(engine.getRun(handle.runId)?.nodeStatuses).toMatchObject({ a: 'running' })
+    expect(engine.getRun(handle.runId)?.status).toBe('running')
+  })
+
+  it('is idempotent against a second workflow/end', async () => {
+    const { engine, stub, parent } = await setup()
+    const handle = engine.run({ graph: linearGraph(), parent })
+    const request = stub.requests[0]!
+    stub.end(request, { stopReason: 'completed', agentsStarted: 0 })
+    await handle.result
+    stub.end(request, { stopReason: 'completed', agentsStarted: 0 })
+    expect(engine.getRun(handle.runId)).toMatchObject({ status: 'completed', agentsStarted: 0 })
+  })
+
+  it('cancels a node still running when the run settles', async () => {
+    const { engine, stub, parent } = await setup()
+    const handle = engine.run({ graph: linearGraph(), parent })
+    const request = stub.requests[0]!
+    stub.agentStart(request, { seq: 1, label: 'a', phase: 'a', childId: 'c1' as never })
+    // The agent call never settles; the run's end cancels it.
+    stub.end(request, { stopReason: 'completed', agentsStarted: 1 })
+    await handle.result
+    expect(engine.getRun(handle.runId)?.nodeStatuses).toMatchObject({ a: 'cancelled', end: 'done' })
+  })
+
+  it('settles a cancelled agent call as cancelled', async () => {
+    const { engine, stub, parent } = await setup()
+    const handle = engine.run({ graph: linearGraph(), parent })
+    const request = stub.requests[0]!
+    stub.agentStart(request, { seq: 1, label: 'a', phase: 'a', childId: 'c1' as never })
+    stub.agentEnd(request, { seq: 1, label: 'a', phase: 'a', outcome: 'cancelled', childId: 'c1' as never })
+    expect(engine.getRun(handle.runId)?.nodeStatuses).toMatchObject({ a: 'cancelled' })
+  })
+
+  it('ignores an agent-end whose phase it does not track', async () => {
+    const { engine, stub, parent } = await setup()
+    const handle = engine.run({ graph: linearGraph(), parent })
+    const request = stub.requests[0]!
+    stub.agentEnd(request, { seq: 1, label: 'x', phase: 'ghost', outcome: 'completed', childId: 'c1' as never })
+    stub.agentEnd(request, { seq: 1, label: 'x', outcome: 'completed', childId: 'c1' as never })
+    expect(engine.getRun(handle.runId)?.nodeStatuses).toMatchObject({ a: 'pending' })
+  })
+
+  it('ignores an agent-start that carries no phase', async () => {
+    const { engine, stub, parent } = await setup()
+    const handle = engine.run({ graph: linearGraph(), parent })
+    const request = stub.requests[0]!
+    // The start event omits `phase`, so no node is marked running.
+    stub.agentStart(request, { seq: 1, label: 'a', childId: 'c1' as never })
+    expect(engine.getRun(handle.runId)?.nodeStatuses).toMatchObject({ a: 'pending' })
+  })
+
+  it('ignores a phase for a node it does not gate', async () => {
+    const { engine, stub, parent } = await setup()
+    const handle = engine.run({ graph: linearGraph(), parent })
+    const request = stub.requests[0]!
+    // `a` is an agent node, so the phase call opens no gate.
+    stub.phase(request, 'a')
+    expect(engine.getRun(handle.runId)?.nodeStatuses).toMatchObject({ a: 'pending' })
+  })
+
+  it('lists runs filtered to one flow id', async () => {
+    const { engine, parent } = await setup()
+    engine.run({ graph: linearGraph(), parent })
+    const other = graph(
+      [start(), agent('b'), end()],
+      [edge('start', 'b'), edge('b', 'end')],
+      { id: 'other-flow', name: 'Other' },
+    )
+    engine.run({ graph: other, parent })
+    const filtered = engine.listRuns('other-flow')
+    expect(filtered).toHaveLength(1)
+    expect(filtered[0]!.flowId).toBe('other-flow')
+    expect(engine.listRuns()).toHaveLength(2)
+  })
+
+  it('disposes live runs when the composition unloads', async () => {
+    const ctx = new Context()
+    await ctx.plugin(StubEngine)
+    const flowFiber = await ctx.plugin(FlowEngine, { maxLiveRuns: 2, maxRunHistory: 2 })
+    const engine = ctx.flowEngine as FlowEngine
+    const stub = ctx.workflowEngine as StubEngine
+    const parent = {} as unknown as Agent
+    engine.run({ graph: linearGraph(), parent })
+    expect(stub.disposedRuns).toBe(0)
+    // Unloading the composition disposes the flow engine's fiber, whose
+    // ctx.effect teardown disposes every live holder-owned WorkflowRun.
+    await flowFiber.dispose()
+    expect(stub.disposedRuns).toBe(1)
   })
 })
 

@@ -18,6 +18,7 @@ import {
   IconTrashOutline16, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ModelKind } from '@deepseek-ai/dsh-api-remotes/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { draftBlocker, type AgentPresetSectionState, type ComposeDraft } from './section-store.ts'
 import { AgentPresetComposer } from './AgentPresetComposer.tsx'
@@ -76,6 +77,11 @@ export interface AgentPresetSectionInjected {
   moveNode: (nodeId: string, position: { x: number; y: number }) => void
   /** Reorder the composition so one node runs right after another (connect). */
   reorderNode: (fromNodeId: string, toNodeId: string) => void
+  /**
+   * Bind one model kind's route on one composition node — the inspector's
+   * model-kind picker. The route is part of the draft, so an edit wakes Save.
+   */
+  updateAgentModelKind: (nodeId: string, kind: ModelKind, field: 'provider' | 'model', value: string) => void
   /**
    * Save the composition. Resolves true when it saved, false when it was
    * blocked or failed, so a caller can chain a follow-up on success.
@@ -264,6 +270,7 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
         <AgentPresetComposer
           draft={state.composer}
           palette={state.palette}
+          modelCatalog={state.modelCatalog}
           roster={state.rows}
           t={t}
           actions={{
@@ -277,6 +284,7 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
             moveRow: props.moveRow,
             moveNode: props.moveNode,
             reorderNode: props.reorderNode,
+            updateAgentModelKind: props.updateAgentModelKind,
             confirmCompose: props.confirmCompose,
             // The handoff leaves settings with the new session, exactly as the
             // old creator button did.
@@ -314,6 +322,7 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
           readOnly
           draft={draft}
           palette={state.palette}
+          modelCatalog={state.modelCatalog}
           roster={state.rows}
           t={t}
           actions={{
@@ -325,6 +334,8 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
             ...(state.authorable
               ? { onEdit: () => { props.closeView(); props.beginCopy(view.id) } }
               : {}),
+            /* v8 ignore start -- the read-only view renders no fields, palette,
+               or edit affordances, so the composer never invokes these stubs. */
             setComposerId: () => {},
             setComposerName: () => {},
             addRow: () => undefined,
@@ -334,7 +345,9 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
             moveRow: () => {},
             moveNode: () => {},
             reorderNode: () => {},
+            updateAgentModelKind: () => {},
             confirmCompose: () => Promise.resolve(false),
+            /* v8 ignore stop */
           }}
         />
       </div>
