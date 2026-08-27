@@ -220,7 +220,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/experimental/platform-shell/src/types.ts:359`](../packages/experimental/platform-shell/src/types.ts)
+来源：[`packages/experimental/platform-shell/src/types.ts:409`](../packages/experimental/platform-shell/src/types.ts)
 
 <a id="assetregister--log-only"></a>
 
@@ -603,7 +603,7 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 'permission/preset': { preset: string; origin?: 'default' | 'selection' | 'inferred' }
 ```
 
-来源：[`packages/interaction/permission-presets/src/index.ts:53`](../packages/interaction/permission-presets/src/index.ts)
+来源：[`packages/interaction/permission-presets/src/index.ts:54`](../packages/interaction/permission-presets/src/index.ts)
 
 ### `plan/*`
 
@@ -659,7 +659,31 @@ export type SessionEvent<T extends SessionEventType = SessionEventType> = {
 }
 ```
 
-来源：[`packages/experimental/platform-shell/src/types.ts:379`](../packages/experimental/platform-shell/src/types.ts)
+来源：[`packages/experimental/platform-shell/src/types.ts:428`](../packages/experimental/platform-shell/src/types.ts)
+
+### `preset/*`
+
+<a id="presetassembled--log-only"></a>
+
+#### `preset/assembled` — log-only
+
+```ts persistence-catalog
+/**
+ * The assembler rendered and statically validated one workbench preset tree.
+ * The rendered rows are model-visible through the tool result, so the event
+ * carries them for durable reconstruction (model-visible ⟺ logged).
+ */
+'preset/assembled': {
+  workspaceId: WorkspaceId
+  scenarioId: ScenarioId
+  roleId: RoleId
+  preset: string
+  capabilityIds: readonly CapabilityId[]
+  rows: readonly EntryOptions[]
+}
+```
+
+来源：[`packages/experimental/platform-shell/src/types.ts:458`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `request/*`
 

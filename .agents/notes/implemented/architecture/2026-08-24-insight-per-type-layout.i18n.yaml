@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-24-insight-per-type-layout.md
-2026-08-24-insight-per-type-layout.md: ea85d8dc41f6b5333a25c23f6ea0649145b57020
-2026-08-24-insight-per-type-layout.zh.md: ac26e3efc9dbb9f97588d83797891911abe85b64
+2026-08-24-insight-per-type-layout.md: 17eb3ca467dd574ca91e085ed5da840a5f494aa0
+2026-08-24-insight-per-type-layout.zh.md: 66c2338c372dddc518e46d54a4464930d9e1f859

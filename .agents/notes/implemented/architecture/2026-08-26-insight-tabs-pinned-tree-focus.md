@@ -1,0 +1,37 @@
+# Agent Note: The insight tabs drop the prompts tab, pin the agent-tech subtab row, and move every inventory surface to a tree explorer
+
+Status: implemented
+
+English | [中文](2026-08-26-insight-tabs-pinned-tree-focus.zh.md)
+
+## Problem
+
+Five usability complaints against the develop-mode insight tabs after the canvas-and-floating-list redesign ([[2026-08-24-insight-tab-layout-redesign]], [[2026-08-24-xyflow-canvas-and-topology]]): the standalone prompts tab duplicated what the agent-tech tab's prompts subtab already showed; the agent-tech subtab rows (清单/技能/MCP, then the document tab bar) scrolled away with the content because the section relied on the page-level scroller; the tech-stack and components tabs were flat sorted lists the user called a poor experience, with a request for a left-tree/right-content layout with third-party syntax highlighting; the agent-tech 清单 subtab was a flat role table and the 技能/MCP/提示词 subtabs a document tab bar over a single markdown pane, which the user asked to bring to the same left-tree/right-content layout with content viewing and syntax highlighting; and clicking a row in the floating list over the dependency canvases rang the node but never moved the viewport, so a selected node off-screen stayed off-screen — the Known Limitation the xyflow note recorded.
+
+## Decision
+
+Five changes, all inside `@deepseek-ai/dsh-client-ui-project-insight`; the scanner, the schema, the wire, and the on-disk document are untouched (`formatVersion` stays 3, six section files still commit).
+
+- **The prompts tab is removed.** The `prompts` section keeps scanning and committing, but owns no `conversation.view` registration; the agent-tech tab's prompts subtab is its only presentation. Five tabs register (order 20–60). The prompts-tab locale keys, registration entry, and spec are deleted; the package README, the bundle patch comment, and the develop-mode note now state five tabs.
+- **The agent-tech section pins its subtab row.** The section root is a flex column that never scrolls, and every subtab body is the tree explorer whose root carries `data-conversation-composer-overlay`; the 清单/技能/MCP row stays in place while the panes' content scrolls under it and every scroller reserves the floating composer seat's height.
+- **The tech-stack, components, and agent-tech inventory surfaces render a left-tree/right-detail explorer.** `tree.ts` holds the pure derivation (tech stack: runtimes, manifests, dependencies grouped by manifest category, source files by language; components: one directory group per parent directory; agent-tech inventory: one group per file role in the schema's fixed kind order plus a tools root with the referenced tool names); `TreeExplorer.tsx` renders the tree beside the selected node's JSON payload through the shiki-highlighted `CodeBlock` from `ui-primitives`. The default selection is the first leaf with its ancestors expanded, a row click selects (a group row also expands its subtree), a caret click toggles without selecting, and a selection a re-scan reshaped away falls back to the first leaf.
+- **The agent-tech markdown collections render the same explorer.** `deriveMarkdownRowsTree` groups each collection's documents (skills, MCP, prompts) by directory with the row name as the leaf label; `TreeExplorer`'s new `renderLeafDetail` seam swaps the right pane for the selected document's path and markdown through `MarkdownText`, whose fenced code blocks carry the shiki highlight, while group rows keep the JSON payload. The document tab bar is gone: the directory tree is the collection's navigation.
+- **List selection focuses the canvas.** `TopologyGraph` renders the selected node's accents and, through React Flow's `setCenter`, centers the viewport on the selected node's layout position at `max(currentZoom, 1)` over a 320 ms transition; every edge touching the selection takes the brand stroke and the animated dash (`.topologyEdgeSelected` in `flow-overrides.css`). Clearing the selection re-fits the whole graph. The focus lives inside `TopologyGraph` because only it owns the viewport APIs; `GraphBody` keeps passing `selectedNodeId` through.
+- **The non-content frame states center like the app's other loading presentations.** The four wire statuses that render no section (loading, stale, none, error) share one `Frame` component: a centered block filling the tab area, with the shared border-arc spinner and a polite live region for the busy states (the host is still scanning) and plain centered copy for unscanned and unreadable. The frame previously rendered as top-left plain text.
+
+## Alternatives considered
+
+- **Drop the agent-tech prompts subtab and keep the prompts tab** — rejected: the user asked to remove the standalone prompts tab because the agent-tech tab already shows that information; the subtab is the richer grouped surface.
+- **`position: sticky` for the subtab rows** — rejected: the section sat in the page-level scroller under the floating composer; the composer overlay attribute is the established mechanism that makes a section own its scroller and reserve the composer clearance, and it pins both tab levels at once.
+- **Keep the flat inventory lists with better formatting** — rejected: it does not answer the explicit left-tree/right-content request, and the hierarchy (category, language, directory, file role) was already implicit in the data.
+- **Keep the document tab bar for the markdown collections** — rejected: the tab bar does not scale past a few documents and carries no grouping; the directory tree reuses the explorer the inventory surfaces already render, and the selected document's markdown keeps the fenced-block highlight.
+- **React Flow's `fitView({ nodes: [id] })` for the focus** — rejected: `setCenter` on the node's layout center with `max(currentZoom, 1)` keeps a reading zoom the user chose and centers deterministically; `fitView` on one node also re-scales with padding semantics that fight the "lift to focus zoom" intent.
+- **Dispatch the focus from `GraphBody`** — rejected: `GraphBody` would need the layout positions and the React Flow instance both; `TopologyGraph` already holds them, so the selection prop is the only new seam.
+
+## Consequences
+
+- Five conversation-view entries register; the prompts data still scans, commits, and renders — inside the agent-tech tab — so no schema, wire, or on-disk change and no re-scan of existing projects.
+- The xyflow note's "list selection never pans" Known Limitation is lifted; selection now centers, zooms, and accents the incident edges, and clearing the selection restores the whole-graph fit.
+- The inventory and group detail panes rendered committed rows as highlighted JSON at this point — the documents collection later gave file and tool leaves their content rendering ([[2026-08-26-insight-agent-tech-documents]]); group rows keep the JSON payload.
+- The tech-stack and components tabs, the agent-tech subtabs, and the dependency canvases all opt into the composer overlay, so every insight tab owns its scrolling and no tab relies on the page-level scroller.
+- Coverage: `tree.client.spec.ts` (derivation, including the agent-tech inventory and markdown-collection trees), `tree-explorer.client.spec.tsx` (selection, expansion, fallback, overlay, leaf body), `frame.client.spec.tsx` (busy/static frame split), the `TopologyGraph` focus and edge-accent specs, and the updated `graph-body`/`agent-tech-tabs` specs; the prompts-tab spec is deleted with its tab.

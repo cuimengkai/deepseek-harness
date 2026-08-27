@@ -13,6 +13,10 @@ A workspace is the isolation unit (architecture D2); physical isolation is optio
 `EngineDriver` is the reserved adapter-layer interface: `drive` runs one agent run in the workspace's engine, `listSessions` enumerates the sessions that engine holds, and `readLog` reads a session's durable event log back. A `RunHandle` reports which engine process ran the drive and where its data committed.
 
 ```ts
+import type { AgentRunRequest, RunHandle } from '@deepseek-ai/dsh-experimental-engine-isolation'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { WorkspaceId } from '@deepseek-ai/dsh-experimental-platform-shell'
+
 interface EngineDriver {
   readonly kind: 'in-process' | 'process-out'
   drive(request: AgentRunRequest): Promise<RunHandle>

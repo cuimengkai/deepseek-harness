@@ -52,5 +52,9 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [client-modules.md](client-modules.md) | the web plugin table: `dsh.client` declarations, `WebBootGraph` wire composition, the bundle route and index tap |
 | [session-projection.md](session-projection.md) | the projection seam: `SessionProjectionMap`, the pure `ProjectionDefinition` unit, `ProjectionSnapshot`'s consistent cut, the change feed |
 | [session-telemetry.md](session-telemetry.md) | the outbound session-reporting capability seam: `SessionTelemetryRecord`/`SessionTelemetrySeverity`, the `SessionTelemetrySink` contract, and the `session-telemetry/record` redact waterfall |
+| [engine-isolation.md](engine-isolation.md) | the engine-driver seam: `DriveAgentRun`/`ListSessions`/`ReadLog`, the workspace isolation record and its permission-gated flip, the `platform/workspace/isolated` session event |
+| [platform-shell.md](platform-shell.md) | the platform control plane: tenancy and RBAC, the business-object asset store and lineage, the approval flow, and the audit log over SQLite |
+| [context-composition.md](context-composition.md) | the context-composition seam: the `read` projection of the request envelope, priced surface rows, route capacity, and compaction history at one log revision |
+| [project-insight.md](project-insight.md) | the project-insight seam: the deterministic workspace fingerprint document, read/scan statuses, the debounced auto-scan, the `project-insight/updated` event |
 
 > Type declarations and their JSDoc on these pages are source-equivalent and drift-checked by `pnpm run verify-type-equiv` (see [development.md](../development.md#documenting-types-verbatim-ts-type-equiv)). Ordinary blocks preserve complete declarations; `public-api` blocks preserve body-stripped public class declarations. Cordis services and events use each page's generated **Cordis API** section.

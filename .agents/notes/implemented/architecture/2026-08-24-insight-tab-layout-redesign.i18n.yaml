@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-24-insight-tab-layout-redesign.md
-2026-08-24-insight-tab-layout-redesign.md: cba8a541e05489a2627ffbf67345568345085c0d
-2026-08-24-insight-tab-layout-redesign.zh.md: ef229a7ed8d299fa5b62f489fe101ff1e9b060da
+2026-08-24-insight-tab-layout-redesign.md: d2a9f8328583fec866320ac83be9b97fd6612a78
+2026-08-24-insight-tab-layout-redesign.zh.md: eefa27f4427d04cb1fab7fcfb112e6d1e6df8794

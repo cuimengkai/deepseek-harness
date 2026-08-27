@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-27-context-tab-layout-redesign.md
+2026-08-27-context-tab-layout-redesign.md: 9d23aeacbd906bd1b92a7a92a987daa8acd4f9a2
+2026-08-27-context-tab-layout-redesign.zh.md: befd03b3c205f6a4580bfea6b789ea9afcf13bb0

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-23-develop-mode-project-insight.md
-2026-08-23-develop-mode-project-insight.md: a713965a555a87598711c2ee91c0a535200085ff
-2026-08-23-develop-mode-project-insight.zh.md: d6d1cf2548941eadaf6b5e2219588f6235594a40
+2026-08-23-develop-mode-project-insight.md: c60acbafc949c18d72f0031767ab8e54627e3665
+2026-08-23-develop-mode-project-insight.zh.md: a9b347800603f4d877ca49179928332370809e43

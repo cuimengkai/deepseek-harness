@@ -201,6 +201,21 @@ flowchart LR
   pkg_cordis_host_runner["cordis-host-runner"]
   svc_dynamicCordisRunner["ctx.dynamicCordisRunner<br/>Dynamic Cordis package host runner"]
   svc_cordisInspect["ctx.cordisInspect<br/>Dynamic Cordis inspect registry"]
+  pkg_context_composition["context-composition"]
+  svc_contextComposition["ctx.contextComposition<br/>Read-only context composition projection"]
+  pkg_experimental_engine_isolation["experimental-engine-isolation"]
+  svc_engineIsolation["ctx.engineIsolation<br/>Per-workspace engine routing"]
+  pkg_flow["flow"]
+  svc_flowEngine["ctx.flowEngine<br/>Flow run engine"]
+  pkg_experimental_platform_shell["experimental-platform-shell"]
+  svc_platformShell["ctx.platformShell<br/>Platform control plane"]
+  pkg_host_plugin_inventory["host-plugin-inventory"]
+  svc_pluginInventory["ctx.pluginInventory<br/>Loader entry inventory"]
+  pkg_project_insight["project-insight"]
+  svc_projectInsight["ctx.projectInsight<br/>Workspace project scanner"]
+  pkg_session_deletion["session-deletion"]
+  svc_sessionDeletion["ctx.sessionDeletion<br/>Cascade session deletion"]
+  pkg_command_session_delete["command-session-delete"]
   pkg_acp --> svc_approval
   pkg_agent --> svc_agents
   pkg_agent_default_model --> svc_agentDefaultModel
@@ -221,6 +236,7 @@ flowchart LR
   pkg_compaction --> svc_compaction
   pkg_compaction_basic --> svc_compaction
   pkg_compaction_tool_result_pruner --> svc_toolResultPruner
+  pkg_context_composition --> svc_contextComposition
   pkg_cordis_host_runner --> svc_cordisInspect
   pkg_cordis_host_runner --> svc_dynamicCordisRunner
   pkg_credentials --> svc_credentials
@@ -229,13 +245,17 @@ flowchart LR
   pkg_directory_picker_browse --> svc_directoryPicker
   pkg_directory_picker_native --> svc_directoryPicker
   pkg_e2b --> svc_e2b
+  pkg_experimental_engine_isolation --> svc_engineIsolation
+  pkg_experimental_platform_shell --> svc_platformShell
   pkg_file_reference --> svc_fileReferences
   pkg_file_reference_local --> svc_fileReferences
+  pkg_flow --> svc_flowEngine
   pkg_fs --> svc_fs
   pkg_fs_e2b --> svc_fs
   pkg_fs_local --> svc_fs
   pkg_fs_sandbox --> svc_fs
   pkg_goal --> svc_goals
+  pkg_host_plugin_inventory --> svc_pluginInventory
   pkg_invariants --> svc_invariants
   pkg_jobs --> svc_jobs
   pkg_jobs_local --> svc_jobs
@@ -249,11 +269,13 @@ flowchart LR
   pkg_modules --> svc_clientModules
   pkg_permission_presets --> svc_permissionPresets
   pkg_plan_mode --> svc_planMode
+  pkg_project_insight --> svc_projectInsight
   pkg_pwsh_local --> svc_shell
   pkg_sandbox --> svc_sandbox
   pkg_sandbox_local --> svc_sandbox
   pkg_sandbox_policy --> svc_sandboxPolicy
   pkg_session --> svc_sessions
+  pkg_session_deletion --> svc_sessionDeletion
   pkg_session_persistence --> svc_sessionPersistence
   pkg_session_persistence_jsonl --> svc_sessionPersistence
   pkg_session_persistence_sqlite --> svc_sessionPersistence
@@ -322,6 +344,7 @@ flowchart LR
   svc_clientModules --> pkg_hmr
   svc_codeRuntime --> pkg_tools
   svc_compaction --> pkg_compaction_basic
+  svc_contextComposition --> pkg_host_apiproxy
   svc_cordisInspect --> pkg_tool_cordis
   svc_credentials --> pkg_apiproxy
   svc_credentials --> pkg_llm_deepseek
@@ -330,6 +353,7 @@ flowchart LR
   svc_dynamicCordisRunner --> pkg_tool_cordis
   svc_e2b --> pkg_fs_e2b
   svc_e2b --> pkg_subprocess_e2b
+  svc_flowEngine --> pkg_host_apiproxy
   svc_fs --> pkg_tool_fs
   svc_invariants --> pkg_agent
   svc_invariants --> pkg_agent_loop
@@ -342,11 +366,16 @@ flowchart LR
   svc_llm --> pkg_agent_loop
   svc_llm --> pkg_compaction_basic
   svc_lsp --> pkg_tool_lsp
+  svc_platformShell --> pkg_experimental_engine_isolation
+  svc_pluginInventory --> pkg_host_apiproxy
+  svc_projectInsight --> pkg_host_apiproxy
   svc_sandbox --> pkg_bash_sandbox
   svc_sandbox --> pkg_terminal_bash
   svc_sandboxPolicy --> pkg_bash_sandbox
   svc_sandboxPolicy --> pkg_fs_sandbox
   svc_sandboxPolicy --> pkg_terminal_bash
+  svc_sessionDeletion --> pkg_command_session_delete
+  svc_sessionDeletion --> pkg_host_apiproxy
   svc_sessionPersistence --> pkg_agent_loop
   svc_sessionPersistence --> pkg_hooks_claude_code
   svc_sessionPersistence --> pkg_hooks_codex
@@ -484,5 +513,12 @@ flowchart LR
 | `ctx.apiProxy` | `core` | `apiproxy` | - | `connection` | - | The transport-agnostic host gateway face: it dispatches browser API calls, and each open host stream subscribes to the events it forwards rather than being pushed to through a broadcast verb. |
 | `ctx.dynamicCordisRunner` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Owns the in-memory definition registry, the vm sandbox for host halves, and the request-run round trip; browser pages reach the same service over the wire through its remote namespace. |
 | `ctx.cordisInspect` | `core` | [`cordis-host-runner`](../packages/extensions/cordis-host-runner) | - | [`tool-cordis`](../packages/extensions/tool-cordis) | - | Registers host inspect providers, mirrors the client provider manifest, and routes client queries through the dynamic Cordis transport. |
+| `ctx.contextComposition` | `core` | [`context-composition`](../packages/session/context-composition) | - | [`host-apiproxy`](../packages/host/apiproxy) | - | Projects one session's durable context composition at its log tail; the host API gateway serves the read, and ui-context renders it over the wire without a second projection layer. |
+| `ctx.engineIsolation` | `core` | [`experimental-engine-isolation`](../packages/experimental/engine-isolation) | - | - | - | Resolves each workspace's agent runs to the in-process driver or a process-out driver according to the platformShell isolation record; injects platformShell and subprocess to start and supervise isolated engines. |
+| `ctx.flowEngine` | `core` | [`flow`](../packages/workflow/flow) | - | [`host-apiproxy`](../packages/host/apiproxy) | - | Compiles and supervises flow runs against the workflowEngine service; requires workflowEngine in the same composition and fails loud at load without it. The host API gateway exposes the run surface. |
+| `ctx.platformShell` | `core` | [`experimental-platform-shell`](../packages/experimental/platform-shell) | - | [`experimental-engine-isolation`](../packages/experimental/engine-isolation) | - | Registers users and workspaces, owns the platform store as the durable record, and routes isolated workspaces to their engine through the engineIsolation driver. |
+| `ctx.pluginInventory` | `core` | [`host-plugin-inventory`](../packages/host/plugin-inventory) | - | [`host-apiproxy`](../packages/host/apiproxy) | - | Reads the Loader's current non-group entry state directly per call; Cordis's plugin lifecycle events keep entry and fiber state current, so no second cache is kept. |
+| `ctx.projectInsight` | `core` | [`project-insight`](../packages/insight/project-insight) | - | [`host-apiproxy`](../packages/host/apiproxy) | - | Scans a workspace root into a project document; auto-scan is debounced and single-flight per root, and the host API gateway serves reads to ui-project-insight. |
+| `ctx.sessionDeletion` | `core` | [`session-deletion`](../packages/session/session-deletion) | - | [`command-session-delete`](../packages/session/command-session-delete), [`host-apiproxy`](../packages/host/apiproxy) | - | Disposes live scope members and records removals in the `session_deletion` ledger domain; the session-delete command and the host API gateway both drive it. |
 
 Maintenance mode: hybrid: services are discovered from Cordis declarations; interface/implementation/consumer roles are classified in `scripts/gen-doc-graphs.ts` with a completeness guard.

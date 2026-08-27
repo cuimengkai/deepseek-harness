@@ -409,6 +409,22 @@ getScenario(actor: UserId, scenarioId: ScenarioId): ScenarioBundle | undefined
 resolveCapabilities(actor: UserId, request: ResolveCapabilitiesRequest): ResolvedCapabilitySet
 
 /**
+ * Render and statically validate one workbench preset tree before commit.
+ * Mirrors `resolveCapabilities`' gating — permission, scenario membership,
+ * and a dependency-first resolution — then appends each resolved capability's
+ * preset rows to the host-supplied base, overlays the optional patches, and
+ * validates the rendered tree. Duplicate row ids and shadowed tool names are
+ * rejected (`ROW_ID_CONFLICT` / `TOOL_NAME_CONFLICT`); rows disabled for the
+ * current platform are reported, not rejected. The commit itself is a host
+ * action: the seam never reads or writes the roster (platform-preset-assembler
+ * §3).
+ * @param actor - the platform user assembling the workbench.
+ * @param request - the workspace, scenario, role, base rows, selection, and patches.
+ * @returns the resolved capability set plus the rendered, validated tree.
+ */
+assemblePreset(actor: UserId, request: AssemblePresetRequest): AssembledPreset
+
+/**
  * Credit one workspace's billing account.
  * @param actor - the operator crediting the account.
  * @param workspaceId - the workspace account to credit.

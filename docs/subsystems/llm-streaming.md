@@ -439,6 +439,11 @@ interface LlmModelInfo {
   description?: string
   /** Accepted request modalities; absent means unknown, while an explicit omission is negative capability. */
   inputModalities?: readonly ModelModality[]
+  /**
+   * Model roles this entry can serve, in adapter-preferred order; absent means
+   * unknown, while catalog surfaces treat absence as the text-only default.
+   */
+  kinds?: readonly ModelKind[]
 }
 ```
 
@@ -621,6 +626,10 @@ interface LlmDiscoveredModel {
   contextWindow?: number
   /** Maximum output tokens, when disclosed. */
   maxTokens?: number
+  /** Accepted request modalities, when the endpoint discloses them. */
+  inputModalities?: readonly ModelModality[]
+  /** Model roles this entry can serve, when the endpoint discloses them. */
+  kinds?: readonly ModelKind[]
 }
 ```
 

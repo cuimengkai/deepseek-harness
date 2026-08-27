@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/subsystems/engine-isolation.md
-engine-isolation.md: 293cc99054ca5da86106e49d5aa1b77b36f806fd
-engine-isolation.zh.md: 07bc9b73b23be92dc36eb7f55857ddd5747a4803
+engine-isolation.md: d984c27b477dc77d7ca6e00b9ad3b625ff731a32
+engine-isolation.zh.md: ab0492c7feb6b1f2b0a5cf9648d559a5c040f6f4

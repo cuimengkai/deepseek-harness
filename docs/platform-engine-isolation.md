@@ -9,6 +9,10 @@ English | [中文](platform-engine-isolation.zh.md)
 `EngineDriver` is the reserved adapter-layer interface. One `drive` call runs one agent run in the workspace's engine; `listSessions` enumerates the sessions that engine holds durably; `readLog` reads a session's durable event log back.
 
 ```ts
+import type { AgentRunRequest, RunHandle } from '@deepseek-ai/dsh-experimental-engine-isolation'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { WorkspaceId } from '@deepseek-ai/dsh-experimental-platform-shell'
+
 interface EngineDriver {
   readonly kind: 'in-process' | 'process-out'
   drive(request: AgentRunRequest): Promise<RunHandle>

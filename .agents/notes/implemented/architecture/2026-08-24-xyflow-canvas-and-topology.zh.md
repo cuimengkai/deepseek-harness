@@ -30,5 +30,5 @@ Status: implemented
 - `cytoscape` 离开 `ui-project-insight` 的依赖；`view.ts`、`CytoscapeGraph.tsx` 与 `PipelineCanvas.tsx` 被删除。
 - React Flow 被内联进三个 client bundle（约 30 KB gzip），不在冻结的模块表中，因此 shell seed 与 platform 表保持不变。
 - 触屏平移与捏合缩放现在是 React Flow 原生能力（vendored 基础 CSS 设置 `touch-action: none`）；此前的「触屏平移延后」画布局限移除。
-- 拓扑画布适配整个图，不会平移到列表选中的节点——旧 cytoscape「加环并居中」的行为收窄为加环与高亮，记录为 Known Limitation。
+- 拓扑画布适配整个图；列表选中的节点只加环与高亮、不平移——旧 cytoscape「加环并居中」的行为收窄为加环与高亮，记录为 Known Limitation。列表选中后来获得居中、聚焦缩放与关联边高亮（[[2026-08-26-insight-tabs-pinned-tree-focus]]），该局限解除。
 - 升级固定版本的 React Flow 时，vendored 基础样式表必须重新 vendor。

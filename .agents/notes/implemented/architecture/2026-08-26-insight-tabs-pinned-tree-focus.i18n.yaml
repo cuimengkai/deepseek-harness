@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-26-insight-tabs-pinned-tree-focus.md
+2026-08-26-insight-tabs-pinned-tree-focus.md: 36440232978511ea4806f348e3f53beeaa177f76
+2026-08-26-insight-tabs-pinned-tree-focus.zh.md: 870d2eadc41c6424b98e21085d97942c3fbb2917

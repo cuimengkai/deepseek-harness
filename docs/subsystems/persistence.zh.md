@@ -252,16 +252,19 @@ The cascade-deletion service. Opens the `session_deletion` ledger domain at init
 ```ts cordis-catalog
 /**
  * Physically delete one session and its entire subagent descendant tree.
- * The scope is computed once from the merged live + persisted header corpus;
- * if ANY member is live the whole operation refuses ({@link SessionDeletionError})
- * and nothing is removed. Otherwise each member's durable log is deleted
- * root-first through the persistence seam, the operation is recorded in the
- * ledger (when at least one member existed), and mounted consumers clean
- * their per-session state.
+ * The scope is computed once from the merged live + persisted header corpus.
+ * Live scope members are disposed first — agent-owned sessions through the
+ * agent factory (`ctx.agents.disposeAgent`), bare live sessions directly via
+ * `ctx.sessions.dispose` — so the persistence coordinator's own live guard
+ * passes; if any member remains live after disposal the whole operation
+ * refuses ({@link SessionDeletionError}) and nothing is removed. Otherwise
+ * each member's durable log is deleted root-first through the persistence
+ * seam, the operation is recorded in the ledger (when at least one member
+ * existed), and mounted consumers clean their per-session state.
  * @param id - the root session to delete.
  * @param options - optional ledger reason.
  * @returns the removed and absent scope members.
- * @throws {@link SessionDeletionError} when any scope member is live.
+ * @throws {@link SessionDeletionError} when any scope member is still live after disposal.
  */
 async deleteSession(id: SessionId, options: DeleteSessionOptions = {}): Promise<DeleteSessionResult>
 

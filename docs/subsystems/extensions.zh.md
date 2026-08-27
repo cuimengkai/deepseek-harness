@@ -256,6 +256,24 @@ Types: [Agent](core.zh.md)
 
 Source: [`packages/extensions/cordis-host-runner/src/index.ts`](../../packages/extensions/cordis-host-runner/src/index.ts)
 
+<a id="ctxplugininventory--plugininventorygateway"></a>
+
+### `ctx.pluginInventory` — `PluginInventoryGateway`
+
+Remote-only service exposing the Loader's current non-group entry state.
+
+```ts cordis-catalog
+/**
+ * Read the Loader directly on every call. Cordis's internal plugin/status
+ * events already maintain Entry.fiber and Fiber.state, so a second cache
+ * would only add another lifecycle truth to keep synchronized.
+ * @returns Current non-group Loader entries in Loader order.
+ */
+@Remote('list') list(): PluginInventorySnapshot
+```
+
+Source: [`packages/host/plugin-inventory/src/index.ts`](../../packages/host/plugin-inventory/src/index.ts)
+
 <a id="cordis-events"></a>
 
 ### `cordis/*` events
@@ -361,4 +379,49 @@ A pending Client activation request left the answerable state.
 ```
 
 Source: [`packages/extensions/cordis-host-runner/src/types.ts`](../../packages/extensions/cordis-host-runner/src/types.ts)
+
+<a id="plugin-inventory-events"></a>
+
+### `plugin-inventory/*` events
+
+<a id="plugin-inventorychanged--emit"></a>
+
+#### `plugin-inventory/changed` — emit
+
+The Loader plugin projection changed. Emitted after one frame of `loader/entry-init`, `loader/partial-dispose`, `internal/plugin`, and `internal/status` events coalesces and the recomputed projection differs from the last one emitted; the client re-reads `pluginInventory/list`.
+
+```ts cordis-catalog
+/**
+ * The Loader plugin projection changed. Emitted after one frame of
+ * `loader/entry-init`, `loader/partial-dispose`, `internal/plugin`, and
+ * `internal/status` events coalesces and the recomputed projection differs
+ * from the last one emitted; the client re-reads `pluginInventory/list`.
+ * @mode emit
+ */
+'plugin-inventory/changed'(): void
+```
+
+Source: [`packages/host/plugin-inventory/src/types.ts`](../../packages/host/plugin-inventory/src/types.ts)
+
+<a id="plugin-manager-events"></a>
+
+### `plugin-manager/*` events
+
+<a id="plugin-managercatalog-changed--emit"></a>
+
+#### `plugin-manager/catalog-changed` — emit
+
+The installable catalog changed: a managed install or uninstall committed, or the catalog was explicitly refreshed. Coalesced per frame; the client re-reads `pluginManager/listAvailable`.
+
+```ts cordis-catalog
+/**
+ * The installable catalog changed: a managed install or uninstall committed,
+ * or the catalog was explicitly refreshed. Coalesced per frame; the client
+ * re-reads `pluginManager/listAvailable`.
+ * @mode emit
+ */
+'plugin-manager/catalog-changed'(): void
+```
+
+Source: [`packages/host/plugin-manager/src/types.ts`](../../packages/host/plugin-manager/src/types.ts)
 <!-- END GENERATED cordis-surface -->

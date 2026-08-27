@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-23-stop-then-delete-session-deletion.md
-2026-08-23-stop-then-delete-session-deletion.md: c9c0bc1cd049fd0f5f0cf2515ce2641d5b5b8d25
-2026-08-23-stop-then-delete-session-deletion.zh.md: 149e5084759ef04bb165f474f95ef1852ee52701
+2026-08-23-stop-then-delete-session-deletion.md: 6dbd50f7c1d1dc3dd659d88385b63448671b9834
+2026-08-23-stop-then-delete-session-deletion.zh.md: d582a3f655096b81c8befd29fa096c394824bb57

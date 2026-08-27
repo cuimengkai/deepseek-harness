@@ -135,6 +135,82 @@ interface WorkflowRun {
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
 
+<a id="ctxflowengine--flowengine"></a>
+
+### `ctx.flowEngine` — `FlowEngine`
+
+The flow-engine service. Requires the `workflowEngine` service in the same composition; a composition mounting the flow engine without it fails loud at load rather than resolving an empty run surface.
+
+```ts cordis-catalog
+/**
+ * Compile and start a flow run.
+ * @param request - the graph, optional `args`, the parent agent, and an
+ *   optional cancel signal.
+ * @returns the live-run handle; its `result` resolves when the run settles.
+ * @throws {@link FlowError} with `FLOW_INVALID` for an invalid graph and
+ *   `FLOW_CAP` when the live-run bound is reached.
+ */
+run(request: FlowRunRequest): FlowRunHandle
+
+/**
+ * Cancel a live run.
+ * @param runId - the run to cancel.
+ * @throws {@link FlowError} with `FLOW_RUN_NOT_FOUND` for an unknown run.
+ */
+stop(runId: FlowRunIdType): void
+
+/**
+ * List tracked runs, newest first.
+ * @param flowId - optional filter to one flow.
+ * @returns the run summaries (live runs first, then settled within the
+ *   history bound).
+ */
+listRuns(flowId?: string): FlowRunSummary[]
+
+/**
+ * Read one run's live snapshot.
+ * @param runId - the run to read.
+ * @returns the snapshot, or `undefined` for an unknown or pruned run.
+ */
+getRun(runId: FlowRunIdType): FlowRunSnapshot | undefined
+
+/**
+ * Validate and persist a flow under `<root>/.dsh/flows/<id>.flow.json`.
+ * @param root - the owning project root.
+ * @param graph - the graph to save.
+ * @returns the graph, unchanged.
+ * @throws {@link FlowError} with `FLOW_INVALID` for an invalid graph.
+ */
+async save(root: string, graph: FlowGraph): Promise<FlowGraph>
+
+/**
+ * List the flows saved under `<root>/.dsh/flows`.
+ * @param root - the owning project root.
+ * @returns the flow summaries.
+ */
+async list(root: string): Promise<FlowSummary[]>
+
+/**
+ * Read one saved flow.
+ * @param root - the owning project root.
+ * @param flowId - the flow's id.
+ * @returns the validated graph.
+ * @throws {@link FlowError} with `FLOW_NOT_FOUND`, `FLOW_VERSION`, or
+ *   `FLOW_INVALID`.
+ */
+async get(root: string, flowId: string): Promise<FlowGraph>
+
+/**
+ * Delete one saved flow.
+ * @param root - the owning project root.
+ * @param flowId - the flow's id.
+ * @throws {@link FlowError} with `FLOW_NOT_FOUND` when no such flow exists.
+ */
+async delete(root: string, flowId: string): Promise<void>
+```
+
+Source: [`packages/workflow/flow/src/service.ts`](../../packages/workflow/flow/src/service.ts)
+
 <a id="ctxworkflowengine--workflowengine-abstract-seam"></a>
 
 ### `ctx.workflowEngine` — `WorkflowEngine` (abstract seam)

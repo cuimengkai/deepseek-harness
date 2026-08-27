@@ -188,6 +188,29 @@ abstract compactNow( agent: ManualCompactAgentContext, signal: AbortSignal, sour
  * @returns the appended event seqs, summary, replaced range, and token accounting.
  */
 abstract compactRegion( start: number, end: number, agent: CompactionAgentContext, signal?: AbortSignal, ): Promise<CompactionResult>
+
+/**
+ * Explicitly compact one caller-selected surface range through the same
+ * idle-gated standalone transaction as {@link compactNow} — the range is
+ * the caller's choice instead of the retention policy's. `start` and `end`
+ * are surface seqs in positional order (the seq at the earlier position
+ * first), inclusive; both edges must be balanced so assistant tool calls
+ * remain paired with their results. A missing, reversed, or unbalanced
+ * range rejects with a plain Error whose message names the violated edge;
+ * busy, cancellation, changed-span, summarization, commit, and persistence
+ * failures throw {@link ManualCompactionError} exactly like `compactNow`.
+ *
+ * @param start - surface seq at the earlier position of the range, inclusive.
+ * @param end - surface seq at the later position of the range, inclusive.
+ * @param agent - idle agent whose durable history is compacted.
+ * @param signal - cancellation scoped to this compaction request.
+ * @param sourceCommandId - initiating command identity for a manual compaction.
+ * @returns the compaction result.
+ * @throws {@link ManualCompactionError} for expected busy, agent-cancellation,
+ * changed-span, summarization/commit-stage, or persistence failures; a plain
+ * Error for a missing, reversed, or unbalanced range.
+ */
+abstract compactRegionNow( start: number, end: number, agent: ManualCompactAgentContext, signal: AbortSignal, sourceCommandId?: CommandId, ): Promise<CompactionResult>
 ```
 
 Types: [CommandId](commands.md)

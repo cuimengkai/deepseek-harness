@@ -218,7 +218,7 @@ Source: [`packages/interaction/user-approval/src/index.ts:67`](../packages/inter
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:360`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:409`](../packages/experimental/platform-shell/src/types.ts)
 
 <a id="assetregister--log-only"></a>
 
@@ -234,7 +234,7 @@ Source: [`packages/experimental/platform-shell/src/types.ts:360`](../packages/ex
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:367`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:416`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `assistant/*`
 
@@ -289,7 +289,7 @@ Source: [`packages/core/session/src/types.ts:277`](../packages/core/session/src/
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:405`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:467`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `capability/*`
 
@@ -306,7 +306,7 @@ Source: [`packages/experimental/platform-shell/src/types.ts:405`](../packages/ex
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:393`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:442`](../packages/experimental/platform-shell/src/types.ts)
 
 <a id="capabilityselected--log-only"></a>
 
@@ -321,7 +321,7 @@ Source: [`packages/experimental/platform-shell/src/types.ts:393`](../packages/ex
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:399`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:448`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `command/*`
 
@@ -601,7 +601,7 @@ Source: [`packages/llm/llm-retry/src/types.ts:11`](../packages/llm/llm-retry/src
 'permission/preset': { preset: string; origin?: 'default' | 'selection' | 'inferred' }
 ```
 
-Source: [`packages/interaction/permission-presets/src/index.ts:53`](../packages/interaction/permission-presets/src/index.ts)
+Source: [`packages/interaction/permission-presets/src/index.ts:54`](../packages/interaction/permission-presets/src/index.ts)
 
 ### `plan/*`
 
@@ -638,7 +638,7 @@ Source: [`packages/plan/plan-mode/src/index.ts:53`](../packages/plan/plan-mode/s
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:384`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:433`](../packages/experimental/platform-shell/src/types.ts)
 
 <a id="platformworkspaceisolated--log-only"></a>
 
@@ -657,7 +657,31 @@ Source: [`packages/experimental/platform-shell/src/types.ts:384`](../packages/ex
 }
 ```
 
-Source: [`packages/experimental/platform-shell/src/types.ts:379`](../packages/experimental/platform-shell/src/types.ts)
+Source: [`packages/experimental/platform-shell/src/types.ts:428`](../packages/experimental/platform-shell/src/types.ts)
+
+### `preset/*`
+
+<a id="presetassembled--log-only"></a>
+
+#### `preset/assembled` — log-only
+
+```ts persistence-catalog
+/**
+ * The assembler rendered and statically validated one workbench preset tree.
+ * The rendered rows are model-visible through the tool result, so the event
+ * carries them for durable reconstruction (model-visible ⟺ logged).
+ */
+'preset/assembled': {
+  workspaceId: WorkspaceId
+  scenarioId: ScenarioId
+  roleId: RoleId
+  preset: string
+  capabilityIds: readonly CapabilityId[]
+  rows: readonly EntryOptions[]
+}
+```
+
+Source: [`packages/experimental/platform-shell/src/types.ts:458`](../packages/experimental/platform-shell/src/types.ts)
 
 ### `request/*`
 
@@ -778,7 +802,7 @@ Source: [`packages/core/session/src/types.ts:336`](../packages/core/session/src/
 
 Types: [SessionTitleEventData](subsystems/session-title.md)
 
-Source: [`packages/session/session-title/src/index.ts:100`](../packages/session/session-title/src/index.ts)
+Source: [`packages/session/session-title/src/index.ts:101`](../packages/session/session-title/src/index.ts)
 
 <a id="sessiontitle-llm-request--log-only"></a>
 

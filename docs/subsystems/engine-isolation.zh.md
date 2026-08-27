@@ -13,6 +13,10 @@
 `EngineDriver` 是预留的适配层接口：`drive` 在某个工作区的引擎里运行一次 agent 运行，`listSessions` 枚举该引擎持久持有的会话，`readLog` 读回某会话的持久事件日志。`RunHandle` 报告是哪台引擎进程跑了这次驱动、数据提交到了哪里。
 
 ```ts
+import type { AgentRunRequest, RunHandle } from '@deepseek-ai/dsh-experimental-engine-isolation'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { WorkspaceId } from '@deepseek-ai/dsh-experimental-platform-shell'
+
 interface EngineDriver {
   readonly kind: 'in-process' | 'process-out'
   drive(request: AgentRunRequest): Promise<RunHandle>

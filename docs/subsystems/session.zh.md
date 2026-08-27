@@ -708,6 +708,18 @@ enter(session: Session): () => void
 announce(session: Session): void
 
 /**
+ * Dispose a live session: remove it from the store and emit its paired
+ * `session/disposed` so the persistence coordinator retires and final-flushes
+ * the session. The inverse of {@link enter} for a caller that owns the
+ * session but not an agent lifecycle (the cascade-deletion service).
+ * Durability is the caller's boundary — `persistence.delete` awaits that
+ * retirement (`waitForRetirement`) before removing the log.
+ * @param session - a live entered session to detach.
+ * @returns false when the session is already detached or unknown.
+ */
+dispose(session: Session): Promise<boolean>
+
+/**
  * Dispatch the awaited `session/flush` durability checkpoint for `session`,
  * with the carrier captured at {@link enter}. THE flush entry point: the
  * store owns the carrier, so callers (the checkpoint policy's per-request

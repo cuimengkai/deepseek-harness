@@ -30,5 +30,5 @@ The gesture↔surface mapping is pure (`rf-map.ts`) and unit-tested without a DO
 - `cytoscape` leaves `ui-project-insight`'s dependencies; `view.ts`, `CytoscapeGraph.tsx`, and `PipelineCanvas.tsx` are deleted.
 - React Flow is inlined into the three client bundles (~30 KB gzip) and is not in the frozen module table, so the shell seed and platform table are untouched.
 - Touch pan and pinch zoom are React Flow-native (the vendored base CSS sets `touch-action: none`); the earlier "touch pan deferred" canvas limitation is removed.
-- The topology canvas fits the whole graph and does not pan to a list-selected node — the previous cytoscape "rings and centers" behavior narrows to ringing and highlighting, recorded as a Known Limitation.
+- The topology canvas fits the whole graph; a list-selected node is rung and highlighted but not panned to — the previous cytoscape "rings and centers" behavior narrowed to ringing and highlighting, recorded as a Known Limitation. List selection later gained centering, focus zoom, and incident-edge accents ([[2026-08-26-insight-tabs-pinned-tree-focus]]), which lifted that limitation.
 - The vendored base stylesheet must be re-vendored when the pinned React Flow version upgrades.

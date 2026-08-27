@@ -163,6 +163,13 @@ interface AgentOptions {
   model?: string
   /** Maximum output tokens for each conversation-model request. */
   maxTokens?: number
+  /**
+   * Per-kind model routes. A kind listed here routes that kind's requests to
+   * the bound route (this agent's provider/model otherwise). Declaration only
+   * until request routing consumes kinds (a Phase B/C follow-on); carried so a
+   * flow-authored per-kind binding survives into the child's durable options.
+   */
+  modelKinds?: Partial<Record<ModelKind, { provider?: string; model?: string }>>
 }
 ```
 
@@ -373,6 +380,15 @@ async createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<Agent
  * @returns the published handle.
  */
 async resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>
+
+/**
+ * Dispose a live agent by its shared agent/session id. Drains the agent's
+ * in-flight turn, unregisters it, removes its session, and unwinds its
+ * scope — the same composite teardown an {@link AgentHandle} owner runs.
+ * @param id - the shared agent/session id of the live agent to dispose.
+ * @returns false when no live agent has that id.
+ */
+async disposeAgent(id: SessionId): Promise<boolean>
 ```
 
 Types: [SessionHeader](persistence.md)
@@ -484,6 +500,103 @@ async read(id: string): Promise<string>
  * or the deployment configures no writable root.
  */
 async copy(from: string, id: string, name?: string): Promise<void>
+
+/**
+ * Write a locally authored preset from composition rows.
+ *
+ * The sanctioned exception to "no caller supplies composition text": the
+ * platform preset assembler renders a validated tree and commits it through
+ * this primitive. The caller owns render + static validation — this method
+ * accepts the rows as given and refuses only a wrong id or an occupied slot.
+ * The write is NOT mounted to validate; loader-level checks (`inactiveRows`
+ * / `leakedServices`) run at mount.
+ * @param id - the new preset's id, which becomes its directory name.
+ * @param rows - the composition rows to persist.
+ * @param meta - display metadata to publish beside the composition.
+ * @throws when the id is unusable or already taken, or the deployment
+ * configures no writable root.
+ */
+async write(id: string, rows: readonly EntryOptions[], meta?: PresetMetadata): Promise<void>
+
+/**
+ * Read one preset's composition as rows, for the composer.
+ *
+ * The structured twin of `read`: the same composition, parsed with the
+ * loader's own YAML dialect so a `!!js` `disabled` row survives. The browser
+ * receives rows rather than YAML text because editing is a row operation —
+ * parsing stays on the host.
+ * @param id - the preset id.
+ * @returns the composition's entry rows.
+ * @throws when no configured root supplies that id or the composition does
+ * not parse as an entry list.
+ */
+async readRows(id: string): Promise<ComposeRow[]>
+
+/**
+ * Write a locally authored preset's composition from rows, creating it or
+ * replacing it in place.
+ *
+ * The browser-facing authoring write. Unlike `write` (rows accepted as given
+ * by a trusted in-process caller), this method enforces the composition
+ * invariants the preset domain owns — a non-empty row list, a plugin module
+ * per row, unique row ids — and the "only installed plugins may be composed"
+ * rule through a REQUIRED resolvability proof: `assertResolvable` returns
+ * the module names the rows reference that are not installed, and a non-empty
+ * answer refuses the whole composition with {@link ComposeModuleError}. The
+ * wire layer supplies the inventory-backed proof, so no caller can bypass
+ * it. `overwrite` selects replace-in-place over create: replacing refuses a
+ * preset that ships with the deployment, because only a locally authored
+ * preset is the user's to overwrite.
+ * The write is NOT mounted to validate; loader-level checks (`inactiveRows`
+ * / `leakedServices`) run at mount, as they do for every authored preset.
+ * @param id - the preset id, which becomes its directory name.
+ * @param rows - the composition rows to persist.
+ * @param meta - display metadata to publish beside the composition.
+ * @param options - create-vs-replace choice and the resolvability proof.
+ * @throws when the id is unusable, the rows violate a composition invariant,
+ * a module does not resolve, the deployment configures no writable root, or
+ * (replacing) the preset does not exist or ships with the deployment.
+ */
+async compose( id: string, rows: readonly ComposeRow[], meta: PresetMetadata | undefined, options: { /** Whether to replace an existing preset in place (false = create). */ overwrite: boolean /** * Prove every module a row names is installed. Returns the unresolved * module names; a non-empty result refuses the composition. */ assertResolvable: (rows: readonly ComposeRow[]) => readonly string[] }, ): Promise<void>
+
+/**
+ * Write a locally authored preset's composition AND companion graph from a
+ * preset composition graph.
+ *
+ * The graph authoring write behind `agentPreset.saveGraph`. The graph is the
+ * AUTHORING source: its agent nodes' `composition` fields project exactly the
+ * rows that mount, so the rows are DERIVED here (`graphToRows`) and validated
+ * exactly as {@link compose} validates them — non-empty, module-per-row,
+ * unique ids, the resolvability proof — and one authoring primitive writes
+ * both files: `agent.cordis.yml` from the derived rows and `agent.flow.json`
+ * beside it holding the graph as authored. A graph with a condition or loop
+ * node, an agent without a composition module, or a cycle is refused before
+ * any write. The graph's display name and the preset's are one thing: a given
+ * `meta.name` also becomes the stored graph's name, so the roster and the
+ * canvas agree.
+ * @param id - the preset id, which becomes its directory name.
+ * @param graph - the preset composition graph to persist.
+ * @param meta - display metadata to publish beside the composition.
+ * @param options - create-vs-replace choice and the resolvability proof.
+ * @throws when {@link compose} throws, or the graph does not project rows.
+ */
+async composeGraph( id: string, graph: FlowGraph, meta: PresetMetadata | undefined, options: { /** Whether to replace an existing preset in place (false = create). */ overwrite: boolean /** * Prove every module the projected rows name is installed. Returns the * unresolved module names; a non-empty result refuses the composition. */ assertResolvable: (rows: readonly ComposeRow[]) => readonly string[] }, ): Promise<void>
+
+/**
+ * Read one preset's composition graph, regenerating a stale or absent layout.
+ *
+ * The graph authoring read behind `agentPreset.readGraph`. The stored
+ * `agent.flow.json` is a layout cache: it serves only while it still projects
+ * exactly the rows parsed from the composition file (a hand edit or a legacy
+ * rows-composer write wins), and otherwise the rows are re-projected as a
+ * fresh chain graph. Backward compatible: an older preset with no graph file
+ * regenerates on open.
+ * @param id - the preset id.
+ * @returns the preset's composition graph.
+ * @throws when no configured root supplies that id, or the composition does
+ * not parse.
+ */
+async readGraph(id: string): Promise<FlowGraph>
 
 /**
  * Delete a locally authored preset.
@@ -641,6 +754,16 @@ async create(options: CreateAgentOptions): Promise<AgentHandle>
  * @returns the handle after setup, rollback-covered publication, and loop start complete.
  */
 async resume(options: ResumeAgentOptions): Promise<AgentHandle>
+
+/**
+ * Dispose a live agent by its shared agent/session id through the registered
+ * factory. Unlike {@link create}/{@link resume} no caller context binds the
+ * teardown: the live lifecycle was already owned by the context that created
+ * it, so this delegates straight to the factory.
+ * @param id - the shared agent/session id of the live agent to dispose.
+ * @returns false when no factory is registered or no live agent has that id.
+ */
+async disposeAgent(id: SessionId): Promise<boolean>
 
 /**
  * Register a live agent. Throws if an agent with the same id is already
