@@ -44,6 +44,13 @@
   stroke: var(--dsw-alias-separator-primary);
 }
 
+/* An edge touching the selected node: the brand stroke, a heavier line, and
+   React Flow's `animated` dash carry the focus through the arcs. */
+.topologyEdgeSelected .react-flow__edge-path {
+  stroke: var(--dsw-alias-brand);
+  stroke-width: 2px;
+}
+
 .react-flow__controls {
   border: 1px solid var(--dsw-alias-separator-primary);
   border-radius: 8px;

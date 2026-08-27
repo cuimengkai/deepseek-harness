@@ -75,6 +75,19 @@
         - textbox "最大输出 token 数 3":
           - /placeholder: 256K
           - text: 64K
+        - text: 输入模态
+        - checkbox "输入模态 text" [checked]
+        - text: text
+        - checkbox "输入模态 image"
+        - text: image 模型角色
+        - checkbox "模型角色 text" [checked]
+        - text: text
+        - checkbox "模型角色 image"
+        - text: image
+        - checkbox "模型角色 audio"
+        - text: audio
+        - checkbox "模型角色 embedding"
+        - text: embedding
         - button "添加模型":
           - img
           - text: 添加模型

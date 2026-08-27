@@ -45,7 +45,7 @@ describe('RouterService', () => {
     router.navigate('/settings/models', { replace: true })
     expect(router.getSnapshot().pathname).toBe('/settings/models')
     router.back()
-    await vi.waitFor(() => expect(router.getSnapshot().pathname).not.toBe('/settings/models'))
+    await vi.waitFor(() =>{  expect(router.getSnapshot().pathname).not.toBe('/settings/models') })
   })
 
   it('getSnapshot is a stable reference between navigations and changes after one', async () => {
@@ -78,9 +78,9 @@ describe('RouterService', () => {
     router.navigate('/settings/models')
     expect(router.getSnapshot().pathname).toBe('/settings/models')
     router.back()
-    await vi.waitFor(() => expect(router.getSnapshot().pathname).toBe('/settings'))
+    await vi.waitFor(() =>{  expect(router.getSnapshot().pathname).toBe('/settings') })
     router.forward()
-    await vi.waitFor(() => expect(router.getSnapshot().pathname).toBe('/settings/models'))
+    await vi.waitFor(() =>{  expect(router.getSnapshot().pathname).toBe('/settings/models') })
   })
 
   it('match resolves the active page route incl. optional-section params', async () => {

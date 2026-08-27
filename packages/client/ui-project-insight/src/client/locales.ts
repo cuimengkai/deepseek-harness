@@ -1,4 +1,4 @@
-/** `projectInsight` namespace dictionaries (six view tab labels + frame copy). */
+/** `projectInsight` namespace dictionaries (five view tab labels + frame copy). */
 
 /** Dictionary namespace owned by this plugin. */
 export const NS = 'projectInsight'
@@ -9,7 +9,6 @@ export type ProjectInsightKey =
   | 'view.componentDeps'
   | 'view.techStack'
   | 'view.components'
-  | 'view.prompts'
   | 'view.agentTech'
   | 'frame.scanning'
   | 'frame.none'
@@ -25,22 +24,21 @@ export type ProjectInsightKey =
   | 'label.sourceFiles'
   | 'label.cycles'
   | 'label.tools'
+  | 'label.kind.agentConfig'
+  | 'label.kind.toolConfig'
+  | 'label.kind.instructions'
+  | 'label.kind.notes'
+  | 'label.kind.other'
   | 'label.count'
-  | 'label.defaultExport'
-  | 'label.hasProps'
   | 'label.fullList'
   | 'label.capped'
   | 'label.list'
   | 'label.imports'
   | 'label.notInGraph'
   | 'label.close'
-  | 'label.promptCount'
-  | 'label.kind'
-  | 'label.path'
-  | 'label.package'
-  | 'label.versionScope'
-  | 'label.language'
-  | 'label.fileLines'
+  | 'label.closeDetail'
+  | 'label.copy'
+  | 'label.copied'
   | 'subtab.inventory'
   | 'subtab.skills'
   | 'subtab.mcp'
@@ -59,7 +57,6 @@ export const zh: Record<ProjectInsightKey, string> = {
   'view.componentDeps': '组件依赖',
   'view.techStack': '技术栈',
   'view.components': '组件',
-  'view.prompts': '提示词',
   'view.agentTech': 'Agent 相关技术',
   'frame.scanning': '正在扫描项目…',
   'frame.none': '该项目尚未扫描',
@@ -75,22 +72,21 @@ export const zh: Record<ProjectInsightKey, string> = {
   'label.sourceFiles': '源文件',
   'label.cycles': '循环依赖',
   'label.tools': '工具',
+  'label.kind.agentConfig': '代理配置',
+  'label.kind.toolConfig': '工具配置',
+  'label.kind.instructions': '指令',
+  'label.kind.notes': '笔记',
+  'label.kind.other': '其他',
   'label.count': '{count} 项',
-  'label.defaultExport': '默认导出',
-  'label.hasProps': '有 props',
   'label.fullList': '完整列表',
   'label.capped': '图表已截断 — 省略 {nodes} 个节点、{edges} 条边',
   'label.list': '列表',
   'label.imports': '导入 {count} 项',
   'label.notInGraph': '未在图中',
   'label.close': '收起列表',
-  'label.promptCount': '共 {count} 个提示词文件 · 已展示 {shown} 个',
-  'label.kind': '类型',
-  'label.path': '路径',
-  'label.package': '包',
-  'label.versionScope': '版本 · 范围',
-  'label.language': '语言',
-  'label.fileLines': '文件 · 行数',
+  'label.closeDetail': '关闭',
+  'label.copy': '复制',
+  'label.copied': '复制成功',
   'subtab.inventory': '清单',
   'subtab.skills': '技能',
   'subtab.mcp': 'MCP',
@@ -103,7 +99,6 @@ export const en: Record<ProjectInsightKey, string> = {
   'view.componentDeps': 'Component dependency',
   'view.techStack': 'Tech stack',
   'view.components': 'Components',
-  'view.prompts': 'Prompts',
   'view.agentTech': 'Agent-related tech',
   'frame.scanning': 'Scanning project…',
   'frame.none': 'This project has not been scanned yet',
@@ -119,22 +114,21 @@ export const en: Record<ProjectInsightKey, string> = {
   'label.sourceFiles': 'Source files',
   'label.cycles': 'Cycles',
   'label.tools': 'Tools',
+  'label.kind.agentConfig': 'Agent config',
+  'label.kind.toolConfig': 'Tool config',
+  'label.kind.instructions': 'Instructions',
+  'label.kind.notes': 'Notes',
+  'label.kind.other': 'Other',
   'label.count': '{count} items',
-  'label.defaultExport': 'default export',
-  'label.hasProps': 'has props',
   'label.fullList': 'Full list',
   'label.capped': 'Graph capped — {nodes} nodes and {edges} edges omitted',
   'label.list': 'List',
   'label.imports': '{count} imports',
   'label.notInGraph': 'not in graph',
   'label.close': 'Collapse list',
-  'label.promptCount': '{count} prompt files · {shown} shown',
-  'label.kind': 'Kind',
-  'label.path': 'Path',
-  'label.package': 'Package',
-  'label.versionScope': 'Version · Scope',
-  'label.language': 'Language',
-  'label.fileLines': 'File · Lines',
+  'label.closeDetail': 'Close',
+  'label.copy': 'Copy',
+  'label.copied': 'Copied',
   'subtab.inventory': 'Inventory',
   'subtab.skills': 'Skills',
   'subtab.mcp': 'MCP',

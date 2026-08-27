@@ -1,0 +1,505 @@
+/* Root fills the conversation viewport and opts into the composer overlay:
+   ConversationRoot bounds the view, the summary header stays fixed while the
+   tree and detail panes own their scrollers, and the floating composer's live
+   height is reserved at each pane's bottom. */
+.root {
+  --dsh-context-composer-clearance: calc(var(--dsh-composer-height, 152px) + 16px);
+
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* Non-content frame states fill the tab area and center, matching the app's
+   other loading presentations. The wrapper carries the composer-overlay
+   attribute too, so the bounding mode holds across the loading transition. */
+.frameRoot {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.frame {
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+
+.frameSpinner {
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--dsw-alias-border-l2);
+  border-top-color: var(--dsw-alias-state-business-primary);
+  border-radius: 50%;
+  animation: dsh-context-frame-spin 700ms linear infinite;
+}
+
+@keyframes dsh-context-frame-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frameSpinner { animation: none; }
+}
+
+/* ── fixed summary header ────────────────────────────────────────────── */
+
+/* Three stacked lines: the identity row (model, provider, used/window,
+   revision), the segmented meter, and the legend chips. Flex-none so it never
+   scrolls away — the panes below own the view's only scrollers. */
+.summary {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.summaryHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+
+.summaryModel {
+  flex: none;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--dsw-font-markdown-code-block-small);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.summaryProvider {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.summaryStats {
+  flex: none;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.summaryRevision {
+  flex: none;
+  padding: 0 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.capacityBar {
+  display: flex;
+  height: 8px;
+  box-sizing: border-box;
+  border-radius: 4px;
+  overflow: hidden;
+  /* Meter track, not a surface: the interactive hover fill keeps the sheet
+     out of the elevated-surface scrollbar gate (ContextMeter's convention). */
+  background: var(--dsw-alias-interactive-bg-hover);
+  border: 1px solid var(--dsw-alias-border-l2);
+}
+
+.capacitySystem {
+  background: var(--dsw-alias-state-business-primary);
+}
+
+.capacityTools {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.capacitySurface {
+  background: var(--dsw-alias-state-warn-primary);
+}
+
+.capacityLegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.capacityItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+  flex: none;
+}
+
+/* The range-selection hint rides the legend row's right edge and yields its
+   place whenever a range is active or a compaction is in flight. */
+.capacityHint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ── the two-pane explorer ───────────────────────────────────────────── */
+
+.columns {
+  display: flex;
+  flex: 1 1 0%;
+  min-height: 0;
+}
+
+/* The left tree: one sticky-header group per composition section, each row a
+   full-width button with a role chip, label, elided preview, and a
+   right-aligned token figure. */
+.tree {
+  flex: none;
+  width: 320px;
+  min-height: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  padding: 4px 0 calc(var(--dsh-context-composer-clearance) + 8px);
+}
+
+.treeGroup {
+  margin-bottom: 6px;
+}
+
+/* Sticky inside the tree's scroll port so the section identity stays visible
+   while long surfaces scroll under it. */
+.treeGroupTitle {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0;
+  padding: 6px 14px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--dsw-alias-label-tertiary);
+  background: var(--dsw-alias-bg-layer-1);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.treeGroupLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.treeGroupCount {
+  flex: none;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.treeGroupTokens {
+  flex: none;
+  margin-left: auto;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+.treeRow,
+.treeRowActive {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.treeRow:hover,
+.treeRowActive {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.treeRowActive {
+  color: var(--dsw-alias-label-primary);
+  box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary);
+}
+
+/* A surface row inside the active compaction range: the business tint marks
+   the span the /compact trigger will shadow. */
+.treeRowRange {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
+}
+
+.treeRowRange:hover {
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 20%, transparent);
+}
+
+/* The surface row's role chip: user rides the business blue, assistant stays
+   neutral — the two read apart at a glance down the list. */
+.roleChip {
+  flex: none;
+  font-family: var(--dsw-font-markdown-code-block-small);
+  font-size: 10px;
+  line-height: 14px;
+  padding: 0 5px;
+  border-radius: 3px;
+  letter-spacing: 0.02em;
+  text-transform: lowercase;
+}
+
+.roleUser {
+  color: var(--dsw-alias-state-business-primary);
+  background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
+}
+
+.roleAssistant {
+  color: var(--dsw-alias-label-secondary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+/* Label + elided inline preview share the flexible middle; the preview yields
+   first when the row narrows. */
+.rowMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.rowLabel {
+  flex: none;
+  font-family: var(--dsw-font-markdown-code-block-small);
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.rowPreview {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rowMeta {
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── the right detail pane ───────────────────────────────────────────── */
+
+/* Header block (title + fact chips), then the pane's own scroll region with
+   the composer clearance reserved at its bottom. */
+.detail {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.detailHeader {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 20px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+}
+
+.detailTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The fact chips row: one bordered pill per label/value pair. */
+.factRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 1px 8px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.factLabel {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.factValue {
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.detailSubTitle {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.detailBody {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 20px calc(var(--dsh-context-composer-clearance) + 12px);
+}
+
+.prose {
+  max-width: 72ch;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.muted {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  margin: 0 0 8px;
+}
+
+/* The tool catalog table. */
+.table {
+  width: 100%;
+  max-width: 56ch;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+
+.table th,
+.table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  text-align: left;
+}
+
+.table th {
+  color: var(--dsw-alias-label-tertiary);
+  font-weight: 600;
+}
+
+.tableNumber {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+/* ── the range selection action card ─────────────────────────────────── */
+
+/* One floating card centered above the composer while a range is active: the
+   selection summary, the /compact trigger, the clear action, and a rejection
+   line. It overlays the panes rather than pushing their content. */
+.rangeBar {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: calc(var(--dsh-composer-height, 152px) + 16px);
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100% - 32px));
+  padding: 6px 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+  font-size: 12px;
+}
+
+.rangeInfo {
+  color: var(--dsw-alias-label-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.rangeCompact,
+.rangeClear {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 12px;
+  border-radius: 4px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: none;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.rangeCompact:not(:disabled) {
+  border-color: var(--dsw-alias-state-business-primary);
+  color: var(--dsw-alias-state-business-primary);
+}
+
+.rangeCompact:not(:disabled):hover,
+.rangeClear:not(:disabled):hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.rangeCompact:disabled,
+.rangeClear:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.rangeError {
+  color: var(--dsw-alias-state-error-primary);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

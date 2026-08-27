@@ -74,6 +74,8 @@ const LAZY_GRAMMARS = new Map<string, () => Promise<LangModule>>([
   ['sql', () => import('@shikijs/langs/sql')],
   ['xml', () => import('@shikijs/langs/xml')],
   ['lua', () => import('@shikijs/langs/lua')],
+  ['vue', () => import('@shikijs/langs/vue')],
+  ['svelte', () => import('@shikijs/langs/svelte')],
 ])
 
 /**
@@ -130,6 +132,8 @@ const LANG_ALIASES = new Map<string, string>([
   ['sql', 'sql'],
   ['xml', 'xml'],
   ['lua', 'lua'],
+  ['vue', 'vue'],
+  ['svelte', 'svelte'],
 ])
 
 /** All token colors resolve through `--shiki-*` custom properties (theme package sheets). */

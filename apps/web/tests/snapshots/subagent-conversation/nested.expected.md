@@ -11,6 +11,7 @@
   - tablist:
     - tab "Chat" [selected]
     - tab "Trajectory"
+    - tab "Context"
 - text: Give one concrete event sourcing example. {{clock}}
 - button "Copy":
   - img

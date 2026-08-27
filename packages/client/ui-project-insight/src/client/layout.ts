@@ -10,8 +10,9 @@
 
 import dagre from '@dagrejs/dagre'
 
-/** The default node card size the layout plans boxes around. */
+/** The default node card width the layout plans boxes around. */
 export const NODE_WIDTH = 180
+/** The default node card height the layout plans boxes around. */
 export const NODE_HEIGHT = 60
 
 /** The rank/column spacing dagre lays the graph with. */

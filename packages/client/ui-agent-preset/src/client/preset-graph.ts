@@ -55,7 +55,11 @@ export function compositionToRow(composition: FlowAgentComposition): ComposeRow 
   }
 }
 
-/** The agent nodes of a preset graph, in chain (edge) order. */
+/**
+ * The agent nodes of a preset graph, in chain (edge) order.
+ * @param graph - preset graph whose `start`-to-`end` chain to walk.
+ * @returns the agent nodes reachable from `start`, in edge order.
+ */
 export function chainAgents(graph: FlowGraph): FlowAgentNode[] {
   const byId = new Map(graph.nodes.map(node => [node.id, node]))
   const outgoing = new Map<string, string[]>()
@@ -99,7 +103,12 @@ export function graphRows(graph: FlowGraph): ComposeRow[] {
   })
 }
 
-/** Whether two graphs carry the same authored content: rows, node positions, AND the per-node agent routes. */
+/**
+ * Whether two graphs carry the same authored content: rows, node positions, AND the per-node agent routes.
+ * @param a - first graph.
+ * @param b - second graph.
+ * @returns whether the authored content matches.
+ */
 export function graphLayoutEqual(a: FlowGraph, b: FlowGraph): boolean {
   const aRows = graphRows(a)
   const bRows = graphRows(b)

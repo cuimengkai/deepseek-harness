@@ -232,7 +232,8 @@ describe('model list editing', () => {
     // A row without an `input` key reads as the text fallback, so text is
     // pre-checked; adding image then declares the multimodal pair rather than
     // narrowing the model to image-only.
-    expect((screen.getByLabelText(`${en.inputModalities} text`) as HTMLInputElement).checked).toBe(true)
+    const text = screen.getByLabelText(`${en.inputModalities} text`) as HTMLInputElement
+    expect(text.checked).toBe(true)
     const image = screen.getByLabelText(`${en.inputModalities} image`) as HTMLInputElement
     expect(image.checked).toBe(false)
     fireEvent.click(image)

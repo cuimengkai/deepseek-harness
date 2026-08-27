@@ -34,7 +34,7 @@ describe('createFixtureApi commands/skills', () => {
     // input hint rides only the commands declaring it.
     const echo = commands.find(c => c.name === 'echo')
     expect(echo?.input?.hint).toBeTruthy()
-    expect(commands.find(c => c.name === 'compact')?.input).toBeUndefined()
+    expect(commands.find(c => c.name === 'compact')?.input?.hint).toBe('[<startSeq>:<endSeq>]')
     // Image acceptance is declared per descriptor; only goal and plan carry it.
     expect(commands.filter(c => c.input?.images === true).map(c => c.name)).toEqual(['goal', 'plan'])
   })
@@ -144,6 +144,37 @@ describe('createFixtureApi commands/skills', () => {
     const png = { mediaType: 'image/png', data: 'AA==' }
     expect(await callRemote(rpc, 'commands/execute', { agentId: sid('fx-alpha'), line: '/nope', images: [png] }))
       .toBeUndefined()
+  })
+
+  it('commits a range compaction as a durable marker plus a visible surface shrink', async () => {
+    const { api, rpc } = createFixtureFaces()
+    type Composition = { readonly surface: readonly { seq: number }[]; readonly compactions: readonly { shadowedCount: number }[] }
+    const read = async (): Promise<Composition> => {
+      const response = await api.contextComposition.read(req({ sessionId: sid('fx-alpha') }), new AbortController().signal)
+      if (!response.result.ok) throw new Error('contextComposition.read failed')
+      return response.result.value
+    }
+    const before = await read()
+    // Range endpoints are surface node seqs, exactly what the tab shows.
+    const [start, end] = [before.surface[0]?.seq, before.surface[1]?.seq] as const
+    const run = await callRemote<{ commandId: string; result: { kind: string; text?: string } } | undefined>(
+      rpc, 'commands/execute', { agentId: sid('fx-alpha'), line: `/compact ${start}:${end}` })
+    expect(run?.result.kind).toBe('success')
+    const after = await read()
+    // Two nodes collapse into one checkpoint: the surface visibly shrinks.
+    expect(after.surface.length).toBe(before.surface.length - 1)
+    expect(after.compactions.at(-1)).toMatchObject({ shadowedCount: 2 })
+    expect(after.surface[0]?.seq).not.toBe(start)
+  })
+
+  it('rejects a range compaction whose endpoints are not surface seqs', async () => {
+    const { rpc } = createFixtureFaces()
+    const run = await callRemote<{ result: { kind: string; text?: string } } | undefined>(
+      rpc, 'commands/execute', { agentId: sid('fx-alpha'), line: '/compact 99999:99999' })
+    expect(run?.result).toEqual({
+      kind: 'error',
+      text: 'fixture: /compact 99999:99999 is not a valid surface range',
+    })
   })
 
   it('answers no execution for unknown names and non-command lines', async () => {

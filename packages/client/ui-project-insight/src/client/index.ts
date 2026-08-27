@@ -1,10 +1,11 @@
 /**
- * Browser project-insight plugin: six develop-mode conversation view tabs that
+ * Browser project-insight plugin: five develop-mode conversation view tabs that
  * render the session project's committed project-insight document. Each
  * tab is a plain 'conversation.view' list entry gated to the `develop` agent
  * preset through the per-session `modes` filter, so the ring shows them only
  * while a session runs the develop preset — and hides them the moment it does
- * not.
+ * not. The committed document's prompts section renders inside the agent-tech
+ * tab's embedded prompts collection, so it owns no dedicated tab.
  */
 
 import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
@@ -19,7 +20,7 @@ import { InsightTab, type InsightSectionKey, type InsightTabInjected } from './I
 import { ProjectInsightController } from './insight-store.ts'
 import { en, NS, zh, type ProjectInsightKey } from './locales.ts'
 
-/** The six tabs, in ring order (after trajectory at 10). */
+/** The five tabs, in ring order (after trajectory at 10). */
 const TABS: readonly {
   id: string
   order: number
@@ -30,15 +31,14 @@ const TABS: readonly {
   { id: 'develop-components-dep', order: 30, labelKey: 'view.componentDeps', variant: 'componentDependencies' },
   { id: 'develop-tech', order: 40, labelKey: 'view.techStack', variant: 'techStack' },
   { id: 'develop-components', order: 50, labelKey: 'view.components', variant: 'components' },
-  { id: 'develop-prompts', order: 60, labelKey: 'view.prompts', variant: 'prompts' },
-  { id: 'develop-agent-tech', order: 70, labelKey: 'view.agentTech', variant: 'agentTech' },
+  { id: 'develop-agent-tech', order: 60, labelKey: 'view.agentTech', variant: 'agentTech' },
 ]
 
 /** Required services: the conversation slot, session rows, and the locale service. */
 export const inject = ['slots', 'locale', 'connection', 'sessions']
 
 /**
- * Client plugin body: register the six insight tabs. Each registration rides
+ * Client plugin body: register the five insight tabs. Each registration rides
  * the slot service's effect wrapper, so plugin unload removes every tab.
  * @param ctx - client root context.
  */

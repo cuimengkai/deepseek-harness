@@ -45,7 +45,7 @@ function mount({
     useSettingsRoute: select => select(route),
     openSettings,
     openSection,
-    renderSlot: renderSlot as unknown as SettingsTriggerComponentProps['renderSlot'],
+    renderSlot: renderSlot,
   }
   const view = render(<SettingsTrigger {...props} />)
   return { view, renderSlot, openSettings, openSection }

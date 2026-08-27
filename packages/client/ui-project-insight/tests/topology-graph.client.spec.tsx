@@ -246,6 +246,24 @@ describe('TopologyGraph', () => {
     expect(nodeC.className).not.toContain(css.topologyHover)
   })
 
+  it('colors each node card by its file-type category', () => {
+    const { container } = render(
+      <TopologyGraph
+        nodes={[
+          { id: 'a.ts', label: 'a.ts' },
+          { id: 'b.vue', label: 'b.vue' },
+          { id: 'c.css', label: 'c.css' },
+          { id: 'd', label: 'd' },
+        ]}
+        edges={[]}
+      />,
+    )
+    expect(container.querySelector('[data-node-id="a.ts"]')?.className).toContain(css.typeTs)
+    expect(container.querySelector('[data-node-id="b.vue"]')?.className).toContain(css.typeComponent)
+    expect(container.querySelector('[data-node-id="c.css"]')?.className).toContain(css.typeStyle)
+    expect(container.querySelector('[data-node-id="d"]')?.className).toContain(css.typeOther)
+  })
+
   it('lays a chain left-to-right on one row by dagre rank', async () => {
     const { container } = render(<TopologyGraph nodes={[A, B]} edges={[A_TO_B]} />)
     await vi.waitFor(() => {
@@ -306,5 +324,54 @@ describe('TopologyGraph', () => {
     // …but the fit never runs against a zero-size container.
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(viewportTransform(container)).toContain('translate(0px,0px) scale(1)')
+  })
+
+  it('centers a selected node at focus zoom and re-fits when the selection clears', async () => {
+    // A wide chain: the whole-graph fit lands below focus zoom, so the
+    // selection's lift to scale(1) is observable in the viewport transform.
+    const wide: GraphNode[] = Array.from({ length: 10 }, (_, index) => ({
+      id: `n${index}`,
+      label: `n${index}`,
+    }))
+    const wideEdges: GraphEdge[] = wide.slice(1).map((node, index) => ({
+      source: `n${index}`,
+      target: node.id,
+    }))
+    const { container, rerender } = render(<TopologyGraph nodes={wide} edges={wideEdges} />)
+    await vi.waitFor(() => {
+      expect(viewportTransform(container)).not.toContain('translate(0px,0px) scale(1)')
+    })
+    const fitted = viewportTransform(container)
+    expect(fitted).not.toContain('scale(1)')
+
+    rerender(<TopologyGraph nodes={wide} edges={wideEdges} selectedNodeId="n5" />)
+    await vi.waitFor(() => {
+      const transform = viewportTransform(container)
+      expect(transform).toContain('scale(1)')
+      expect(transform).not.toBe(fitted)
+    }, { timeout: 5_000 })
+
+    rerender(<TopologyGraph nodes={wide} edges={wideEdges} />)
+    await vi.waitFor(() => {
+      expect(viewportTransform(container)).toBe(fitted)
+    }, { timeout: 5_000 })
+  })
+
+  it('accents the selected node and every edge touching it', async () => {
+    const { container, rerender } = render(
+      <TopologyGraph nodes={[A, B, C]} edges={[A_TO_B, B_TO_C]} />,
+    )
+    await vi.waitFor(() => {
+      expect(container.querySelectorAll('.react-flow__edge')).toHaveLength(2)
+    })
+
+    rerender(<TopologyGraph nodes={[A, B, C]} edges={[A_TO_B, B_TO_C]} selectedNodeId="b" />)
+
+    await vi.waitFor(() => {
+      const accented = container.querySelectorAll('.topologyEdgeSelected')
+      expect(accented).toHaveLength(2)
+      expect(accented[0]?.classList.contains('animated')).toBe(true)
+    })
+    expect(container.querySelector('[data-node-id="b"]')?.className).toContain(css.topologySelected)
   })
 })

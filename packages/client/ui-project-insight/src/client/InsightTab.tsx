@@ -1,36 +1,44 @@
 /**
- * One develop-mode insight tab. All six tabs share this component; the
+ * One develop-mode insight tab. All five tabs share this component; the
  * registration injects which section to render. The tab reads the session's
  * committed project-insight document through the controller store, folds the
  * four wire statuses into frame copy, and renders the section. The two
  * dependency sections render as a full-bleed dependency graph with a floating
- * complete list over the canvas (both directions stay in sync); the inventory
- * sections render as cards and tables; prompts and the agent-tech markdown
- * collections render as a document tab bar plus one markdown viewer.
+ * complete list over the canvas and a floating content drawer for the
+ * selected file (both directions stay in sync); the four inventory surfaces
+ * render as the left-tree/right-detail explorer — the selected row's JSON
+ * payload through the shiki-highlighted `CodeBlock`, and any row whose file
+ * the shared documents pool carries as that file's content.
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { CodeBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import type {
-  AgentTechMarkdownRow, AgentTechSection, ComponentDependenciesSection, ComponentsSection,
-  ModuleTopologySection, ProjectInsightDoc, TechStackSection,
+  AgentTechSection, ComponentDependenciesSection, ComponentsSection,
+  FileContentRow, ModuleTopologySection, ProjectInsightDoc, TechStackSection,
 } from '@deepseek-ai/dsh-project-insight/src/schema.ts'
 import type { ProjectInsightState } from './insight-store.ts'
 import type { NS } from './locales.ts'
 import { TopologyGraph } from './TopologyGraph.tsx'
 import { deriveComponentGraph, deriveModuleGraph, type SectionGraph } from './graph.ts'
+import {
+  deriveAgentTechInventoryTree, deriveComponentsTree, deriveMarkdownRowsTree, derivePathRowsTree,
+  deriveTechStackTree,
+} from './tree.ts'
+import type { InventoryTreeNode } from './tree.ts'
+import { isMarkdownPath, langOfPath } from './fileType.ts'
+import { TreeExplorer } from './TreeExplorer.tsx'
 import css from './insight.module.css'
 
-/** The six scanned sections, one per tab. */
+/** The five rendered sections, one per tab. */
 export type InsightSectionKey =
   | 'moduleTopology'
   | 'componentDependencies'
   | 'techStack'
   | 'components'
-  | 'prompts'
   | 'agentTech'
 
 /** Business face of one insight tab registration. */
@@ -47,6 +55,9 @@ export type InsightTabProps =
   ConvViewProps & InjectFace<InsightTabInjected> & PropsLocale<typeof NS>
 
 type SectionTranslate = TranslateNS<typeof NS>
+
+/** The shared documents pool keyed by root-relative path. */
+type ContentByPath = ReadonlyMap<string, FileContentRow>
 
 /** One row of a dependency full list: a path and its rendered imports. */
 interface ListRow {
@@ -68,39 +79,68 @@ export function InsightTab({ useProjectInsight, load, dispose, variant, t }: Ins
   }, [load, dispose])
 
   if (state.status === 'error') {
-    return <p className={css.frame}>{t('frame.error')}: {state.error}</p>
+    return <Frame>{t('frame.error')}: {state.error}</Frame>
   }
-  if (state.status === 'loading') return <p className={css.frame}>{t('frame.scanning')}</p>
-  if (state.status === 'none') return <p className={css.frame}>{t('frame.none')}</p>
-  if (state.status === 'stale') return <p className={css.frame}>{t('frame.stale')}</p>
+  if (state.status === 'loading') return <Frame busy>{t('frame.scanning')}</Frame>
+  if (state.status === 'none') return <Frame>{t('frame.none')}</Frame>
+  if (state.status === 'stale') return <Frame busy>{t('frame.stale')}</Frame>
   if (state.status !== 'ready' || state.doc === null) return null
   return <SectionBody variant={variant} doc={state.doc} t={t} />
 }
 
-/** Dispatch one registered variant to its section renderer. */
+/**
+ * One non-content frame state (loading, re-scanning, unscanned, unreadable),
+ * centered in the tab area the way the app's other loading states present. A
+ * busy frame adds the shared spinner and announces itself politely.
+ * @param props - the busy flag and the frame copy.
+ * @returns the centered frame block.
+ */
+function Frame({ busy = false, children }: { busy?: boolean; children: ReactNode }) {
+  return (
+    <div className={css.frame} role="status" aria-live={busy ? 'polite' : undefined}>
+      {busy && <span className={css.frameSpinner} aria-hidden="true" />}
+      <span>{children}</span>
+    </div>
+  )
+}
+
+/**
+ * Dispatch one registered variant to its section renderer, deriving the shared
+ * documents pool every tab's content views resolve through.
+ */
 function SectionBody({
   variant, doc, t,
 }: { variant: InsightSectionKey; doc: ProjectInsightDoc; t: SectionTranslate }) {
   const sections = doc.sections
+  const contentByPath = useMemo(
+    () => new Map(sections.documents.files.map(row => [row.path, row] as const)),
+    [sections.documents],
+  )
   switch (variant) {
     case 'moduleTopology':
-      return <ModuleTopologyBody section={sections.moduleTopology} t={t} />
+      return (
+        <ModuleTopologyBody section={sections.moduleTopology} contentByPath={contentByPath} t={t} />
+      )
     case 'componentDependencies':
-      return <ComponentDependenciesBody section={sections.componentDependencies} t={t} />
+      return (
+        <ComponentDependenciesBody
+          section={sections.componentDependencies} contentByPath={contentByPath} t={t}
+        />
+      )
     case 'techStack':
-      return <TechStackBody section={sections.techStack} t={t} />
+      return <TechStackBody section={sections.techStack} contentByPath={contentByPath} t={t} />
     case 'components':
-      return <ComponentsBody section={sections.components} t={t} />
-    case 'prompts':
-      return <PromptsBody doc={doc} t={t} />
+      return <ComponentsBody section={sections.components} contentByPath={contentByPath} t={t} />
     case 'agentTech':
-      return <AgentTechBody section={sections.agentTech} t={t} />
+      return <AgentTechBody section={sections.agentTech} contentByPath={contentByPath} t={t} />
   }
 }
 
 /* ── dependency graphs: full-bleed canvas + floating complete list ────────── */
 
-function ModuleTopologyBody({ section, t }: { section: ModuleTopologySection; t: SectionTranslate }) {
+function ModuleTopologyBody({
+  section, contentByPath, t,
+}: { section: ModuleTopologySection; contentByPath: ContentByPath; t: SectionTranslate }) {
   if (section.files.length === 0) return <p className={css.empty}>{t('empty')}</p>
   const graph = useMemo(() => deriveModuleGraph(section), [section])
   const note = (
@@ -115,14 +155,16 @@ function ModuleTopologyBody({ section, t }: { section: ModuleTopologySection; t:
       rows={section.files}
       aliases={section.aliases}
       note={note}
+      scope="module"
+      contentByPath={contentByPath}
       t={t}
     />
   )
 }
 
 function ComponentDependenciesBody({
-  section, t,
-}: { section: ComponentDependenciesSection; t: SectionTranslate }) {
+  section, contentByPath, t,
+}: { section: ComponentDependenciesSection; contentByPath: ContentByPath; t: SectionTranslate }) {
   if (section.components.length === 0) return <p className={css.empty}>{t('empty')}</p>
   const graph = useMemo(() => deriveComponentGraph(section), [section])
   const note = section.cycles.length > 0 ? (
@@ -136,6 +178,8 @@ function ComponentDependenciesBody({
       rows={section.components}
       aliases={undefined}
       note={note}
+      scope="component"
+      contentByPath={contentByPath}
       t={t}
     />
   )
@@ -153,18 +197,25 @@ function GraphNote({ graph, t }: { graph: SectionGraph; t: SectionTranslate }) {
 
 /**
  * The shared dependency-graph body: a toolbar over a full-bleed canvas, with
- * the complete file/component list floating over the canvas. List hover and
- * click drive the canvas hover ring and selection; canvas node hover and tap
- * drive the list row highlight and scroll-back. Rows outside the bounded node
- * set stay listed but dimmed and inert.
+ * the complete file/component list floating over the canvas's left edge and
+ * the selected file's content drawer floating over its right edge. List hover
+ * and click drive the canvas hover ring and selection; canvas node hover and
+ * tap drive the list row highlight and scroll-back. Selecting a row or node
+ * opens the content drawer (embedded content when the documents pool carries
+ * the file, otherwise the row's JSON); closing the drawer or tapping the
+ * background clears the selection. Rows outside the bounded node set stay
+ * listed but dimmed and inert. A section with no rendered edge set falls back
+ * to the tree explorer over the full row list instead of a canvas.
  */
 function GraphBody({
-  graph, rows, aliases, note, t,
+  graph, rows, aliases, note, scope, contentByPath, t,
 }: {
   graph: SectionGraph
   rows: readonly ListRow[]
   aliases: readonly { readonly key: string; readonly value: string }[] | undefined
   note: ReactNode
+  scope: string
+  contentByPath: ContentByPath
   t: SectionTranslate
 }) {
   const [listOpen, setListOpen] = useState(true)
@@ -174,16 +225,27 @@ function GraphBody({
     () => new Map(graph.nodes.map(node => [node.id, node.label])),
     [graph.nodes],
   )
+  const listRoots = useMemo(() => derivePathRowsTree(rows, scope), [rows, scope])
+  const selectedRow = useMemo(
+    () => (selectedPath === null ? undefined : rows.find(row => row.path === selectedPath)),
+    [rows, selectedPath],
+  )
 
   if (graph.edges.length === 0) {
-    // No rendered edge set: fall back to the full list instead of a canvas.
+    // No rendered edge set: the explorer over the full row list instead of a
+    // canvas, with the aliases note appended (the tree has no alias rows).
+    const aliasNote = aliases === undefined || aliases.length === 0 ? null : (
+      <span className={css.muted}>
+        {t('label.aliases')}: {aliases.map(alias => `${alias.key} → ${alias.value}`).join(', ')}
+      </span>
+    )
     return (
-      <div className={css.section}>
-        <div className={css.sectionScroll}>
-          {note}
-          <FullList rows={rows} nodeLabel={nodeLabel} aliases={aliases} />
-        </div>
-      </div>
+      <TreeExplorer
+        roots={listRoots}
+        note={<>{note}{aliasNote}</>}
+        t={t}
+        renderLeafDetail={node => renderRowDetail(node, contentByPath, t)}
+      />
     )
   }
 
@@ -227,8 +289,55 @@ function GraphBody({
             t={t}
           />
         )}
+        {selectedPath !== null && (
+          <FloatingDetail
+            path={selectedPath}
+            row={selectedRow}
+            contentByPath={contentByPath}
+            onClose={() => { setSelectedPath(null) }}
+            t={t}
+          />
+        )}
       </div>
     </div>
+  )
+}
+
+/**
+ * The selected file's content drawer floating over the graph canvas's right
+ * edge: the embedded content when the documents pool carries the file
+ * (markdown documents as markdown, other files as grammar-hinted source),
+ * otherwise the row's JSON. Closing the drawer clears the selection.
+ */
+function FloatingDetail({
+  path, row, contentByPath, onClose, t,
+}: {
+  path: string
+  row: ListRow | undefined
+  contentByPath: ContentByPath
+  onClose: () => void
+  t: SectionTranslate
+}) {
+  const content = fileContentNode(path, contentByPath, t)
+  return (
+    <aside className={css.detailOverlay}>
+      <header className={css.listHeader}>
+        <span className={css.detailTitle}>{path}</span>
+        <button type="button" className={css.listClose} aria-label={t('label.closeDetail')} onClick={onClose}>
+          ×
+        </button>
+      </header>
+      <div className={css.detailBody}>
+        {content ?? (row !== undefined && (
+          <CodeBlock
+            code={JSON.stringify(row, null, 2)}
+            lang="json"
+            copyLabel={t('label.copy')}
+            copiedLabel={t('label.copied')}
+          />
+        ))}
+      </div>
+    </aside>
   )
 }
 
@@ -295,183 +404,59 @@ function FloatingList({
   )
 }
 
-/** The full list used when no edge set renders: aliases, then one row each. */
-function FullList({
-  rows, nodeLabel, aliases,
-}: {
-  rows: readonly ListRow[]
-  nodeLabel: ReadonlyMap<string, string>
-  aliases: readonly { readonly key: string; readonly value: string }[] | undefined
-}) {
-  return (
-    <>
-      {aliases?.map(alias => (
-        <div key={alias.key} className={css.aliasRow}>
-          <span>{alias.key}</span><span>→</span><span>{alias.value}</span>
-        </div>
-      ))}
-      {rows.map(row => (
-        <div key={row.path} className={css.row}>
-          <span className={css.rowHead}>{nodeLabel.get(row.path) ?? row.path}</span>
-          {row.imports.length > 0 && (
-            <div className={css.badges}>
-              {row.imports.map(imp => <span key={imp} className={css.badge}>{imp}</span>)}
-            </div>
-          )}
-        </div>
-      ))}
-    </>
-  )
-}
+/* ── inventory sections: the left-tree/right-detail explorer ─────────────── */
 
-/* ── inventory sections: cards and tables ────────────────────────────────── */
-
-function TechStackBody({ section, t }: { section: TechStackSection; t: SectionTranslate }) {
+/**
+ * The tech-stack tab as the tree explorer: four fixed level-1 groups (runtimes,
+ * manifests, dependencies, source files), dependencies grouped by manifest
+ * category and source files by language. The right pane renders the selected
+ * group's JSON, or a file row's embedded content when the documents pool
+ * carries the file (runtime and dependency rows always render their JSON —
+ * they are not files).
+ */
+function TechStackBody({
+  section, contentByPath, t,
+}: { section: TechStackSection; contentByPath: ContentByPath; t: SectionTranslate }) {
   if (section.manifests.length === 0 && section.dependencies.length === 0
     && section.runtimes.length === 0 && section.files.length === 0) {
     return <p className={css.empty}>{t('empty')}</p>
   }
+  const roots = useMemo(() => deriveTechStackTree(section, {
+    runtimes: t('label.runtimes'),
+    manifests: t('label.manifests'),
+    dependencies: t('label.dependencies'),
+    sourceFiles: t('label.sourceFiles'),
+  }), [section, t])
   return (
-    <div className={css.section}>
-      <div className={css.sectionScroll}>
-        {section.runtimes.length > 0 && (
-          <div className={css.card}>
-            <div className={css.cardHead}>{t('label.runtimes')}</div>
-            <div className={css.cardBody}>
-              <div className={css.badges}>
-                {section.runtimes.map(runtime => (
-                  <span key={runtime.name} className={css.badge}>
-                    {runtime.version === undefined ? runtime.name : `${runtime.name}@${runtime.version}`}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
-        {section.manifests.length > 0 && (
-          <div className={css.card}>
-            <div className={css.cardHead}>{t('label.manifests')}</div>
-            <div className={css.table}>
-              <div className={css.tableRowHead}>
-                <span>{t('label.kind')}</span><span>{t('label.path')}</span>
-              </div>
-              {section.manifests.map(manifest => (
-                <div key={manifest.path} className={css.tableRow}>
-                  <span className={css.badge}>{manifest.kind}</span>
-                  <span className={css.muted}>{manifest.path}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {section.dependencies.length > 0 && (
-          <div className={css.card}>
-            <div className={css.cardHead}>{t('label.dependencies')}</div>
-            <div className={css.table}>
-              <div className={css.tableRowHead}>
-                <span>{t('label.package')}</span><span>{t('label.versionScope')}</span>
-              </div>
-              {section.dependencies.map(dependency => (
-                <div key={dependency.name} className={css.tableRow}>
-                  <span className={css.tableRowMain}>{dependency.name}</span>
-                  <span className={css.muted}>
-                    {dependency.version === undefined
-                      ? dependency.category
-                      : `${dependency.version} · ${dependency.category}`}
-                  </span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-        {section.files.length > 0 && (
-          <div className={css.card}>
-            <div className={css.cardHead}>{t('label.sourceFiles')}</div>
-            <div className={css.table}>
-              <div className={css.tableRowHead}>
-                <span>{t('label.language')}</span><span>{t('label.fileLines')}</span>
-              </div>
-              {section.files.map(file => (
-                <div key={file.path} className={css.tableRow}>
-                  <span className={css.badge}>{file.language}</span>
-                  <span className={css.muted}>{file.path} · {file.lines}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
+    <TreeExplorer
+      roots={roots}
+      t={t}
+      renderLeafDetail={node => renderRowDetail(node, contentByPath, t)}
+    />
   )
 }
-
-function ComponentsBody({ section, t }: { section: ComponentsSection; t: SectionTranslate }) {
-  if (section.components.length === 0) return <p className={css.empty}>{t('empty')}</p>
-  return (
-    <div className={css.section}>
-      <div className={css.sectionScroll}>
-        <div className={css.card}>
-          <div className={css.cardHead}>{t('label.count', { count: String(section.count) })}</div>
-          <div className={css.table}>
-            {section.components.map(component => (
-              <div key={component.path} className={css.tableRow}>
-                <div className={css.tableRowCol}>
-                  <span className={css.tableRowMain}>{component.name}</span>
-                  <span className={css.muted}>{component.path}</span>
-                </div>
-                <div className={css.badges}>
-                  <span className={css.badge}>{component.kind}</span>
-                  {component.defaultExport && <span className={css.badge}>{t('label.defaultExport')}</span>}
-                  {component.hasProps && <span className={css.badge}>{t('label.hasProps')}</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/* ── prompts: document tabs plus the embedded markdown ────────────────────── */
 
 /**
- * The prompts tab. The committed `prompts` section carries only metadata, so
- * the markdown comes from the agent-tech section's embedded prompt collection,
- * which the scanner fills through the same `isPromptFile` judgement — the two
- * tabs are the same logical set projected onto different presentations. The
- * count line reports the section's total against the embedded, rendered count.
+ * The components tab as the tree explorer: one directory group per component's
+ * parent directory, one leaf per component. The note reports the section's
+ * total against the emitted rows; a leaf renders its file's embedded content
+ * when the documents pool carries it, otherwise its row JSON.
  */
-function PromptsBody({ doc, t }: { doc: ProjectInsightDoc; t: SectionTranslate }) {
-  const section = doc.sections.prompts
-  const embedded = doc.sections.agentTech.prompts
-  if (section.files.length === 0 && embedded.length === 0) {
-    return <p className={css.empty}>{t('empty')}</p>
-  }
-  const shown = embedded.length
+function ComponentsBody({
+  section, contentByPath, t,
+}: { section: ComponentsSection; contentByPath: ContentByPath; t: SectionTranslate }) {
+  if (section.components.length === 0) return <p className={css.empty}>{t('empty')}</p>
+  const roots = useMemo(() => deriveComponentsTree(section), [section])
+  const note = (
+    <span className={css.muted}>{t('label.count', { count: String(section.count) })}</span>
+  )
   return (
-    <div className={css.section}>
-      {shown > 0 ? (
-        <MarkdownViewer rows={embedded} t={t} />
-      ) : (
-        <div className={css.sectionScroll}>
-          <div className={css.card}>
-            <div className={css.cardHead}>{t('label.count', { count: String(section.count) })}</div>
-            <div className={css.table}>
-              {section.files.map(file => (
-                <div key={file.path} className={css.tableRowCol}>
-                  <span className={css.tableRowMain}>{file.title ?? file.path}</span>
-                  <span className={css.muted}>{file.path} · {file.bytes} B</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-      <p className={css.footerNote}>
-        {t('label.promptCount', { count: String(section.count), shown: String(shown) })}
-      </p>
-    </div>
+    <TreeExplorer
+      roots={roots}
+      note={note}
+      t={t}
+      renderLeafDetail={node => renderRowDetail(node, contentByPath, t)}
+    />
   )
 }
 
@@ -480,7 +465,15 @@ function PromptsBody({ doc, t }: { doc: ProjectInsightDoc; t: SectionTranslate }
 /** The agent-tech second-level tabs: inventory plus the embedded markdown collections. */
 type AgentTechSubTab = 'inventory' | 'skills' | 'mcp' | 'prompts'
 
-function AgentTechBody({ section, t }: { section: AgentTechSection; t: SectionTranslate }) {
+/**
+ * The agent-related tech tab: subtabs over the inventory and the embedded
+ * content collections. Each subtab renders the tree explorer, which opts
+ * into the composer overlay and owns its panes' scrollers, so the subtab row
+ * stays pinned while the panes' content scrolls under it.
+ */
+function AgentTechBody({
+  section, contentByPath, t,
+}: { section: AgentTechSection; contentByPath: ContentByPath; t: SectionTranslate }) {
   const [tab, setTab] = useState<AgentTechSubTab>(() => firstNonEmptyTab(section))
   if (section.files.length === 0 && section.skills.length === 0
     && section.mcp.length === 0 && section.prompts.length === 0) {
@@ -508,11 +501,7 @@ function AgentTechBody({ section, t }: { section: AgentTechSection; t: SectionTr
           </button>
         ))}
       </div>
-      {tab === 'inventory' && (
-        <div className={css.sectionScroll}>
-          <AgentTechInventory section={section} t={t} />
-        </div>
-      )}
+      {tab === 'inventory' && <AgentTechInventory section={section} contentByPath={contentByPath} t={t} />}
       {tab === 'skills' && <MarkdownViewer rows={section.skills} t={t} />}
       {tab === 'mcp' && <MarkdownViewer rows={section.mcp} t={t} />}
       {tab === 'prompts' && <MarkdownViewer rows={section.prompts} t={t} />}
@@ -528,77 +517,133 @@ function firstNonEmptyTab(section: AgentTechSection): AgentTechSubTab {
   return 'prompts'
 }
 
-/** The agent-tech inventory: the agent-related files and the tools they reference. */
-function AgentTechInventory({ section, t }: { section: AgentTechSection; t: SectionTranslate }) {
+/**
+ * The agent-tech inventory: the explorer over the role-grouped files and tools.
+ * Selecting a file (or tool) row renders that file's embedded content — the
+ * three markdown collections carry their rows' content, every other listed
+ * file resolves through the shared documents pool — and a row whose content
+ * neither carries falls back to its metadata JSON.
+ */
+function AgentTechInventory({
+  section, contentByPath, t,
+}: { section: AgentTechSection; contentByPath: ContentByPath; t: SectionTranslate }) {
+  const roots = useMemo(() => deriveAgentTechInventoryTree(section, {
+    kinds: {
+      'agent-config': t('label.kind.agentConfig'),
+      'tool-config': t('label.kind.toolConfig'),
+      instructions: t('label.kind.instructions'),
+      notes: t('label.kind.notes'),
+      other: t('label.kind.other'),
+    },
+    tools: t('label.tools'),
+  }), [section, t])
+  // The collections' rows win over the shared pool (an MCP config's redacted
+  // embed must never be shadowed by its verbatim source).
+  const mergedContent = useMemo(() => {
+    const map = new Map(contentByPath)
+    for (const row of [...section.skills, ...section.mcp, ...section.prompts]) {
+      map.set(row.path, row)
+    }
+    return map
+  }, [section, contentByPath])
+  // A subtab is reachable with an empty collection (the tab bar always
+  // renders when the section has any content), so show the empty copy then.
+  if (roots.length === 0) return <p className={css.empty}>{t('empty')}</p>
+  const note = (
+    <span className={css.muted}>{t('label.count', { count: String(section.count) })}</span>
+  )
   return (
-    <>
-      <div className={css.card}>
-        <div className={css.cardHead}>{t('label.count', { count: String(section.count) })}</div>
-        <div className={css.table}>
-          {section.files.map(file => (
-            <div key={file.path} className={css.tableRow}>
-              <span className={css.tableRowMain}>{file.path}</span>
-              <span className={css.badge}>{file.kind}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-      {section.tools.length > 0 && (
-        <div className={css.card}>
-          <div className={css.cardHead}>{t('label.tools')}</div>
-          <div className={css.table}>
-            {section.tools.map(tool => (
-              <div key={`${tool.name}:${tool.path}`} className={css.tableRow}>
-                <span className={css.tableRowMain}>{tool.name}</span>
-                <span className={css.muted}>{tool.path}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-    </>
+    <TreeExplorer
+      roots={roots}
+      note={note}
+      t={t}
+      renderLeafDetail={node => renderRowDetail(node, mergedContent, t)}
+    />
   )
 }
 
-/* ── the shared document-tab markdown viewer ──────────────────────────────── */
+/**
+ * One leaf row's content body shared by every tab: the row's file content
+ * when the pool carries the file (a tool leaf resolves its referenced file's
+ * content the same way), otherwise the row's metadata JSON. A row without a
+ * `path` (a runtime, a dependency entry) always renders its JSON.
+ * @param node - the selected leaf; its payload is the committed row.
+ * @param contentByPath - every embedded content row keyed by path.
+ * @param t - the bound namespace translator.
+ * @returns the content view, or the metadata JSON fallback.
+ */
+function renderRowDetail(
+  node: InventoryTreeNode,
+  contentByPath: ContentByPath,
+  t: SectionTranslate,
+): ReactNode {
+  const row = node.detail as { readonly path?: string }
+  if (row.path !== undefined) {
+    const content = fileContentNode(row.path, contentByPath, t)
+    if (content !== null) return content
+  }
+  return (
+    <CodeBlock
+      code={JSON.stringify(node.detail, null, 2)}
+      lang="json"
+      copyLabel={t('label.copy')}
+      copiedLabel={t('label.copied')}
+    />
+  )
+}
 
 /**
- * One embedded markdown collection: a document tab bar over a single scrollable
- * markdown pane. A single document skips the tab bar; an empty collection shows
- * the empty state. Shared by the prompts tab and the agent-tech subtabs.
+ * A file's embedded-content view, or `null` when the document pool excluded
+ * the file: markdown documents through `MarkdownText`, other files through
+ * the grammar-hinted `CodeBlock`.
+ */
+function fileContentNode(
+  path: string,
+  contentByPath: ContentByPath,
+  t: SectionTranslate,
+): ReactNode {
+  const row = contentByPath.get(path)
+  if (row === undefined) return null
+  return isMarkdownPath(path)
+    ? <MarkdownText text={row.content} />
+    : (
+      <CodeBlock
+        code={row.content}
+        lang={langOfPath(path)}
+        copyLabel={t('label.copy')}
+        copiedLabel={t('label.copied')}
+      />
+    )
+}
+
+/* ── the shared document-tree markdown viewer ─────────────────────────────── */
+
+/**
+ * One embedded markdown collection: the tree explorer over the collection's
+ * documents — the left pane groups them by directory, and the right pane
+ * renders the selected document's path and content (fenced code blocks carry
+ * the shiki highlight). An empty collection shows the empty state. Shared by
+ * the agent-tech subtabs.
  */
 function MarkdownViewer({
   rows, t,
-}: { rows: readonly AgentTechMarkdownRow[]; t: SectionTranslate }) {
-  const [active, setActive] = useState(0)
+}: { rows: readonly FileContentRow[]; t: SectionTranslate }) {
+  const roots = useMemo(() => deriveMarkdownRowsTree(rows, 'markdown'), [rows])
   if (rows.length === 0) return <p className={css.empty}>{t('empty')}</p>
-  const index = Math.min(active, rows.length - 1)
-  // rows.length is nonzero and index is clamped below it, so the row exists;
-  // the guard only satisfies the array-index type.
-  const current = rows[index]
-  if (current === undefined) return null
   return (
-    <div className={css.markdownBody}>
-      {rows.length > 1 && (
-        <div className={css.subTabs} role="tablist">
-          {rows.map((row, rowIndex) => (
-            <button
-              key={row.path}
-              type="button"
-              role="tab"
-              aria-selected={rowIndex === index}
-              className={rowIndex === index ? css.subTabActive : css.subTab}
-              onClick={() => { setActive(rowIndex) }}
-            >
-              {row.name}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className={css.markdownPanel}>
-        <p className={css.markdownPath}>{current.path}</p>
-        <MarkdownText text={current.markdown} />
-      </div>
-    </div>
+    <TreeExplorer
+      roots={roots}
+      t={t}
+      renderLeafDetail={(node) => {
+        // The markdown derivation stores the document row as the leaf payload.
+        const row = node.detail as FileContentRow
+        return (
+          <>
+            <p className={css.markdownPath}>{row.path}</p>
+            <MarkdownText text={row.content} />
+          </>
+        )
+      }}
+    />
   )
 }

@@ -45,6 +45,13 @@ import type {
   ToolCallView, ToolEventView, ToolResultView, WorkspaceId, WorkspaceView,
 } from './api.ts'
 import type { RequestPayload, ResponseValue, RpcMethodMap } from '@deepseek-ai/dsh-host-apiproxy/api'
+// Type-only: merges the `compaction/*` event vocabulary the fixture's
+// context-composition fold reads.
+import type {} from '@deepseek-ai/dsh-compaction/types'
+// The checkpoint provenance constructor is a pure outlet (browser-safe), so
+// the fixture fabricates real replacement messages with it.
+import { compactCheckpointSource } from '@deepseek-ai/dsh-compaction/checkpoint'
+import type { CompactionId } from '@deepseek-ai/dsh-compaction/src/brand.ts'
 import { AbstractApiClient, RpcId, SESSION_SEARCH_RESULT_LIMIT } from './api.ts'
 import { randomUuid } from './random-uuid.ts'
 import type { ClientConnectionRpc } from '../rpc.ts'
@@ -1027,6 +1034,72 @@ function contextBreakdownOf(log: readonly SessionEvent[]): FixtureContextBreakdo
   }
 }
 
+/** Fixture parallel of the context-composition read: the whole tab offline. */
+function fixtureContextCompositionOf(log: readonly SessionEvent[]): ResponseValue<'contextComposition.read'> {
+  const headerEvent = log.findLast(event => event.type === 'request/header')
+  const header = headerEvent === undefined ? undefined : headerEvent.data.header
+  const surface: ResponseValue<'contextComposition.read'>['surface'][number][] = []
+  let surfaceTokens = 0
+  for (const seq of foldSurface(log).nodes) {
+    const event = log[seq]
+    if (event === undefined) continue
+    const message = deriveEventMessage(event)
+    if (message === null) continue
+    const tokens = estimateFixtureContent(message.content) + ROLE_OVERHEAD
+    let preview: string | null = null
+    for (const block of message.content) {
+      if (block.type !== 'text') continue
+      const text = block.text.trim()
+      if (text.length > 0) preview = text.split('\n', 1)[0] as string
+      break
+    }
+    surface.push({ seq, role: message.role, tokens, preview })
+    surfaceTokens += tokens
+  }
+  const compactions: ResponseValue<'contextComposition.read'>['compactions'][number][] = []
+  let contextWindow: number | null = null
+  for (const event of log) {
+    if (event.type === 'compaction/summary') {
+      const data = event.data
+      const textBlock = data.summary.find(block => block.type === 'text')
+      compactions.push({
+        summarySeq: event.seq,
+        model: data.model,
+        provider: data.provider,
+        summary: textBlock?.text ?? null,
+        shadowedCount: data.shadowedSeqs.length,
+        shadowedTokens: data.shadowedTokenCount,
+      })
+      continue
+    }
+    if (event.type === 'request/context' && event.data.contextWindow !== undefined) {
+      contextWindow = event.data.contextWindow
+    }
+  }
+  return {
+    logRevision: log.length,
+    envelope: header === undefined ? null : {
+      provider: header.config.provider,
+      model: header.config.model,
+      system: header.system ?? null,
+      systemTokens: header.system === undefined
+        ? 0
+        : Math.ceil(header.system.length / CHARS_PER_TOKEN) + ROLE_OVERHEAD,
+      tools: (header.tools ?? []).map(tool => ({
+        name: tool.name,
+        tokens: Math.ceil(JSON.stringify({ name: tool.name, schema: tool.parameters }).length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD,
+      })),
+      toolsTokens: header.tools === undefined || header.tools.length === 0
+        ? 0
+        : Math.ceil(JSON.stringify(header.tools).length / CHARS_PER_TOKEN) + BLOCK_OVERHEAD,
+    },
+    surface,
+    surfaceTokens,
+    contextWindow,
+    compactions,
+  }
+}
+
 /** Latest log-only route context, or undefined before any request ran. */
 function lastRequestContext(
   log: readonly SessionEvent[],
@@ -1536,7 +1609,7 @@ export function createFixtureFaces(options: FixtureOptions = {}): FixtureWorld {
  * literals stay narrow against the contract unions.
  */
 const FIXTURE_INSIGHT_DOC: ProjectInsightDoc = {
-  formatVersion: 3,
+  formatVersion: 5,
   rootName: 'fixture',
   contentFingerprint: 'fixture-content-fingerprint',
   statSignature: 'fixture-stat-signature',
@@ -1576,18 +1649,30 @@ const FIXTURE_INSIGHT_DOC: ProjectInsightDoc = {
       skills: [{
         name: 'deploy',
         path: '.agents/skills/deploy/SKILL.md',
-        markdown: '# Deploy\n\nShip the current branch to production with a single command.',
+        content: '# Deploy\n\nShip the current branch to production with a single command.',
       }],
       mcp: [{
         name: '.mcp.json',
         path: '.mcp.json',
-        markdown: '```json\n{\n  "mcpServers": {\n    "fixture": {\n      "command": "npx",\n      "env": {\n        "TOKEN": "<redacted>"\n      }\n    }\n  }\n}\n```',
+        content: '```json\n{\n  "mcpServers": {\n    "fixture": {\n      "command": "npx",\n      "env": {\n        "TOKEN": "<redacted>"\n      }\n    }\n  }\n}\n```',
       }],
       prompts: [{
         name: 'AGENTS.md',
         path: 'AGENTS.md',
-        markdown: '# Harness Rules\n\nFollow the repository rules when touching packages.',
+        content: '# Harness Rules\n\nFollow the repository rules when touching packages.',
       }],
+    },
+    documents: {
+      files: [{
+        name: '.mcp.json',
+        path: '.mcp.json',
+        content: '{\n  "mcpServers": {\n    "fixture": {\n      "command": "npx"\n    }\n  }\n}\n',
+      }, {
+        name: 'App.vue',
+        path: 'src/App.vue',
+        content: '<script setup lang="ts">\nimport Header from \'@/Header.vue\'\n</script>\n\n<template>\n  <Header />\n</template>\n',
+      }],
+      count: 2,
     },
   },
 }
@@ -1900,6 +1985,57 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
   )
 
   /** Canonical fixture implementation of the generated Commands Remote contract. */
+  /** Fixture parallel of /compact: the range grammar plus the durable marker
+   *  and surface replacement the host engine commits, so the context tab
+   *  re-reads a genuinely shrunken surface after a range compaction. */
+  const compactOutcome = (id: SessionId, args: string, commandId: CommandId): CommandResult => {
+    const log = logOf(id)
+    const range = /^\s*(\d+)\s*:\s*(\d+)\s*$/.exec(args)
+    if (range === null) return { kind: 'success', text: 'fixture：已压缩（假动作）' }
+    const start = Number(range[1])
+    const end = Number(range[2])
+    const nodes = foldSurface(log).nodes
+    const startIdx = nodes.indexOf(start)
+    const endIdx = nodes.indexOf(end)
+    if (startIdx === -1 || endIdx === -1 || startIdx > endIdx) {
+      return { kind: 'error', text: `fixture: /compact ${start}:${end} is not a valid surface range` }
+    }
+    const shadowed = nodes.slice(startIdx, endIdx + 1)
+    let shadowedTokenCount = 0
+    for (const seq of shadowed) {
+      const event = log[seq]
+      // foldSurface only returns seqs it folded from this log, so the miss is
+      // unreachable; skipping keeps the count honest if that ever changes.
+      if (event === undefined) continue
+      const message = deriveEventMessage(event)
+      if (message !== null) shadowedTokenCount += estimateFixtureContent(message.content) + ROLE_OVERHEAD
+    }
+    const compactionId = `fx-cmp-${log.length}` as CompactionId
+    const summaryText = `fixture：已将 ${shadowed.length} 条消息（#${start}–#${end}）压缩为一条摘要。`
+    const summary: ContentBlock[] = [{ type: 'text', text: summaryText }]
+    append(id, { type: 'compaction/summary', data: {
+      compactionId,
+      sourceCommandId: commandId,
+      summary,
+      shadowedRange: { start, end },
+      shadowedSeqs: shadowed,
+      shadowedTokenCount,
+      provider: 'deepseek-official',
+      model: 'deepseek-v4-flash',
+    } })
+    // The replacement lands immediately after its summary marker; the cited
+    // sources cover the whole shadowed span plus that marker, matching the
+    // surface fold's provenance rule.
+    const summarySeq = log.length - 1
+    append(id, {
+      type: 'user/message',
+      surfaceOp: { op: 'replace', start, end },
+      sourceEventSeqs: [...shadowed, summarySeq],
+      data: userMessage(summary, compactCheckpointSource(compactionId, commandId)),
+    })
+    return { kind: 'success', text: `Compacted ${shadowed.length} history items (~${shadowedTokenCount} tokens).` }
+  }
+
   const commandRemotes = {
     list(id: SessionId): RpcResult<readonly CommandDescriptor[]> {
       const missing = requireGoalSession(id)
@@ -1907,7 +2043,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       return {
         ok: true,
         value: [
-          { name: 'compact', description: 'fixture：压缩当前会话上下文' },
+          { name: 'compact', description: 'fixture：压缩当前会话上下文', input: { hint: '[<startSeq>:<endSeq>]' } },
           { name: 'echo', description: 'fixture：回显参数', input: { hint: 'text to echo' } },
           { name: 'goal', description: 'set or view the goal for a long-running task', input: { hint: '<objective>', images: true } },
           { name: 'permission', description: 'Switch the permission preset (sandbox mode + approval policy)', input: { hint: '<preset>' } },
@@ -1989,8 +2125,16 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         return { ok: true, value: { commandId, result } }
       }
       const running = summaryOf(id)?.running === true
+      if (name === 'compact') {
+        // Range grammar routes through the durable marker/replacement
+        // sequence; the argument-free form stays the fake no-op.
+        const commandId = `fx-cmd-${logOf(id).length}` as CommandId
+        append(id, { type: 'command/run', data: { commandId, name, args, source: { kind: 'user' } } })
+        const result = compactOutcome(id, args, commandId)
+        append(id, { type: 'command/done', data: { commandId, ...result } })
+        return { ok: true, value: { commandId, result } }
+      }
       const outcomes: Record<string, string> = {
-        compact: 'fixture：已压缩（假动作）',
         echo: args.trim(),
         plan: args.trim() === 'off'
           ? (running ? 'Leaving plan mode (applies from the next step).' : 'Plan mode off.')
@@ -3143,6 +3287,12 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }),
     },
 
+    contextComposition: {
+      // Deterministic composition folded from the fixture's own logs so the
+      // context tab renders offline; a real host reads the live session.
+      read: request => ok(request, fixtureContextCompositionOf(logs.get(request.payload.sessionId) ?? [])),
+    },
+
     flow: {
       // Deterministic store and run surface for the flows pane; a real host
       // persists under `.dsh/flows` and tracks live runs off-loop.
@@ -3516,6 +3666,7 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'agentPreset.readGraph': return this.api.agentPresets.readGraph(request)
       case 'agentPreset.saveGraph': return this.api.agentPresets.saveGraph(request)
       case 'projectInsight.read': return this.api.projectInsight.read(request, signal)
+      case 'contextComposition.read': return this.api.contextComposition.read(request, signal)
       case 'flow.list': return this.api.flow.list(request)
       case 'flow.get': return this.api.flow.get(request)
       case 'flow.save': return this.api.flow.save(request)

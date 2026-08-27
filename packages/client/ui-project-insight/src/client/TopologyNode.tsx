@@ -1,15 +1,19 @@
 /**
- * The topology graph's custom node: a small path card with the cycle, hover,
- * and selected accents driven by the caller's props. React Flow v12 removed the
- * canvas-level `onNodeMouseEnter/Leave` events, so the node reports its own
- * mouse hover through the `onHover` data hook. The node also carries hidden
- * left/right handles: React Flow anchors every edge to a handle, so a static
- * graph still needs them for the edge pipeline to run — they are invisible and
- * inert because the canvas is not connectable.
+ * The topology graph's custom node: a small path card whose border and
+ * background carry the file-type category color (TypeScript, JavaScript,
+ * component, style, or neutral), plus the cycle, hover, and selected accents
+ * driven by the caller's props — the selected card keeps the strongest ring
+ * so the focus reads at a glance. React Flow v12 removed the canvas-level
+ * `onNodeMouseEnter/Leave` events, so the node reports its own mouse hover
+ * through the `onHover` data hook. The node also carries hidden left/right
+ * handles: React Flow anchors every edge to a handle, so a static graph still
+ * needs them for the edge pipeline to run — they are invisible and inert
+ * because the canvas is not connectable.
  */
 
 import { memo, type ReactNode } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
+import { fileTypeCategoryOf } from './fileType.ts'
 import css from './insight.module.css'
 
 /** The custom node type id the topology graph registers. */
@@ -37,6 +41,7 @@ function TopologyNodeComponent({ id, data }: NodeProps<TopologyNodeModel>): Reac
   const { label, cycle, hovered, selected, onHover } = data
   const className = [
     css.topologyNode,
+    typeClassOf(id),
     cycle ? css.topologyCycle : '',
     hovered ? css.topologyHover : '',
     selected ? css.topologySelected : '',
@@ -49,10 +54,21 @@ function TopologyNodeComponent({ id, data }: NodeProps<TopologyNodeModel>): Reac
       onMouseLeave={() => { if (onHover !== undefined) onHover(null) }}
     >
       <Handle type="target" position={Position.Left} isConnectable={false} />
-      {label}
+      <span className={css.topologyNodeLabel}>{label}</span>
       <Handle type="source" position={Position.Right} isConnectable={false} />
     </div>
   )
+}
+
+/** The card-coloring class for a path's file-type category. */
+function typeClassOf(path: string) {
+  return {
+    ts: css.typeTs,
+    js: css.typeJs,
+    component: css.typeComponent,
+    style: css.typeStyle,
+    other: css.typeOther,
+  }[fileTypeCategoryOf(path)]
 }
 
 /** Memoized custom node: data identity is stable across viewport moves. */

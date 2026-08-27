@@ -1,7 +1,34 @@
+/* Non-content frame states fill the tab area and center, matching the app's
+   other loading presentations (boot page, trajectory history loading). */
 .frame {
-  color: var(--dsw-alias-label-tertiary);
+  flex: 1 1 0%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--dsw-alias-label-secondary);
   font-size: 13px;
-  padding: 16px 20px;
+  text-align: center;
+}
+
+.frameSpinner {
+  width: 16px;
+  height: 16px;
+  box-sizing: border-box;
+  border: 1.5px solid var(--dsw-alias-border-l2);
+  border-top-color: var(--dsw-alias-state-business-primary);
+  border-radius: 50%;
+  animation: dsh-insight-frame-spin 700ms linear infinite;
+}
+
+@keyframes dsh-insight-frame-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frameSpinner { animation: none; }
 }
 
 .empty {
@@ -11,7 +38,7 @@
 }
 
 /* Every section body fills the conversation viewport; each body owns exactly
-   one scroll region (the graph canvas, the markdown panel, or sectionScroll). */
+   one scroll region (the graph canvas or the explorer panes). */
 .section {
   display: flex;
   flex-direction: column;
@@ -20,12 +47,17 @@
   overflow: hidden;
 }
 
-/* The single internal scroll region for flow content (cards and tables). */
+/* The single internal scroll region for flow content (cards and tables).
+   Scroll viewports carry cards and canvases at module-platform elevation, so
+   each scroll region rebinds the scrollbar indirection to the l2 pair (the
+   ui-theme styles/scrollbar.css contract). */
 .sectionScroll {
   flex: 1 1 0%;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 /* ── dependency graph bodies: toolbar + full-bleed canvas + floating list ─── */
@@ -80,10 +112,14 @@
 /* ── the React Flow topology node ──────────────────────────────────────── */
 
 /* The path card. Content defines the width; React Flow measures it and drives
-   the node's position/transform. */
+   the node's position/transform. The card's border, text, and background
+   carry the file-type category color through the type* classes below; the
+   cycle, hover, and selected accents override them in that order, so the
+   selected card keeps the strongest read on the canvas. */
 .topologyNode {
   display: flex;
   align-items: center;
+  gap: 6px;
   box-sizing: border-box;
   max-width: 220px;
   min-height: 32px;
@@ -96,14 +132,51 @@
   border-radius: 6px;
   cursor: pointer;
   user-select: none;
+}
+
+/* The path text on the type-colored card. */
+.topologyNodeLabel {
+  min-width: 0;
   word-break: break-all;
 }
 
-/* A dependency-cycle member: red border and tint. */
+/* The file-type card colors: the extension's category tints the whole card —
+   border in the category color, background at a low mix. */
+.typeTs {
+  border-color: var(--dsw-static-blue-500);
+  color: var(--dsw-static-blue-500);
+  background: color-mix(in srgb, var(--dsw-static-blue-500) 10%, var(--dsw-alias-bg-layer-1));
+}
+
+.typeJs {
+  border-color: var(--dsw-static-amber-500);
+  color: var(--dsw-static-amber-500);
+  background: color-mix(in srgb, var(--dsw-static-amber-500) 12%, var(--dsw-alias-bg-layer-1));
+}
+
+.typeComponent {
+  border-color: var(--dsw-static-green-500);
+  color: var(--dsw-static-green-500);
+  background: color-mix(in srgb, var(--dsw-static-green-500) 10%, var(--dsw-alias-bg-layer-1));
+}
+
+.typeStyle {
+  border-color: var(--dsw-static-deepseek-500);
+  color: var(--dsw-static-deepseek-500);
+  background: color-mix(in srgb, var(--dsw-static-deepseek-500) 10%, var(--dsw-alias-bg-layer-1));
+}
+
+.typeOther {
+  border-color: color-mix(in srgb, var(--dsw-static-neutral-500) 45%, transparent);
+  color: var(--dsw-static-neutral-500);
+  background: color-mix(in srgb, var(--dsw-static-neutral-500) 8%, var(--dsw-alias-bg-layer-1));
+}
+
+/* A dependency-cycle member: red border, text, and tint. */
 .topologyCycle {
   border-color: var(--dsw-static-red-500);
   color: var(--dsw-static-red-500);
-  background: color-mix(in srgb, var(--dsw-static-red-500) 10%, transparent);
+  background: color-mix(in srgb, var(--dsw-static-red-500) 10%, var(--dsw-alias-bg-layer-1));
 }
 
 /* The hover ring, driven by the caller's hoverNodeId. */
@@ -112,17 +185,21 @@
   box-shadow: 0 0 0 1px var(--dsw-alias-brand);
 }
 
-/* The selected emphasis fill, driven by the caller's selectedNodeId. */
+/* The selected emphasis: the brand takes over the card — border, fill, and a
+   3px ring — driven by the caller's selectedNodeId, so the selected file
+   reads through the whole canvas at any zoom. */
 .topologySelected {
   border-color: var(--dsw-alias-brand);
-  background: color-mix(in srgb, var(--dsw-alias-brand) 14%, transparent);
+  color: var(--dsw-alias-label-primary);
+  background: color-mix(in srgb, var(--dsw-alias-brand) 18%, var(--dsw-alias-bg-layer-1));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--dsw-alias-brand) 60%, transparent);
 }
 
-/* The floating full list, semi-transparent over the canvas. */
+/* The floating full list, semi-transparent over the canvas's left edge. */
 .listOverlay {
   position: absolute;
   top: 8px;
-  right: 8px;
+  left: 8px;
   bottom: 8px;
   width: 340px;
   display: flex;
@@ -154,6 +231,8 @@
   min-height: 0;
   overflow-y: auto;
   padding: 4px 0;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 .listRow {
@@ -210,6 +289,41 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* ── the selected file's content drawer over the canvas's right edge ────── */
+
+.detailOverlay {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  width: min(480px, 50%);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  z-index: 10;
+  background: color-mix(in srgb, var(--dsw-alias-bg-layer-1) 92%, transparent);
+  backdrop-filter: blur(6px);
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+}
+
+.detailTitle {
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-markdown-code-block-small);
+  word-break: break-all;
+}
+
+.detailBody {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
 /* ── toolbar chrome ─────────────────────────────────────────────────────── */
 
 .toolbarButton,
@@ -233,114 +347,12 @@
   border-color: var(--dsw-alias-brand);
 }
 
-/* ── inventory cards and tables ─────────────────────────────────────────── */
-
-.card {
-  margin: 12px 20px;
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  overflow: hidden;
-  background: var(--dsw-alias-bg-layer-1);
-}
-
-.cardHead {
-  padding: 8px 12px;
-  font-size: 12px;
-  color: var(--dsw-alias-label-secondary);
-  background: var(--dsw-alias-bg-module-platform);
-  border-bottom: 1px solid var(--dsw-alias-border-l2);
-}
-
-.cardBody {
-  padding: 10px 12px;
-}
-
-.table {
-  display: flex;
-  flex-direction: column;
-}
-
-.tableRow,
-.tableRowHead {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 12px;
-  align-items: center;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-family: var(--dsw-font-markdown-code-block-small);
-  border-top: 1px solid var(--dsw-alias-border-l1);
-}
-
-.tableRowHead {
-  padding: 6px 12px;
-  font-size: 11px;
-  color: var(--dsw-alias-label-tertiary);
-  border-top: none;
-}
-
-.tableRowCol {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-family: var(--dsw-font-markdown-code-block-small);
-  border-top: 1px solid var(--dsw-alias-border-l1);
-}
-
-.tableRowMain {
-  color: var(--dsw-alias-label-primary);
-  word-break: break-all;
-}
-
-.row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 20px;
-  border-bottom: 1px solid var(--dsw-alias-separator-primary);
-}
-
-.rowHead {
-  font-size: 13px;
-  color: var(--dsw-alias-label-primary);
-  font-family: var(--dsw-font-markdown-code-block-small);
-  word-break: break-all;
-}
-
 .muted {
   color: var(--dsw-alias-label-secondary);
   font-size: 12px;
 }
 
-.badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.badge {
-  font-size: 11px;
-  line-height: 18px;
-  padding: 0 6px;
-  border-radius: 4px;
-  background: var(--dsw-alias-bg-module-platform);
-  color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-font-markdown-code-block-small);
-}
-
-.aliasRow {
-  display: flex;
-  gap: 8px;
-  padding: 4px 20px;
-  font-size: 12px;
-  font-family: var(--dsw-font-markdown-code-block-small);
-  color: var(--dsw-alias-label-secondary);
-}
-
-/* ── agent-tech sub-tabs, document tabs, and the markdown viewer ─────────── */
+/* ── agent-tech sub-tabs and the markdown document viewer ────────────────── */
 
 .subTabs {
   display: flex;
@@ -370,15 +382,7 @@
   border-color: var(--dsw-alias-brand);
 }
 
-/* One selected document's markdown, scrolled in its own pane. */
-.markdownPanel {
-  flex: 1 1 0%;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 12px 20px;
-}
-
-/* The active document's path above its rendered markdown. */
+/* The selected document's path above its rendered markdown. */
 .markdownPath {
   margin: 0 0 10px;
   font-size: 11px;
@@ -387,18 +391,138 @@
   word-break: break-all;
 }
 
-/* The markdown viewer fills the remaining section height under the doc tabs. */
-.markdownBody {
+/* ── the inventory tree explorer: left tree, right highlighted detail ────── */
+
+/* The explorer root. It opts into the composer overlay (like the agent-tech
+   section): ConversationRoot bounds the view, the panes own their scrollers,
+   and both reserve the floating composer seat's live height. */
+.treeRoot {
+  --dsh-insight-composer-clearance: calc(var(--dsh-composer-height, 152px) + 16px);
+
+  display: flex;
   flex: 1 1 0%;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
+  overflow: hidden;
 }
 
-/* A muted total/limited line under a document list. */
-.footerNote {
+/* The left pane: a fixed-width tree with its own scroller. */
+.treePane {
   flex: none;
-  padding: 6px 20px;
+  width: 300px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-alias-bg-layer-1);
+}
+
+/* A muted line above the tree (the section's total-vs-emitted count). */
+.treeNote {
+  flex: none;
+  padding: 6px 12px;
   font-size: 11px;
   color: var(--dsw-alias-label-tertiary);
+  border-bottom: 1px solid var(--dsw-alias-border-l1);
+}
+
+.treePaneScroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--dsh-insight-composer-clearance);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* One tree row: caret (groups) or leaf dot, label, and child count. */
+.treeRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 8px 5px 0;
+  font-size: 12px;
+  font-family: var(--dsw-font-markdown-code-block-small);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.treeRow:hover {
+  background: var(--dsw-alias-bg-module-platform);
+  color: var(--dsw-alias-label-primary);
+}
+
+.treeRowSelected {
+  background: color-mix(in srgb, var(--dsw-alias-brand) 14%, transparent);
+  color: var(--dsw-alias-label-primary);
+}
+
+.treeRowMain {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The group caret button: square hit area, inherits the row's color. */
+.treeCaret {
+  flex: none;
+  width: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: 10px;
+  line-height: 16px;
+  text-align: center;
+  cursor: pointer;
+}
+
+/* The leaf marker keeping labels aligned with carets. */
+.treeLeaf {
+  flex: none;
+  width: 18px;
+  height: 0;
+}
+
+.treeRowCount {
+  flex: none;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* The right pane: the selected node's title over its highlighted JSON. */
+.treeDetail {
+  flex: 1 1 0%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 20px;
+}
+
+.treeDetailHead {
+  flex: none;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.treeDetailTitle {
+  font-size: 13px;
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-font-markdown-code-block-small);
+  word-break: break-all;
+}
+
+.treeDetailScroll {
+  flex: 1 1 0%;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: var(--dsh-insight-composer-clearance);
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }

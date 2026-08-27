@@ -29,6 +29,13 @@ const agent: AgentUnderTest = {
   tsconfigPath: fileURLToPath(new URL('../../../tsconfig.json', import.meta.url)),
 }
 
+// Newer Node runtimes print ExperimentalWarning (SQLite, type stripping) to child
+// stderr; these snapshots pin stderr empty, so suppress that noise the way the
+// headless snapshots do.
+const childEnv = {
+  NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+}
+
 interface JsonObject {
   [key: string]: unknown
 }
@@ -70,6 +77,7 @@ describe('same-session goal snapshot through the ACP automation driver', () => {
       fixtureFile,
       overrideFile,
       configPath: agent.configPath,
+      env: childEnv,
     })
 
     expect(result.stderr).toBe('')
@@ -119,6 +127,7 @@ describe('same-session goal snapshot through the ACP automation driver', () => {
       fixtureFile: join(wrapupDir, 'session.jsonl'),
       overrideFile: join(wrapupDir, 'replay.override.json'),
       configPath: agent.configPath,
+      env: childEnv,
     })
 
     expect(result.stderr).toBe('')

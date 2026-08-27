@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 /**
- * The shared dependency-graph body over a mocked TopologyGraph: the canvas and
- * the floating complete list both render; list hover and click drive the canvas
- * selection/hover props; a canvas tap and background tap drive the row
- * highlight and scroll-back; rows outside the bounded node set stay listed but
- * dimmed and inert; closing the floating list hides it and the toolbar toggle
- * reopens it; and a section with no rendered edges falls back to the plain full
- * list instead of a canvas.
+ * The shared dependency-graph body over a mocked TopologyGraph: the canvas,
+ * the floating complete list, and the selected file's content drawer all
+ * render; list hover and click drive the canvas selection/hover props; a
+ * canvas tap and background tap drive the row highlight and scroll-back;
+ * selecting a row or node opens the content drawer (embedded content when
+ * the documents pool carries the file, otherwise the row JSON) and closing
+ * the drawer clears the selection; rows outside the bounded node set stay
+ * listed but dimmed and inert; closing the floating list hides it and the
+ * toolbar toggle reopens it; and a section with no rendered edges falls back
+ * to the tree explorer instead of a canvas.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -70,7 +73,7 @@ function renderVariant(
     status: 'ready',
     error: null,
     doc: {
-      formatVersion: 3,
+      formatVersion: 5,
       rootName: 'fake-root',
       contentFingerprint: 'deadbeef',
       statSignature: 'deadbeef-stat',
@@ -88,7 +91,10 @@ function renderVariant(
 }
 
 /** The empty companion sections so only the module topology carries data. */
-function moduleDoc(moduleTopology: ModuleTopologySection): ProjectInsightDoc['sections'] {
+function moduleDoc(
+  moduleTopology: ModuleTopologySection,
+  documents: ProjectInsightDoc['sections']['documents'] = { files: [], count: 0 },
+): ProjectInsightDoc['sections'] {
   return {
     techStack: { manifests: [], dependencies: [], runtimes: [], files: [] },
     moduleTopology,
@@ -96,6 +102,7 @@ function moduleDoc(moduleTopology: ModuleTopologySection): ProjectInsightDoc['se
     components: { components: [], count: 0 },
     prompts: { files: [], count: 0 },
     agentTech: { files: [], tools: [], count: 0, skills: [], mcp: [], prompts: [] },
+    documents,
   }
 }
 
@@ -182,18 +189,47 @@ describe('dependency-graph body', () => {
     expect(screen.getByText('Full list (3)')).toBeTruthy()
   })
 
-  it('falls back to the plain full list when no edge set renders', () => {
+  it('opens the selected file’s content drawer from the documents pool and closes it', () => {
+    const documents = {
+      files: [{ name: 'main.ts', path: 'src/main.ts', content: 'export const main = 1\n' }],
+      count: 3,
+    }
+    const { container } = renderVariant('moduleTopology', moduleDoc(MODULE_TOPOLOGY, documents))
+
+    fireEvent.click(listRow('@/main.ts'))
+
+    expect(graphProps?.selectedNodeId).toBe('src/main.ts')
+    // The drawer shows the embedded content, not the row's metadata JSON.
+    expect(container.querySelector('.md-code-block')?.textContent).toContain('export const main = 1')
+    expect(container.querySelector('.md-code-block')?.textContent).not.toContain('"imports"')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+    expect(container.querySelector('.md-code-block')).toBeNull()
+    expect(graphProps?.selectedNodeId).toBeNull()
+  })
+
+  it('shows the row’s metadata JSON in the drawer when the pool lacks the file', () => {
+    const { container } = renderVariant('moduleTopology', moduleDoc(MODULE_TOPOLOGY))
+
+    fireEvent.click(listRow('@/main.ts'))
+
+    expect(container.querySelector('.md-code-block')?.textContent).toContain('"imports"')
+  })
+
+  it('falls back to the tree explorer when no edge set renders', () => {
     const isolated: ModuleTopologySection = {
       files: [{ path: 'src/main.ts', imports: ['external:react'] }],
       internalRoots: ['src'],
       aliases: [],
       externalCount: 1,
     }
-    renderVariant('moduleTopology', moduleDoc(isolated))
+    const { container } = renderVariant('moduleTopology', moduleDoc(isolated))
 
     expect(screen.queryByTestId('topology')).toBeNull()
     expect(screen.queryByRole('button', { name: /List/ })).toBeNull()
-    expect(screen.getByText('src/main.ts')).toBeTruthy()
-    expect(screen.getByText('external:react')).toBeTruthy()
+    // The explorer renders the directory group; the default-selected leaf's
+    // detail carries the row's metadata JSON with its external import.
+    expect(screen.getByText('src')).toBeTruthy()
+    expect(container.querySelector('.md-code-block')?.textContent).toContain('external:react')
   })
 })

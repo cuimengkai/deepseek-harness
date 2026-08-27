@@ -760,6 +760,9 @@ it('pins native DeepSeek image offload in the request sent by the assembled app'
       env: {
         DSH_SNAPSHOT_API_KEY: 'snapshot-key',
         DSH_SNAPSHOT_BASE_URL: `http://127.0.0.1:${address.port}`,
+        // Newer Node runtimes print ExperimentalWarning (SQLite, type stripping) to
+        // child stderr; this snapshot pins stderr empty, so suppress that noise.
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
     })
     expect(result.stderr).toBe('')

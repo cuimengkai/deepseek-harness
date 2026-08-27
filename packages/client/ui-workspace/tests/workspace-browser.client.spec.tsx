@@ -380,7 +380,44 @@ describe('WorkspaceBrowser', () => {
     }
   })
 
-  it('surfaces a session-delete failure as an alert instead of a silent note', async () => {
+  it('confirms session deletion, states irreversibility, and blocks duplicate submission', async () => {
+    let resolveDelete!: () => void
+    const deleteSession = vi.fn(() => new Promise<void>((resolve) => { resolveDelete = resolve }))
+    const browser = mount({
+      useSessions: hook(sessionState([summary('gone-s', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['gone-s'])])),
+      deleteSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    // The row menu only opens the dialog; nothing is deleted yet.
+    fireEvent.click(screen.getByRole('button', { name: '会话“gone-s”的操作' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+    expect(deleteSession).not.toHaveBeenCalled()
+    const dialog = screen.getByRole('dialog', { name: '删除会话' })
+    expect(dialog.textContent).toContain('将永久删除“gone-s”及其全部消息记录与子代理会话')
+    expect(dialog.textContent).toContain('此操作无法撤销')
+
+    const confirm = screen.getByRole<HTMLButtonElement>('button', { name: '删除会话' })
+    fireEvent.click(confirm)
+    fireEvent.click(confirm)
+    expect(deleteSession).toHaveBeenCalledOnce()
+    expect(deleteSession).toHaveBeenCalledWith(sid('gone-s'))
+    expect(confirm.disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: '取消' }).disabled).toBe(true)
+    expect(screen.getByRole('status').textContent).toBe('正在删除会话…')
+    fireEvent.keyDown(document, { key: 'Escape' })
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    expect(screen.getByRole('dialog', { name: '删除会话' })).toBeTruthy()
+    await act(async () => { resolveDelete() })
+    // RPC success alone does not close: the component waits until its
+    // useSessions projection has committed the removal, preventing a stale
+    // row frame from leaking into the next gesture.
+    expect(screen.getByRole('dialog', { name: '删除会话' })).toBeTruthy()
+    rerender(browser, { useSessions: hook(sessionState([])) })
+    expect(screen.queryByRole('dialog', { name: '删除会话' })).toBeNull()
+  })
+
+  it('surfaces a session-delete failure inside the dialog instead of a silent note', async () => {
     const rejection = new Error('session-live')
     const deleteSession = vi.fn(async () => { throw rejection })
     mount({
@@ -391,12 +428,39 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByText('alpha'))
     fireEvent.click(screen.getByRole('button', { name: '会话“gone-s”的操作' }))
     fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+    fireEvent.click(screen.getByRole('button', { name: '删除会话' }))
     expect(deleteSession).toHaveBeenCalledWith(sid('gone-s'))
     await waitFor(() => {
       expect(screen.getByRole('alert').textContent).toBe('session-live')
     })
-    // The row stays; the host refused the delete and the refusal is visible.
+    // The dialog stays open with the row intact: the host refused the delete
+    // and the refusal is visible; the user can cancel out of it.
+    expect(screen.getByRole('dialog', { name: '删除会话' })).toBeTruthy()
     expect(screen.getByText('gone-s')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    expect(screen.queryByRole('dialog', { name: '删除会话' })).toBeNull()
+  })
+
+  it('Cancel, Escape, and Close dismiss session deletion without calling the action', () => {
+    const deleteSession = vi.fn(async () => {})
+    mount({
+      useSessions: hook(sessionState([summary('gone-s', 1)])),
+      useWorkspaces: hook(workspaceState([workspace('alpha', ['gone-s'])])),
+      deleteSession,
+    })
+    fireEvent.click(screen.getByText('alpha'))
+    const open = () => {
+      fireEvent.click(screen.getByRole('button', { name: '会话“gone-s”的操作' }))
+      fireEvent.click(screen.getByRole('menuitem', { name: '删除会话' }))
+    }
+    open()
+    fireEvent.click(screen.getByRole('button', { name: '取消' }))
+    open()
+    fireEvent.keyDown(document, { key: 'Escape' })
+    open()
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    expect(deleteSession).not.toHaveBeenCalled()
+    expect(screen.queryByRole('dialog', { name: '删除会话' })).toBeNull()
   })
 
   it('renders a fork child as a top-level row without a session twist', () => {

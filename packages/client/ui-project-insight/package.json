@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-project-insight",
-  "description": "Develop-mode project insight tabs: six conversation view entries that render the committed project-insight document through the projectInsight.read RPC",
+  "description": "Develop-mode project insight tabs: five conversation view entries that render the committed project-insight document through the projectInsight.read RPC",
   "version": "0.1.1-rc.1",
   "publishConfig": {
     "access": "public"

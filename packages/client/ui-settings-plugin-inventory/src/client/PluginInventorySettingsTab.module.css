@@ -610,6 +610,10 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* Dialog surface: the scrollbar thumb takes the l2 elevation tokens
+     (ui-theme styles/scrollbar.css contract). */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
 @supports (height: 100dvh) {

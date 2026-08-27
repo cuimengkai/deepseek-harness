@@ -212,6 +212,20 @@ export class FakeApiClient implements IApiClient {
     read: (payload, signal) => this.record('projectInsight.read', payload, this.onProjectInsightRead(payload, signal)),
   }
 
+  onContextCompositionRead: IApiClient['contextComposition']['read'] =
+    () => Promise.resolve(ok({
+      logRevision: 0,
+      envelope: null,
+      surface: [],
+      surfaceTokens: 0,
+      contextWindow: null,
+      compactions: [],
+    }))
+
+  readonly contextComposition: IApiClient['contextComposition'] = {
+    read: (payload, signal) => this.record('contextComposition.read', payload, this.onContextCompositionRead(payload, signal)),
+  }
+
   onFlowList: IApiClient['flow']['list'] =
     () => Promise.resolve(ok({ flows: [] }))
   onFlowGet: IApiClient['flow']['get'] =

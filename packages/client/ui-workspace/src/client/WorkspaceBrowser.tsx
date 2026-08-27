@@ -243,8 +243,8 @@ type SessionTreeProps = Pick<
   onSessionRename: (sessionId: SessionNode['id'], currentTitle: string) => void
   /** Archive a session (row menu action; the row disappears on the state echo). */
   onSessionArchive: (sessionId: SessionNode['id']) => void
-  /** Physically delete a session and its subagent tree (row menu action). */
-  onSessionDelete: (sessionId: SessionNode['id']) => void
+  /** Open the browser-owned session delete-confirmation dialog (row menu action). */
+  onSessionDelete: (sessionId: SessionNode['id'], displayTitle: string) => void
   /** Session order behavior: fixed after edits, or additionally promoted by user activity. */
   orderBy: SessionOrderBy
 }
@@ -943,9 +943,40 @@ export function WorkspaceBrowser({
   const [sessionRenameDraft, setSessionRenameDraft] = useState('')
   const [sessionRenaming, setSessionRenaming] = useState(false)
   const [sessionRenameError, setSessionRenameError] = useState<string | null>(null)
-  // Session delete is dialog-free; a host refusal (a member still live after
-  // disposal) surfaces here instead of being swallowed by the row action.
+  // Session delete confirmation (same browser-owned pattern as workspace
+  // delete): the row menu only opens the dialog, the confirm button commits,
+  // and the dialog stays pending until the sessions projection has dropped
+  // the deleted id, so the deleted row never flashes back for one frame.
+  const [sessionDeleteTarget, setSessionDeleteTarget] = useState<{ sessionId: SessionNode['id']; title: string } | null>(null)
+  const [sessionDeleting, setSessionDeleting] = useState(false)
+  const [sessionDeleteCommittedId, setSessionDeleteCommittedId] = useState<SessionNode['id'] | null>(null)
   const [sessionDeleteError, setSessionDeleteError] = useState<string | null>(null)
+  const sessionDeleteCommittedVisible = useSessions(state =>
+    sessionDeleteCommittedId !== null && state.byId[sessionDeleteCommittedId] !== undefined)
+  useEffect(() => {
+    if (sessionDeleteCommittedId === null || sessionDeleteCommittedVisible) return
+    setSessionDeleting(false)
+    setSessionDeleteCommittedId(null)
+    setSessionDeleteTarget(null)
+  }, [sessionDeleteCommittedId, sessionDeleteCommittedVisible])
+  const closeSessionDelete = () => {
+    if (sessionDeleting) return
+    setSessionDeleteTarget(null)
+    setSessionDeleteError(null)
+  }
+  const confirmSessionDelete = () => {
+    /* v8 ignore next -- the Modal is absent without a target and its button is disabled while deleting. */
+    if (sessionDeleting || sessionDeleteTarget === null) return
+    setSessionDeleting(true)
+    setSessionDeleteCommittedId(null)
+    setSessionDeleteError(null)
+    deleteSession(sessionDeleteTarget.sessionId).then(() => {
+      setSessionDeleteCommittedId(sessionDeleteTarget.sessionId)
+    }).catch((reason: unknown) => {
+      setSessionDeleting(false)
+      setSessionDeleteError(reason instanceof Error ? reason.message : String(reason))
+    })
+  }
   const sessionRenameTrimmed = sessionRenameDraft.trim()
   const sessionRenameBlocked = sessionRenaming || sessionRenameTrimmed === '' || sessionRenameTarget === null
   const closeSessionRename = () => {
@@ -981,15 +1012,13 @@ export function WorkspaceBrowser({
     })
   }
 
-  // Delete is physically destructive (the log and the subagent tree are gone),
-  // so failures surface loudly in the list area instead of a silent console
-  // note; a new gesture clears the prior error, and the deleted rows leave
-  // every surface on the state echo.
-  const onSessionDelete = (sessionId: SessionNode['id']) => {
+  // Delete is physically destructive (the log and the subagent tree are
+  // gone), so the row menu opens the confirmation dialog above instead of
+  // committing directly; a host refusal (a member still live after disposal)
+  // surfaces inside the dialog and stays dismissable.
+  const onSessionDelete = (sessionId: SessionNode['id'], displayTitle: string) => {
+    setSessionDeleteTarget({ sessionId, title: displayTitle })
     setSessionDeleteError(null)
-    deleteSession(sessionId).catch((reason: unknown) => {
-      setSessionDeleteError(reason instanceof Error ? reason.message : String(reason))
-    })
   }
 
   // Delete dialog is separate from the row so a successful removal can
@@ -1161,8 +1190,6 @@ export function WorkspaceBrowser({
       {/* Always-mounted seat keeps the region's flex slot while the list
           itself is wide-only. */}
       <div className={css.listArea}>
-        {sessionDeleteError !== null
-          && <div className={css.renameError} role="alert">{sessionDeleteError}</div>}
         {wide && (normalizedQuery !== ''
           ? (
             <SearchResults
@@ -1315,6 +1342,31 @@ export function WorkspaceBrowser({
       >
         {deleting && <div className={css.deleteStatus} role="status">{t('delete.pending')}</div>}
         {deleteError !== null && <div className={css.renameError} role="alert">{deleteError}</div>}
+      </Modal>
+      <Modal
+        open={sessionDeleteTarget !== null}
+        onClose={closeSessionDelete}
+        closeLabel={t('close')}
+        title={t('menu.deleteSession')}
+        {...sessionDeleteTarget === null
+          ? {}
+          : { description: t('delete.sessionDesc', { name: sessionDeleteTarget.title }) }}
+        footer={(
+          <>
+            <Button variant="outline" disabled={sessionDeleting} onClick={closeSessionDelete}>{t('cancel')}</Button>
+            <Button
+              variant="outline"
+              className={css.deleteAction}
+              disabled={sessionDeleting}
+              onClick={confirmSessionDelete}
+            >
+              {t('menu.deleteSession')}
+            </Button>
+          </>
+        )}
+      >
+        {sessionDeleting && <div className={css.deleteStatus} role="status">{t('delete.sessionPending')}</div>}
+        {sessionDeleteError !== null && <div className={css.renameError} role="alert">{sessionDeleteError}</div>}
       </Modal>
     </div>
   )

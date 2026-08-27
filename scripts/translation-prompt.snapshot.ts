@@ -16,7 +16,17 @@ describe('translation prompt runnable snapshot', () => {
     const { stdout, stderr } = await execFileAsync(process.execPath, [
       join(root, 'scripts/verify-translation-prompt.ts'),
       '--snapshot',
-    ], { cwd: root, maxBuffer: 4 * 1024 * 1024 })
+    ], {
+      cwd: root,
+      maxBuffer: 4 * 1024 * 1024,
+      // Newer Node runtimes print ExperimentalWarning (type stripping) to child
+      // stderr; this snapshot pins stderr empty, so suppress that noise the way
+      // the headless snapshots do.
+      env: {
+        ...process.env,
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
+      },
+    })
     expect(stderr).toBe('')
     expect(() => {
       JSON.parse(stdout)

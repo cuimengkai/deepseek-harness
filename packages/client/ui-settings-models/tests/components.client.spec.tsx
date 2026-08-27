@@ -487,7 +487,8 @@ describe('ModelsSection', () => {
     // A row without a declaration reads as the adapter's text default, so text
     // is pre-checked and the other boxes start unchecked — adding "image" then
     // means multimodal instead of a model that accepts only images.
-    expect((screen.getByLabelText(`${en.inputModalities} text`) as HTMLInputElement).checked).toBe(true)
+    const text = screen.getByLabelText(`${en.inputModalities} text`) as HTMLInputElement
+    expect(text.checked).toBe(true)
     const image = screen.getByLabelText(`${en.inputModalities} image`) as HTMLInputElement
     const audio = screen.getByLabelText(`${en.modelKinds} audio`) as HTMLInputElement
     expect(image.checked).toBe(false)

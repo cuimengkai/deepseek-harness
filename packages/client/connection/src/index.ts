@@ -118,6 +118,10 @@ const PRIVILEGED_METHODS = new Set([
   // triggers a scan through this pin: the host-plane auto-scan hook owns
   // that, and a fresh read just forwards the committed document.
   'projectInsight.read',
+  // The context-composition read carries the session's system prompt text
+  // and every tool schema verbatim — conversation reconnaissance in the same
+  // shape session.history serves, so it rides the same loopback pin.
+  'contextComposition.read',
   // The four flow store methods resolve the project root from the payload cwd
   // and read/write `.dsh/flows` under it — project files, the same posture as
   // projectInsight.read. The four run methods (flow.run/getRun/listRuns/stop)
