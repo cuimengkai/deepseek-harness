@@ -267,9 +267,21 @@ export class SlotTestRuntime {
    * Mount a feature plugin on a real fiber. Required services are prechecked
    * so a missing provider fails loud instead of suspending the fiber forever
    * (deliberate load-order suspension tests use `ctx.plugin` directly).
+   * Object plugins ride their own overload: a single `Plugin` union parameter
+   * types the `apply` member as void-returning at call sites, which rejects
+   * the async apply functions the specs mount.
    * @param plugin - plugin value (function, class, or `{ inject, apply }` object).
    * @returns handle owning the fiber's explicit disposal.
    */
+  async mount(plugin: Plugin.Object): Promise<FeatureHandle>
+  /**
+   * Mount a function or class plugin: same missing-service precheck and
+   * handle ownership as the object overload.
+   * @param plugin - function or class plugin value.
+   * @returns handle owning the fiber's explicit disposal.
+   */
+  // oxlint-disable-next-line typescript/unified-signatures -- merged union types apply as void-returning (no-misused-promises)
+  async mount(plugin: Plugin.Function | Plugin.Constructor): Promise<FeatureHandle>
   async mount(plugin: Plugin): Promise<FeatureHandle> {
     const required = Object.keys(Inject.resolve((plugin as { inject?: Inject }).inject))
     const missing = required.filter(name => this.ctx.get(name) === undefined)

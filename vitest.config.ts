@@ -191,6 +191,7 @@ export default defineConfig({
         // remove as the client test lane matures.
         'packages/client/ui-trajectory/src/*',
         'packages/client/ui-project-insight/src/*',
+        'packages/client/ui-context/src/*',
         // Trajectory's compact Markdown projection retains deferred branch coverage.
         'packages/client/ui-primitives/src/markdown/plain-text.ts',
         'packages/client/ui-user-questions/src/client/QuestionComposer.tsx',

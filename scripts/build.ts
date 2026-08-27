@@ -50,4 +50,7 @@ function main(): void {
   )
 }
 
-if (import.meta.main) main()
+// Run only when invoked as a script. The argv comparison, not import.meta.main
+// (which first shipped in Node 24.5 while the engines range admits 24.0), holds
+// on every Node the repo supports.
+if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) main()

@@ -128,6 +128,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'ownerCtx', description: 'caller context that owns load, setup, and the live lifecycle.' }, { name: 'options', description: 'persisted identity, loop options, setup, and cancellation.' }],
         returns: 'the published handle.',
       },
+      {
+        signature: 'async disposeAgent(id: SessionId): Promise<boolean>',
+        description: 'Dispose a live agent by its shared agent/session id. Drains the agent\'s in-flight turn, unregisters it, removes its session, and unwinds its scope — the same composite teardown an AgentHandle owner runs.',
+        parameters: [{ name: 'id', description: 'the shared agent/session id of the live agent to dispose.' }],
+        returns: 'false when no live agent has that id.',
+      },
     ],
   },
   {
@@ -180,6 +186,38 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Create a locally authored preset by copying an existing one whole.\n\nCopy is the only authoring write. Composition text never crosses this seam: the source is named by id and its directory is copied as it stands, so the copy is exactly as loadable as its source and authoring grants no capability the roster did not already carry. The copy is NOT mounted to validate — a source that mounts today yields a copy that mounts today.',
         parameters: [{ name: 'from', description: 'the preset the copy starts from; shipped presets are the primary source, so any trust is accepted.' }, { name: 'id', description: 'the new preset\'s id, which becomes its directory name.' }, { name: 'name', description: 'display name for the copy; absent falls back to the id.' }],
         throws: ['when the source is unknown, the id is unusable or already taken, or the deployment configures no writable root.'],
+      },
+      {
+        signature: 'async write(id: string, rows: readonly EntryOptions[], meta?: PresetMetadata): Promise<void>',
+        description: 'Write a locally authored preset from composition rows.\n\nThe sanctioned exception to "no caller supplies composition text": the platform preset assembler renders a validated tree and commits it through this primitive. The caller owns render + static validation — this method accepts the rows as given and refuses only a wrong id or an occupied slot. The write is NOT mounted to validate; loader-level checks (`inactiveRows` / `leakedServices`) run at mount.',
+        parameters: [{ name: 'id', description: 'the new preset\'s id, which becomes its directory name.' }, { name: 'rows', description: 'the composition rows to persist.' }, { name: 'meta', description: 'display metadata to publish beside the composition.' }],
+        throws: ['when the id is unusable or already taken, or the deployment configures no writable root.'],
+      },
+      {
+        signature: 'async readRows(id: string): Promise<ComposeRow[]>',
+        description: 'Read one preset\'s composition as rows, for the composer.\n\nThe structured twin of `read`: the same composition, parsed with the loader\'s own YAML dialect so a `!!js` `disabled` row survives. The browser receives rows rather than YAML text because editing is a row operation — parsing stays on the host.',
+        parameters: [{ name: 'id', description: 'the preset id.' }],
+        returns: 'the composition\'s entry rows.',
+        throws: ['when no configured root supplies that id or the composition does not parse as an entry list.'],
+      },
+      {
+        signature: 'async compose( id: string, rows: readonly ComposeRow[], meta: PresetMetadata | undefined, options: { /** Whether to replace an existing preset in place (false = create). */ overwrite: boolean /** * Prove every module a row names is installed. Returns the unresolved * module names; a non-empty result refuses the composition. */ assertResolvable: (rows: readonly ComposeRow[]) => readonly string[] }, ): Promise<void>',
+        description: 'Write a locally authored preset\'s composition from rows, creating it or replacing it in place.\n\nThe browser-facing authoring write. Unlike `write` (rows accepted as given by a trusted in-process caller), this method enforces the composition invariants the preset domain owns — a non-empty row list, a plugin module per row, unique row ids — and the "only installed plugins may be composed" rule through a REQUIRED resolvability proof: `assertResolvable` returns the module names the rows reference that are not installed, and a non-empty answer refuses the whole composition with ComposeModuleError. The wire layer supplies the inventory-backed proof, so no caller can bypass it. `overwrite` selects replace-in-place over create: replacing refuses a preset that ships with the deployment, because only a locally authored preset is the user\'s to overwrite. The write is NOT mounted to validate; loader-level checks (`inactiveRows` / `leakedServices`) run at mount, as they do for every authored preset.',
+        parameters: [{ name: 'id', description: 'the preset id, which becomes its directory name.' }, { name: 'rows', description: 'the composition rows to persist.' }, { name: 'meta', description: 'display metadata to publish beside the composition.' }, { name: 'options', description: 'create-vs-replace choice and the resolvability proof.' }],
+        throws: ['when the id is unusable, the rows violate a composition invariant, a module does not resolve, the deployment configures no writable root, or (replacing) the preset does not exist or ships with the deployment.'],
+      },
+      {
+        signature: 'async composeGraph( id: string, graph: FlowGraph, meta: PresetMetadata | undefined, options: { /** Whether to replace an existing preset in place (false = create). */ overwrite: boolean /** * Prove every module the projected rows name is installed. Returns the * unresolved module names; a non-empty result refuses the composition. */ assertResolvable: (rows: readonly ComposeRow[]) => readonly string[] }, ): Promise<void>',
+        description: 'Write a locally authored preset\'s composition AND companion graph from a preset composition graph.\n\nThe graph authoring write behind `agentPreset.saveGraph`. The graph is the AUTHORING source: its agent nodes\' `composition` fields project exactly the rows that mount, so the rows are DERIVED here (`graphToRows`) and validated exactly as compose validates them — non-empty, module-per-row, unique ids, the resolvability proof — and one authoring primitive writes both files: `agent.cordis.yml` from the derived rows and `agent.flow.json` beside it holding the graph as authored. A graph with a condition or loop node, an agent without a composition module, or a cycle is refused before any write. The graph\'s display name and the preset\'s are one thing: a given `meta.name` also becomes the stored graph\'s name, so the roster and the canvas agree.',
+        parameters: [{ name: 'id', description: 'the preset id, which becomes its directory name.' }, { name: 'graph', description: 'the preset composition graph to persist.' }, { name: 'meta', description: 'display metadata to publish beside the composition.' }, { name: 'options', description: 'create-vs-replace choice and the resolvability proof.' }],
+        throws: ['when {@link compose} throws, or the graph does not project rows.'],
+      },
+      {
+        signature: 'async readGraph(id: string): Promise<FlowGraph>',
+        description: 'Read one preset\'s composition graph, regenerating a stale or absent layout.\n\nThe graph authoring read behind `agentPreset.readGraph`. The stored `agent.flow.json` is a layout cache: it serves only while it still projects exactly the rows parsed from the composition file (a hand edit or a legacy rows-composer write wins), and otherwise the rows are re-projected as a fresh chain graph. Backward compatible: an older preset with no graph file regenerates on open.',
+        parameters: [{ name: 'id', description: 'the preset id.' }],
+        returns: 'the preset\'s composition graph.',
+        throws: ['when no configured root supplies that id, or the composition does not parse.'],
       },
       {
         signature: 'async remove(id: string): Promise<void>',
@@ -259,6 +297,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Load a persisted session and resume an agent on it through the registered factory. Rejects if no factory is registered; the factory rejects if session persistence is not configured or persistence/setup fails.',
         parameters: [{ name: 'options', description: 'persisted identity, configuration, and optional setup.' }],
         returns: 'the handle after setup, rollback-covered publication, and loop start complete.',
+      },
+      {
+        signature: 'async disposeAgent(id: SessionId): Promise<boolean>',
+        description: 'Dispose a live agent by its shared agent/session id through the registered factory. Unlike create/resume no caller context binds the teardown: the live lifecycle was already owned by the context that created it, so this delegates straight to the factory.',
+        parameters: [{ name: 'id', description: 'the shared agent/session id of the live agent to dispose.' }],
+        returns: 'false when no factory is registered or no live agent has that id.',
       },
       {
         signature: 'register(agent: Agent): () => void',
@@ -611,6 +655,26 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the appended event seqs, summary, replaced range, and token accounting.',
         throws: ['when compaction is active or the range is missing, reversed, or unbalanced.'],
       },
+      {
+        signature: 'abstract compactRegionNow( start: number, end: number, agent: ManualCompactAgentContext, signal: AbortSignal, sourceCommandId?: CommandId, ): Promise<CompactionResult>',
+        description: 'Explicitly compact one caller-selected surface range through the same idle-gated standalone transaction as compactNow — the range is the caller\'s choice instead of the retention policy\'s. `start` and `end` are surface seqs in positional order (the seq at the earlier position first), inclusive; both edges must be balanced so assistant tool calls remain paired with their results. A missing, reversed, or unbalanced range rejects with a plain Error whose message names the violated edge; busy, cancellation, changed-span, summarization, commit, and persistence failures throw ManualCompactionError exactly like `compactNow`.',
+        parameters: [{ name: 'start', description: 'surface seq at the earlier position of the range, inclusive.' }, { name: 'end', description: 'surface seq at the later position of the range, inclusive.' }, { name: 'agent', description: 'idle agent whose durable history is compacted.' }, { name: 'signal', description: 'cancellation scoped to this compaction request.' }, { name: 'sourceCommandId', description: 'initiating command identity for a manual compaction.' }],
+        returns: 'the compaction result.',
+        throws: ['{@link ManualCompactionError} for expected busy, agent-cancellation, changed-span, summarization/commit-stage, or persistence failures; a plain Error for a missing, reversed, or unbalanced range.'],
+      },
+    ],
+  },
+  {
+    key: 'contextComposition',
+    summary: 'Read-only projection of the durable context composition for one session.',
+    description: 'Read-only projection of the durable context composition for one session.',
+    methods: [
+      {
+        signature: 'read(session: Session): ContextComposition',
+        description: 'Read one session\'s current context composition at its durable tail. The session is the caller\'s stable prefix — an attached live session snapshots its events array, so the result describes one log revision.',
+        parameters: [{ name: 'session', description: 'the session whose log is projected.' }],
+        returns: 'the detached snapshot (envelope, surface, capacity, compactions).',
+      },
     ],
   },
   {
@@ -756,6 +820,64 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Remote face of list; the decorator cannot mark the abstract member, so this concrete adapter carries the identical contract.',
         parameters: [{ name: 'agent', description: 'target agent whose session cwd bounds discovery.' }, { name: 'query', description: 'path text following `@` or `@"`.' }, { name: 'signal', description: 'caller cancellation.' }],
         returns: 'deterministic path-only candidates.',
+      },
+    ],
+  },
+  {
+    key: 'flowEngine',
+    summary: 'The flow-engine service.',
+    description: 'The flow-engine service. Requires the `workflowEngine` service in the same composition; a composition mounting the flow engine without it fails loud at load rather than resolving an empty run surface.',
+    methods: [
+      {
+        signature: 'run(request: FlowRunRequest): FlowRunHandle',
+        description: 'Compile and start a flow run.',
+        parameters: [{ name: 'request', description: 'the graph, optional `args`, the parent agent, and an optional cancel signal.' }],
+        returns: 'the live-run handle; its `result` resolves when the run settles.',
+        throws: ['{@link FlowError} with `FLOW_INVALID` for an invalid graph and `FLOW_CAP` when the live-run bound is reached.'],
+      },
+      {
+        signature: 'stop(runId: FlowRunIdType): void',
+        description: 'Cancel a live run.',
+        parameters: [{ name: 'runId', description: 'the run to cancel.' }],
+        throws: ['{@link FlowError} with `FLOW_RUN_NOT_FOUND` for an unknown run.'],
+      },
+      {
+        signature: 'listRuns(flowId?: string): FlowRunSummary[]',
+        description: 'List tracked runs, newest first.',
+        parameters: [{ name: 'flowId', description: 'optional filter to one flow.' }],
+        returns: 'the run summaries (live runs first, then settled within the history bound).',
+      },
+      {
+        signature: 'getRun(runId: FlowRunIdType): FlowRunSnapshot | undefined',
+        description: 'Read one run\'s live snapshot.',
+        parameters: [{ name: 'runId', description: 'the run to read.' }],
+        returns: 'the snapshot, or `undefined` for an unknown or pruned run.',
+      },
+      {
+        signature: 'async save(root: string, graph: FlowGraph): Promise<FlowGraph>',
+        description: 'Validate and persist a flow under `<root>/.dsh/flows/<id>.flow.json`.',
+        parameters: [{ name: 'root', description: 'the owning project root.' }, { name: 'graph', description: 'the graph to save.' }],
+        returns: 'the graph, unchanged.',
+        throws: ['{@link FlowError} with `FLOW_INVALID` for an invalid graph.'],
+      },
+      {
+        signature: 'async list(root: string): Promise<FlowSummary[]>',
+        description: 'List the flows saved under `<root>/.dsh/flows`.',
+        parameters: [{ name: 'root', description: 'the owning project root.' }],
+        returns: 'the flow summaries.',
+      },
+      {
+        signature: 'async get(root: string, flowId: string): Promise<FlowGraph>',
+        description: 'Read one saved flow.',
+        parameters: [{ name: 'root', description: 'the owning project root.' }, { name: 'flowId', description: 'the flow\'s id.' }],
+        returns: 'the validated graph.',
+        throws: ['{@link FlowError} with `FLOW_NOT_FOUND`, `FLOW_VERSION`, or `FLOW_INVALID`.'],
+      },
+      {
+        signature: 'async delete(root: string, flowId: string): Promise<void>',
+        description: 'Delete one saved flow.',
+        parameters: [{ name: 'root', description: 'the owning project root.' }, { name: 'flowId', description: 'the flow\'s id.' }],
+        throws: ['{@link FlowError} with `FLOW_NOT_FOUND` when no such flow exists.'],
       },
     ],
   },
@@ -1374,6 +1496,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the ordered resolved set plus the scenario\'s preset id.',
       },
       {
+        signature: 'assemblePreset(actor: UserId, request: AssemblePresetRequest): AssembledPreset',
+        description: 'Render and statically validate one workbench preset tree before commit. Mirrors `resolveCapabilities`\' gating — permission, scenario membership, and a dependency-first resolution — then appends each resolved capability\'s preset rows to the host-supplied base, overlays the optional patches, and validates the rendered tree. Duplicate row ids and shadowed tool names are rejected (`ROW_ID_CONFLICT` / `TOOL_NAME_CONFLICT`); rows disabled for the current platform are reported, not rejected. The commit itself is a host action: the seam never reads or writes the roster (platform-preset-assembler §3).',
+        parameters: [{ name: 'actor', description: 'the platform user assembling the workbench.' }, { name: 'request', description: 'the workspace, scenario, role, base rows, selection, and patches.' }],
+        returns: 'the resolved capability set plus the rendered, validated tree.',
+      },
+      {
         signature: 'creditAccount(actor: UserId, workspaceId: WorkspaceId, amount: number): AccountRecord',
         description: 'Credit one workspace\'s billing account.',
         parameters: [{ name: 'actor', description: 'the operator crediting the account.' }, { name: 'workspaceId', description: 'the workspace account to credit.' }, { name: 'amount', description: 'non-negative credits to add.' }],
@@ -1430,6 +1558,38 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'pluginInventory',
+    summary: 'Remote-only service exposing the Loader\'s current non-group entry state.',
+    description: 'Remote-only service exposing the Loader\'s current non-group entry state.',
+    methods: [
+      {
+        signature: '@Remote(\'list\') list(): PluginInventorySnapshot',
+        description: 'Read the Loader directly on every call. Cordis\'s internal plugin/status events already maintain Entry.fiber and Fiber.state, so a second cache would only add another lifecycle truth to keep synchronized.',
+        parameters: [],
+        returns: 'Current non-group Loader entries in Loader order.',
+      },
+    ],
+  },
+  {
+    key: 'projectInsight',
+    summary: 'Per-session workspace scanner.',
+    description: 'Per-session workspace scanner. Auto-scan is debounced per root and single-flight per root; a session arriving while its root is being scanned joins the waiting set and is notified at the commit point.',
+    methods: [
+      {
+        signature: 'async read(cwd: string, signal?: AbortSignal): Promise<ProjectInsightReadResult>',
+        description: 'Read the stored document for a working directory, without scanning.\n\nResolves the project root upward from `cwd`, reads the committed `.dsh/insight/` document, and reports fresh/stale by recomputing the stat-only structural signature. An over-cap, unparsable, or missing-section document is a `\'error\'` result, not an absent one. A document under an older `formatVersion` is the one recoverable case: it reads `\'stale\'` and schedules a debounced background rebuild, so a format bump self-heals an existing project\'s committed doc instead of stranding it in an error state.',
+        parameters: [{ name: 'cwd', description: 'absolute working directory to resolve the project root from.' }, { name: 'signal', description: 'aborts the stat walk.' }],
+        returns: 'the document state and, when present, the parsed document.',
+      },
+      {
+        signature: 'async scan(cwd: string, sessionId?: SessionId, signal?: AbortSignal): Promise<ProjectInsightScanResult>',
+        description: 'Scan a working directory\'s project now and commit the document.\n\nA fresh stored document is left untouched (`\'unchanged\'`); otherwise the deterministic scanner rebuilds it, the document is written atomically, and — only after the write commits — `project-insight/updated` is emitted for the caller\'s session. A stored document that cannot be read (wrong version, over-cap, missing section, unparsable) is treated as absent, so a scan is the operation that repairs it.',
+        parameters: [{ name: 'cwd', description: 'absolute working directory to resolve the project root from.' }, { name: 'sessionId', description: 'session to notify at the commit point; absent skips the event.' }, { name: 'signal', description: 'aborts the scan.' }],
+        returns: 'the scan outcome.',
+      },
+    ],
+  },
+  {
     key: 'sandbox',
     summary: 'Abstract process-sandbox service.',
     description: 'Abstract process-sandbox service. confine must return enforcing argv or fail closed at wrap or runner-execution time; silent unconfined passthrough is forbidden. Functional probes arbitrate multi-runner chains and may be skipped for a sole candidate, whose own refusal remains the fail-closed end.',
@@ -1478,10 +1638,10 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     methods: [
       {
         signature: 'async deleteSession(id: SessionId, options: DeleteSessionOptions = {}): Promise<DeleteSessionResult>',
-        description: 'Physically delete one session and its entire subagent descendant tree. The scope is computed once from the merged live + persisted header corpus; if ANY member is live the whole operation refuses (SessionDeletionError) and nothing is removed. Otherwise each member\'s durable log is deleted root-first through the persistence seam, the operation is recorded in the ledger (when at least one member existed), and mounted consumers clean their per-session state.',
+        description: 'Physically delete one session and its entire subagent descendant tree. The scope is computed once from the merged live + persisted header corpus. Live scope members are disposed first — agent-owned sessions through the agent factory (`ctx.agents.disposeAgent`), bare live sessions directly via `ctx.sessions.dispose` — so the persistence coordinator\'s own live guard passes; if any member remains live after disposal the whole operation refuses (SessionDeletionError) and nothing is removed. Otherwise each member\'s durable log is deleted root-first through the persistence seam, the operation is recorded in the ledger (when at least one member existed), and mounted consumers clean their per-session state.',
         parameters: [{ name: 'id', description: 'the root session to delete.' }, { name: 'options', description: 'optional ledger reason.' }],
         returns: 'the removed and absent scope members.',
-        throws: ['{@link SessionDeletionError} when any scope member is live.'],
+        throws: ['{@link SessionDeletionError} when any scope member is still live after disposal.'],
       },
       {
         signature: 'listDeletions(): DeletionRecord[]',
@@ -1810,6 +1970,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Emit `session/created` exactly once for an entered session (with the carrier enter captured). Separate from enter so the caller can yield the detach disposer first (rollback safety — see enter).',
         parameters: [{ name: 'session', description: 'the entered session to announce to listeners.' }],
         throws: ['if the session is not live or its announcement already began, including a reentrant call from a creation listener.'],
+      },
+      {
+        signature: 'dispose(session: Session): Promise<boolean>',
+        description: 'Dispose a live session: remove it from the store and emit its paired `session/disposed` so the persistence coordinator retires and final-flushes the session. The inverse of enter for a caller that owns the session but not an agent lifecycle (the cascade-deletion service). Durability is the caller\'s boundary — `persistence.delete` awaits that retirement (`waitForRetirement`) before removing the log.',
+        parameters: [{ name: 'session', description: 'a live entered session to detach.' }],
+        returns: 'false when the session is already detached or unknown.',
       },
       {
         signature: 'async flush(session: Session): Promise<boolean>',
@@ -2953,6 +3119,30 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'options', description: 'the full request. A LOOP-built request carries the process-local {@link markAgentLoopRequest} identity and arrives deep-frozen (mutation throws): its content is a pure function of the session log (the reconstructability Agent Note), so listeners read it, never rewrite it. Hand-built calls do not carry that marker; their messages already obey the immutable creation contract.' }],
   },
   {
+    name: 'plugin-inventory/changed',
+    mode: 'emit',
+    signature: '\'plugin-inventory/changed\'(): void',
+    summary: 'The Loader plugin projection changed.',
+    description: 'The Loader plugin projection changed. Emitted after one frame of `loader/entry-init`, `loader/partial-dispose`, `internal/plugin`, and `internal/status` events coalesces and the recomputed projection differs from the last one emitted; the client re-reads `pluginInventory/list`.',
+    parameters: [],
+  },
+  {
+    name: 'plugin-manager/catalog-changed',
+    mode: 'emit',
+    signature: '\'plugin-manager/catalog-changed\'(): void',
+    summary: 'The installable catalog changed: a managed install or uninstall committed, or the catalog was explicitly refreshed.',
+    description: 'The installable catalog changed: a managed install or uninstall committed, or the catalog was explicitly refreshed. Coalesced per frame; the client re-reads `pluginManager/listAvailable`.',
+    parameters: [],
+  },
+  {
+    name: 'project-insight/updated',
+    mode: 'emit',
+    signature: '\'project-insight/updated\'(sessionId: SessionId): void',
+    summary: 'A project-insight scan for one session\'s workspace committed to disk.',
+    description: 'A project-insight scan for one session\'s workspace committed to disk. Emitted only after the atomic write succeeds, so listeners treat the event as proof the `.dsh/insight/` document is readable.',
+    parameters: [{ name: 'sessionId', description: 'the session whose workspace was scanned.' }],
+  },
+  {
     name: 'session-telemetry/record',
     mode: 'waterfall',
     signature: '\'session-telemetry/record\'(record: SessionTelemetryRecord, next: () => SessionTelemetryRecord): SessionTelemetryRecord',
@@ -3194,7 +3384,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentFactory',
-    declaration: 'export interface AgentFactory {\n    createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>;\n    resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>;\n}',
+    declaration: 'export interface AgentFactory {\n    createAgent(ownerCtx: Context, options: CreateAgentOptions): Promise<AgentHandle>;\n    resume(ownerCtx: Context, options: ResumeAgentOptions): Promise<AgentHandle>;\n    disposeAgent(id: SessionId): Promise<boolean>;\n}',
   },
   {
     name: 'AgentHandle',
@@ -3202,7 +3392,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'AgentOptions',
-    declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    maxTokens?: number;\n}',
+    declaration: 'export interface AgentOptions {\n    provider?: string;\n    model?: string;\n    maxTokens?: number;\n    modelKinds?: Partial<Record<ModelKind, {\n        provider?: string;\n        model?: string;\n    }>>;\n}',
   },
   {
     name: 'AgentPreset',
@@ -3285,8 +3475,16 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface AssembledContext {\n    name: string;\n    text: string;\n}',
   },
   {
+    name: 'AssembledPreset',
+    declaration: 'export interface AssembledPreset {\n    readonly roleId: RoleId;\n    readonly scenarioId: ScenarioId;\n    readonly preset: string;\n    readonly resolved: readonly CapabilityRecord[];\n    readonly rows: readonly EntryOptions[];\n    readonly report: PresetValidationReport;\n}',
+  },
+  {
     name: 'AssembledSection',
     declaration: 'export interface AssembledSection {\n    name: string;\n    text: string;\n}',
+  },
+  {
+    name: 'AssemblePresetRequest',
+    declaration: 'export interface AssemblePresetRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly scenarioId: ScenarioId;\n    readonly roleId: RoleId;\n    readonly rolePreset: string;\n    readonly base: readonly EntryOptions[];\n    readonly selected: readonly CapabilityId[];\n    readonly preset: string;\n    readonly patches?: readonly PatchOptions[];\n}',
   },
   {
     name: 'AssetId',
@@ -3406,7 +3604,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'CapabilityRecord',
-    declaration: 'export interface CapabilityRecord {\n    readonly id: CapabilityId;\n    readonly name: string;\n    readonly roleId: RoleId;\n    readonly execution: ExecutionMode;\n    readonly version: string;\n    readonly enabled: boolean;\n    readonly rollout: number;\n    readonly rate: number;\n    readonly description: string;\n    readonly tools: readonly string[];\n    readonly createdAt: number;\n}',
+    declaration: 'export interface CapabilityRecord {\n    readonly id: CapabilityId;\n    readonly name: string;\n    readonly roleId: RoleId;\n    readonly execution: ExecutionMode;\n    readonly version: string;\n    readonly enabled: boolean;\n    readonly rollout: number;\n    readonly rate: number;\n    readonly description: string;\n    readonly tools: readonly string[];\n    readonly rows: readonly EntryOptions[];\n    readonly createdAt: number;\n}',
   },
   {
     name: 'ClientResponse',
@@ -3773,6 +3971,90 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface FinishReasonMap {\n    \'stop\': {\n        kind: \'stop\';\n    };\n    \'tool-calls\': {\n        kind: \'tool-calls\';\n    };\n    \'max-tokens\': {\n        kind: \'max-tokens\';\n    };\n    \'aborted\': {\n        kind: \'aborted\';\n        failure: LlmFailure;\n    };\n    \'error\': {\n        kind: \'error\';\n        failure: LlmFailure;\n    };\n}',
   },
   {
+    name: 'FlowAgentComposition',
+    declaration: 'export interface FlowAgentComposition {\n    readonly id?: string;\n    readonly module: string;\n    readonly config?: unknown;\n    readonly group?: boolean | null;\n    readonly disabled?: unknown;\n    readonly inject?: unknown;\n}',
+  },
+  {
+    name: 'FlowAgentNode',
+    declaration: 'export interface FlowAgentNode extends FlowNodeBase {\n    readonly type: \'agent\';\n    readonly prompt: string;\n    readonly agentOptions?: FlowAgentOptions;\n    readonly composition?: FlowAgentComposition;\n    readonly subgraph?: FlowGraph;\n}',
+  },
+  {
+    name: 'FlowAgentOptions',
+    declaration: 'export interface FlowAgentOptions {\n    readonly provider?: string;\n    readonly model?: string;\n    readonly modelKinds?: Partial<Record<ModelKind, FlowModelKindBinding>>;\n}',
+  },
+  {
+    name: 'FlowConditionNode',
+    declaration: 'export interface FlowConditionNode extends FlowNodeBase {\n    readonly type: \'condition\';\n    readonly expression: string;\n}',
+  },
+  {
+    name: 'FlowEdge',
+    declaration: 'export interface FlowEdge {\n    readonly id: string;\n    readonly from: string;\n    readonly to: string;\n    readonly label?: string;\n}',
+  },
+  {
+    name: 'FlowEndNode',
+    declaration: 'export interface FlowEndNode extends FlowNodeBase {\n    readonly type: \'end\';\n}',
+  },
+  {
+    name: 'FlowGraph',
+    declaration: 'export interface FlowGraph {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly nodes: readonly FlowNode[];\n    readonly edges: readonly FlowEdge[];\n}',
+  },
+  {
+    name: 'FlowLoopNode',
+    declaration: 'export interface FlowLoopNode extends FlowNodeBase {\n    readonly type: \'loop\';\n    readonly iterable: string;\n    readonly variable: string;\n}',
+  },
+  {
+    name: 'FlowModelKindBinding',
+    declaration: 'export interface FlowModelKindBinding {\n    readonly provider?: string;\n    readonly model?: string;\n}',
+  },
+  {
+    name: 'FlowNode',
+    declaration: 'export type FlowNode = FlowStartNode | FlowEndNode | FlowAgentNode | FlowConditionNode | FlowLoopNode;',
+  },
+  {
+    name: 'FlowNodeBase',
+    declaration: 'export interface FlowNodeBase {\n    readonly id: string;\n    readonly type: FlowNodeType;\n    readonly position: {\n        readonly x: number;\n        readonly y: number;\n    };\n    readonly label?: string;\n}',
+  },
+  {
+    name: 'FlowNodeStatus',
+    declaration: 'export type FlowNodeStatus = \'pending\' | \'running\' | \'done\' | \'failed\' | \'cancelled\';',
+  },
+  {
+    name: 'FlowNodeType',
+    declaration: 'export type FlowNodeType = \'start\' | \'end\' | \'agent\' | \'condition\' | \'loop\';',
+  },
+  {
+    name: 'FlowRunHandle',
+    declaration: 'export interface FlowRunHandle {\n    readonly runId: FlowRunIdType;\n    readonly result: Promise<FlowRunOutcome>;\n    cancel(reason?: string): void;\n}',
+  },
+  {
+    name: 'FlowRunOutcome',
+    declaration: 'export interface FlowRunOutcome {\n    readonly status: Exclude<FlowRunStatus, \'running\'>;\n    readonly error?: string;\n    readonly agentsStarted: number;\n}',
+  },
+  {
+    name: 'FlowRunRequest',
+    declaration: 'export interface FlowRunRequest {\n    graph: FlowGraph;\n    input?: unknown;\n    parent: Agent;\n    signal?: AbortSignal;\n}',
+  },
+  {
+    name: 'FlowRunSnapshot',
+    declaration: 'export interface FlowRunSnapshot {\n    readonly runId: string;\n    readonly flowId: string;\n    readonly flowName: string;\n    readonly status: FlowRunStatus;\n    readonly stopReason?: WorkflowStopReason;\n    readonly error?: string;\n    readonly agentsStarted: number;\n    readonly nodeStatuses: Readonly<Record<string, FlowNodeStatus>>;\n}',
+  },
+  {
+    name: 'FlowRunStatus',
+    declaration: 'export type FlowRunStatus = \'running\' | \'completed\' | \'cancelled\' | \'error\';',
+  },
+  {
+    name: 'FlowRunSummary',
+    declaration: 'export interface FlowRunSummary {\n    readonly runId: string;\n    readonly flowId: string;\n    readonly flowName: string;\n    readonly status: FlowRunStatus;\n    readonly startedAt: number;\n}',
+  },
+  {
+    name: 'FlowStartNode',
+    declaration: 'export interface FlowStartNode extends FlowNodeBase {\n    readonly type: \'start\';\n}',
+  },
+  {
+    name: 'FlowSummary',
+    declaration: 'export interface FlowSummary {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly nodeCount: number;\n    readonly updatedAt: number;\n}',
+  },
+  {
     name: 'FsDirEntry',
     declaration: 'export interface FsDirEntry {\n    name: string;\n    type: \'file\' | \'directory\' | \'other\';\n    target: FsTarget;\n    version?: FsVersion;\n    size?: number;\n}',
   },
@@ -4022,7 +4304,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmDiscoveredModel',
-    declaration: 'export interface LlmDiscoveredModel {\n    id: string;\n    name?: string;\n    contextWindow?: number;\n    maxTokens?: number;\n}',
+    declaration: 'export interface LlmDiscoveredModel {\n    id: string;\n    name?: string;\n    contextWindow?: number;\n    maxTokens?: number;\n    inputModalities?: readonly ModelModality[];\n    kinds?: readonly ModelKind[];\n}',
   },
   {
     name: 'LlmFailure',
@@ -4038,7 +4320,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmModelInfo',
-    declaration: 'export interface LlmModelInfo {\n    provider: string;\n    id: string;\n    name: string;\n    description?: string;\n    inputModalities?: readonly ModelModality[];\n}',
+    declaration: 'export interface LlmModelInfo {\n    provider: string;\n    id: string;\n    name: string;\n    description?: string;\n    inputModalities?: readonly ModelModality[];\n    kinds?: readonly ModelKind[];\n}',
   },
   {
     name: 'LlmModelReasoningInfo',
@@ -4201,6 +4483,14 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface MessageSourceMap {\n    user: {\n        kind: \'user\';\n    };\n    plugin: {\n        kind: \'plugin\';\n        plugin: string;\n    } & ContextFormed;\n    model: ModelMessageSource;\n    tool: ToolMessageSource;\n}',
   },
   {
+    name: 'ModelKind',
+    declaration: 'export type ModelKind = ModelKindMap[keyof ModelKindMap];',
+  },
+  {
+    name: 'ModelKindMap',
+    declaration: 'export interface ModelKindMap {\n    text: \'text\';\n    image: \'image\';\n    audio: \'audio\';\n    embedding: \'embedding\';\n}',
+  },
+  {
     name: 'ModelMessageSource',
     declaration: 'export interface ModelMessageSource extends AssistantProvenance {\n    kind: \'model\';\n}',
   },
@@ -4229,6 +4519,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface PermissionSelect {\n    options: PresetOption[];\n    currentValue: string;\n}',
   },
   {
+    name: 'PluginEntryId',
+    declaration: 'export type PluginEntryId = Branded<\'PluginEntryId\'>;',
+  },
+  {
+    name: 'PluginFiberPhase',
+    declaration: 'export type PluginFiberPhase = \'pending\' | \'loading\' | \'active\' | \'failed\' | \'unloading\' | null;',
+  },
+  {
+    name: 'PluginInventoryEntry',
+    declaration: 'export interface PluginInventoryEntry {\n    readonly entryId: PluginEntryId;\n    readonly moduleName: string;\n    readonly enabled: boolean;\n    readonly fiberPhase: PluginFiberPhase;\n    readonly category?: string;\n    readonly description?: string;\n}',
+  },
+  {
+    name: 'PluginInventorySnapshot',
+    declaration: 'export interface PluginInventorySnapshot {\n    readonly entries: readonly PluginInventoryEntry[];\n}',
+  },
+  {
     name: 'PostToolDecision',
     declaration: 'export type PostToolDecision = {\n    kind: \'accept\';\n    content?: ContentBlock[];\n    value?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'accept\';\n    value: JsonValue;\n    content?: never;\n    additionalContexts?: UserMessage[];\n} | {\n    kind: \'block\';\n    feedback: ContentBlock[];\n    additionalContexts?: UserMessage[];\n};',
   },
@@ -4245,6 +4551,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PrepareSessionOptions = (CreateSessionOptions & {\n    readonly seedSource?: undefined;\n}) | RestoredSessionOptions;',
   },
   {
+    name: 'PresetMetadata',
+    declaration: 'export interface PresetMetadata {\n    readonly name?: string;\n    readonly description?: string;\n    readonly order?: number;\n}',
+  },
+  {
     name: 'PresetOption',
     declaration: 'export interface PresetOption {\n    value: string;\n    name: string;\n    description?: string;\n}',
   },
@@ -4257,12 +4567,24 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type PresetTrust = \'system\' | \'user\';',
   },
   {
+    name: 'PresetValidationReport',
+    declaration: 'export interface PresetValidationReport {\n    readonly rowIdConflicts: readonly string[];\n    readonly toolNameConflicts: readonly string[];\n    readonly disabledOnPlatform: readonly string[];\n}',
+  },
+  {
     name: 'PreStepDecision',
     declaration: 'export type PreStepDecision = {\n    kind: \'reject\';\n} | {\n    kind: \'enter\';\n    messages: UserMessage[];\n};',
   },
   {
     name: 'PreToolDecision',
     declaration: 'export type PreToolDecision = {\n    kind: \'allow\';\n} | {\n    kind: \'deny\';\n    reason: string;\n} | {\n    kind: \'ask\';\n    reason?: string;\n};',
+  },
+  {
+    name: 'ProjectInsightScanResult',
+    declaration: 'export interface ProjectInsightScanResult {\n    readonly status: ProjectInsightScanStatus;\n    readonly root: string;\n    readonly path: string;\n    readonly summary?: ScanSummary;\n    readonly error?: string;\n}',
+  },
+  {
+    name: 'ProjectInsightScanStatus',
+    declaration: 'export type ProjectInsightScanStatus = \'scanned\' | \'unchanged\' | \'error\';',
   },
   {
     name: 'ProjectionChangeListener',
@@ -4310,7 +4632,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'PublishCapabilityRequest',
-    declaration: 'export interface PublishCapabilityRequest {\n    readonly id: CapabilityId;\n    readonly name: string;\n    readonly roleId: RoleId;\n    readonly execution: ExecutionMode;\n    readonly version: string;\n    readonly rate: number;\n    readonly tools?: readonly string[];\n    readonly dependencies?: readonly {\n        readonly id: CapabilityId;\n        readonly range?: string;\n    }[];\n    readonly conflictsWith?: readonly CapabilityId[];\n    readonly enabled?: boolean;\n    readonly rollout?: number;\n    readonly description?: string;\n}',
+    declaration: 'export interface PublishCapabilityRequest {\n    readonly id: CapabilityId;\n    readonly name: string;\n    readonly roleId: RoleId;\n    readonly execution: ExecutionMode;\n    readonly version: string;\n    readonly rate: number;\n    readonly tools?: readonly string[];\n    readonly rows?: readonly EntryOptions[];\n    readonly dependencies?: readonly {\n        readonly id: CapabilityId;\n        readonly range?: string;\n    }[];\n    readonly conflictsWith?: readonly CapabilityId[];\n    readonly enabled?: boolean;\n    readonly rollout?: number;\n    readonly description?: string;\n}',
   },
   {
     name: 'PublishScenarioRequest',
@@ -4467,6 +4789,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SaveTextSpill',
     declaration: 'export interface SaveTextSpill {\n    owner: SpillOwner;\n    source: SpillSource;\n    suggestedName: string;\n    content: string;\n}',
+  },
+  {
+    name: 'ScanSummary',
+    declaration: 'export interface ScanSummary {\n    readonly files: number;\n    readonly modules: number;\n    readonly edges: number;\n    readonly components: number;\n    readonly techStack: string[];\n    readonly prompts: number;\n    readonly agentTechFiles: number;\n}',
   },
   {
     name: 'ScenarioBundle',

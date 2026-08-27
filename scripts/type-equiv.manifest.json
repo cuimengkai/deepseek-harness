@@ -212,6 +212,26 @@
       "source": "packages/goal/goal/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/context-composition.md",
+      "symbol": "ContextCompactionEntry",
+      "source": "packages/session/context-composition/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context-composition.md",
+      "symbol": "ContextComposition",
+      "source": "packages/session/context-composition/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context-composition.md",
+      "symbol": "ContextEnvelope",
+      "source": "packages/session/context-composition/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/context-composition.md",
+      "symbol": "ContextSurfaceRow",
+      "source": "packages/session/context-composition/src/types.ts"
+    },
+    {
       "doc": "docs/subsystems/goal.md",
       "symbol": "EditGoalRequest",
       "source": "packages/goal/goal/src/types.ts"
@@ -220,6 +240,16 @@
       "doc": "docs/subsystems/goal.md",
       "symbol": "GoalChanged",
       "source": "packages/goal/goal/src/domain.ts"
+    },
+    {
+      "doc": "docs/subsystems/project-insight.md",
+      "symbol": "ProjectInsightReadResult",
+      "source": "packages/insight/project-insight/src/service.ts"
+    },
+    {
+      "doc": "docs/subsystems/project-insight.md",
+      "symbol": "ProjectInsightScanResult",
+      "source": "packages/insight/project-insight/src/service.ts"
     },
     {
       "doc": "docs/subsystems/schedule.md",

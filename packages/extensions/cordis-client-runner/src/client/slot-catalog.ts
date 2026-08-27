@@ -1136,6 +1136,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     slotInject: '',
     declaredBy: 'an entry in \'conversation.session\' (client-ui-conversation), so it exists while that entry is mounted',
     occupants: [
+      'client-ui-context ContextView id \'context\'',
       'client-ui-conversation ChatView id \'chat\'',
       'client-ui-project-insight InsightTab',
       'client-ui-trajectory TrajectoryView id \'trajectory\'',

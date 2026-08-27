@@ -98,7 +98,10 @@ export async function verifyRuntimeClosure(
   }
 }
 
-if (import.meta.main) {
+// Run only when invoked as a script, not when imported by a spec. The argv
+// comparison, not import.meta.main (which first shipped in Node 24.5 while the
+// engines range admits 24.0), holds on every Node the repo supports.
+if (process.argv[1] !== undefined && import.meta.filename === resolve(process.argv[1])) {
   const root = resolve(import.meta.dirname, '..')
   const { values } = parseArgs({
     args: process.argv.slice(2),
