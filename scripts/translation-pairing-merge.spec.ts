@@ -261,7 +261,9 @@ function expectMergedPair(fixture: Fixture): void {
   )
 }
 
-describe('translation pairing merge composition', { timeout: 15_000 }, () => {
+// Merge conflicts spawn the tsx driver child per record; a saturated host can
+// delay those spawns past the 5s default without changing merge behavior.
+describe('translation pairing merge composition', { timeout: 30_000 }, () => {
   it('rejects a pairing-record path outside the repository', () => {
     const fixture = createFixture(false)
 

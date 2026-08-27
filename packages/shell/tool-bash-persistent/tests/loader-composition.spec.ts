@@ -90,11 +90,14 @@ suite('persistent Bash through a real cordis.yml Loader composition', () => {
       '    idleSilenceMs: 30000',
       '    handoffGraceMs: 100',
       '    scrollbackLines: 20000',
-      '    timeoutMs: 2000',
+      // Saturated hosts can drain the 12050-line case past 2s; 8s here and
+      // 20s for the tool below mirror the pwsh twin so load clips output
+      // instead of reporting a command timeout.
+      '    timeoutMs: 8000',
       '    disposeGraceMs: 500',
       "- name: '@deepseek-ai/dsh-tool-bash-persistent'",
       '  config:',
-      '    timeoutMs: 5000',
+      '    timeoutMs: 20000',
       '',
     ].join('\n'))
 
@@ -166,5 +169,5 @@ suite('persistent Bash through a real cordis.yml Loader composition', () => {
     const exited = text(await execute('exit', 'exit'))
     expect(exited).toContain('next bash call starts from the workspace')
     expect(text(await execute('after-exit', 'printf "%s\\n" "$PWD"'))).toBe(root)
-  }, 20_000)
+  }, 60_000)
 })

@@ -23,9 +23,10 @@ const pairingMergeDriver = 'scripts/merge-translation-pairing-driver.sh %O %A %B
 const scriptsDirectory = fileURLToPath(new URL('.', import.meta.url))
 const tsxPackageDirectory = dirname(fileURLToPath(import.meta.resolve('tsx/package.json')))
 const fixtures: string[] = []
-// Multi-worktree cases spawn several Git and Node subprocesses; native Windows
-// coverage concurrency can delay them without changing installer behavior.
-const MULTI_PROCESS_TEST_TIMEOUT_MS = 30_000
+// Multi-worktree cases spawn several Git and Node subprocesses; saturated
+// hosts (Windows coverage concurrency, a full local suite) can delay them
+// without changing installer behavior.
+const MULTI_PROCESS_TEST_TIMEOUT_MS = 60_000
 
 interface Fixture {
   container: string

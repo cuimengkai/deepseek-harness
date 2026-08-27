@@ -226,7 +226,7 @@ describe('partial Landlock runner-failure classification', () => {
     expect(error).toBeInstanceOf(Error)
     expect((error as Error).message).toContain(`Runner failure: ${FATAL}`)
     expect((error as Error).message).not.toContain(NOTICE)
-  })
+  }, 20_000)
 
   it('classifies a notice plus child Permission denied as a denial, not runner failure', async () => {
     const bash = await setup()

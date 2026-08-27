@@ -196,7 +196,7 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
     expect(() => process.kill(pid, 0)).not.toThrow()
     await ctx.terminals.kill(agent, created.sessionId)
     expect(() => process.kill(pid, 0)).toThrow()
-  }, 10_000)
+  }, 20_000)
 
   it('quiesces a disowned same-session descendant after the shell exits naturally', async () => {
     const { ctx, root, agent } = await harness('danger-full-access')

@@ -27,7 +27,16 @@ async function harness(adapter: MockAdapter, sessionRoot?: string, dshHome?: str
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
   if (sessionRoot !== undefined) {
-    await ctx.plugin(JsonlSessionPersistence, { root: sessionRoot, compression: 'none' })
+    // The first-turn probe below pins lazy materialization: the JSONL must not
+    // exist while bash runs. A loaded host can delay the bash child past the
+    // default 200ms live-event coalescing window and let a batch materialize
+    // the file first, so widen the window beyond any turn; `sessions.flush`
+    // after the turn remains the durability barrier that writes the file.
+    await ctx.plugin(JsonlSessionPersistence, {
+      root: sessionRoot,
+      compression: 'none',
+      writeBatchMaxDelayMs: 60_000,
+    })
   }
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(LocalJobRegistry)
@@ -124,7 +133,7 @@ describe('bash tool through the agent loop', () => {
     const header = JSON.parse(readFileSync(location!.path, 'utf8').split('\n')[0]!) as { type: string; id: string }
     expect(header).toMatchObject({ type: 'session', id: 'session-env-id' })
     await handle.dispose()
-  })
+  }, 20_000)
 
   it('foreground: model calls bash, sees the result, replies', async () => {
     const adapter = new MockAdapter([

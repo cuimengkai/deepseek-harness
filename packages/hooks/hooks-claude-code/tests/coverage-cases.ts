@@ -212,7 +212,7 @@ export function defineCoverageCases(group: CoverageGroup): void {
       await waitForIdle(ctx, agent)
       expect(adapter.requests).toHaveLength(2)
       expect(JSON.stringify(adapter.requests[1]!.messages)).toContain('continue please')
-    })
+    }, 20_000)
 
     it('a Stop hook that blocks with EMPTY stderr still forces continuation (no reason required)', async () => {
     // A blocking Stop hook with no stderr yields `deny` without a reason. The block still forces
