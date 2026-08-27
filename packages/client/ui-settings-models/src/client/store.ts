@@ -7,7 +7,8 @@
  */
 
 import type {
-  ConfigurableProviderView, CredentialView, IApiClient, SettingsNamespaceView,
+  ConfigurableProviderView, CredentialView, IApiClient, ModelProviderGroup,
+  SettingsNamespaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
@@ -20,6 +21,34 @@ import type { SettingsSchemaOperations } from './schema-operations.ts'
  */
 const PROBE_ROUTE = '\u0000probe'
 
+/**
+ * Settings namespace carrying the default model selection for future Agents
+ * (`@deepseek-ai/dsh-agent-default-model`). The page reads the composed value
+ * through the shared mirror and writes provider/model through `settings.mutate`.
+ */
+export const DEFAULT_MODEL_NS = 'agent-default-model'
+
+/** The default-model selection as this page reads and writes it. */
+export interface DefaultModelSelection {
+  /** Registered provider route. */
+  provider: string
+  /** Provider-owned model id. */
+  model: string
+}
+
+/**
+ * The composed default-model selection, or undefined when the namespace is
+ * not mounted or holds no complete pair. The stored reasoning-effort override
+ * stays unread here: effort is a per-model capability this page never offers.
+ */
+function defaultSelectionOf(namespace: SettingsNamespaceView | undefined): DefaultModelSelection | undefined {
+  if (namespace === undefined) return undefined
+  const value = namespace.value as { provider?: unknown; model?: unknown }
+  if (typeof value.provider !== 'string' || value.provider.length === 0) return undefined
+  if (typeof value.model !== 'string' || value.model.length === 0) return undefined
+  return { provider: value.provider, model: value.model }
+}
+
 /** One provider row the page renders. */
 export interface ProviderRow {
   /** The directory entry (route id, display name, settings address, live state). */
@@ -28,6 +57,12 @@ export interface ProviderRow {
   configured: boolean
   /** Whether the user layer alone carries the profile (removal restores the base). */
   removable: boolean
+  /**
+   * The resolved profile value at the entry's settings address (the whole
+   * section for an empty path). Read-only facts for the card's details view
+   * and the duplicate command; every write still goes through the editor.
+   */
+  profile: unknown
   /** The credential reference the resolved profile names, when one does. */
   apiKeyEnv: string | undefined
   /** Credential state for {@link apiKeyEnv}, once described. */
@@ -47,6 +82,12 @@ export interface ModelsSettingsState {
   rows: readonly ProviderRow[]
   /** Namespace views by ns, for the editor's schema/layers/secrets. */
   namespaces: ReadonlyMap<string, SettingsNamespaceView>
+  /** The default model selection for future Agents, when the namespace is mounted. */
+  defaultSelection: DefaultModelSelection | undefined
+  /** Host model catalog by provider (advisory enrichment; empty when unavailable). */
+  catalog: readonly ModelProviderGroup[]
+  /** Catalog enrichment failure; provider rows and the default badge remain usable. */
+  catalogError: string | null
 }
 
 /**
@@ -109,6 +150,7 @@ export class ModelsSettingsStore {
   /** The snapshot the section renders from (uSES-safe store). */
   readonly store: SnapshotStore<ModelsSettingsState> = createSnapshotStore<ModelsSettingsState>({
     status: 'idle', error: null, credentialError: null, writable: false, rows: [], namespaces: new Map(),
+    defaultSelection: undefined, catalog: [], catalogError: null,
   })
 
   /** Latest load wins; an older response never overwrites a newer one. */
@@ -162,8 +204,9 @@ export class ModelsSettingsStore {
     const namespaces = new Map(views.map(view => [view.ns, view]))
     const rows: ProviderRow[] = providers.map((entry) => {
       const namespace = namespaces.get(entry.settingsNs)
+      const profile = namespace === undefined ? undefined : this.schema.getPath(namespace.value, entry.settingsPath)
       const configured = namespace !== undefined
-        && (entry.settingsPath.length === 0 || this.schema.getPath(namespace.value, entry.settingsPath) !== undefined)
+        && (entry.settingsPath.length === 0 || profile !== undefined)
       const removable = namespace !== undefined
         && entry.settingsPath.length > 0
         && this.schema.hasPath(namespace.user, entry.settingsPath)
@@ -172,25 +215,22 @@ export class ModelsSettingsStore {
         entry,
         configured,
         removable,
+        profile,
         apiKeyEnv: apiKeyEnvOf(namespace, entry.settingsPath, this.schema),
         credential: undefined,
       }
     })
     const refs = [...new Set(rows.flatMap(row => row.apiKeyEnv === undefined ? [] : [row.apiKeyEnv]))]
-    let credentials: Record<string, CredentialView> = {}
-    let credentialError: string | null = null
-    if (refs.length > 0) {
-      try {
-        const response = await this.api.credentials.describe({ refs })
-        // Credential state is an enrichment for the Models page: neither a
-        // business rejection nor a transport failure fails the load. The
-        // onboarding projection below retains the failure distinction.
-        if (response.result.ok) credentials = response.result.value.credentials
-        else credentialError = response.result.error.message
-      } catch (error) {
-        credentialError = messageOf(error)
-      }
-    }
+    // Both enrichments fold their own failure into their half and never
+    // reject, so the page load itself cannot fail on either.
+    const [credentialsResult, catalogResult] = await Promise.all([
+      this.describeCredentials(refs),
+      this.loadCatalog(),
+    ])
+    const { credentials } = credentialsResult
+    const credentialError = credentialsResult.error
+    const { groups: catalog } = catalogResult
+    const catalogError = catalogResult.error
     if (generation !== this.generation) return
     this.store.update((s) => {
       s.status = 'ready'
@@ -204,7 +244,76 @@ export class ModelsSettingsStore {
           : {},
       }))
       s.namespaces = namespaces
+      s.defaultSelection = defaultSelectionOf(namespaces.get(DEFAULT_MODEL_NS))
+      s.catalog = catalog
+      s.catalogError = catalogError
     })
+  }
+
+  /**
+   * Credential enrichment for the joined rows: neither a business rejection
+   * nor a transport failure fails the load.
+   * @param refs - credential references the resolved profiles name.
+   * @returns the described views and a failure message, never a rejection.
+   */
+  private async describeCredentials(refs: readonly string[]): Promise<{
+    credentials: Record<string, CredentialView>
+    error: string | null
+  }> {
+    if (refs.length === 0) return { credentials: {}, error: null }
+    try {
+      const response = await this.api.credentials.describe({ refs: [...refs] })
+      if (response.result.ok) return { credentials: response.result.value.credentials, error: null }
+      return { credentials: {}, error: response.result.error.message }
+    } catch (error) {
+      return { credentials: {}, error: messageOf(error) }
+    }
+  }
+
+  /**
+   * Host model catalog enrichment: the per-provider model lists behind the
+   * default-model picker and the card summaries. A failure degrades those
+   * two surfaces without failing the load.
+   * @returns the provider groups and a failure message, never a rejection.
+   */
+  private async loadCatalog(): Promise<{ groups: ModelProviderGroup[]; error: string | null }> {
+    try {
+      const response = await this.api.llm.models({})
+      if (response.result.ok) return { groups: response.result.value.groups, error: null }
+      return { groups: [], error: response.result.error.message }
+    } catch (error) {
+      return { groups: [], error: messageOf(error) }
+    }
+  }
+
+  /**
+   * Save the default model selection for future Agents. The stored
+   * reasoning-effort override is dropped with the switch: effort is a
+   * per-model capability, and the level the previous model accepted could
+   * only fail resolution on the new one.
+   * @param selection - provider route and model id, as the host catalog names them.
+   * @returns the failure message, or undefined once the write and reload landed.
+   */
+  async setDefaultModel(selection: DefaultModelSelection): Promise<string | undefined> {
+    const namespace = this.store.getSnapshot().namespaces.get(DEFAULT_MODEL_NS)
+    try {
+      const response = await this.api.settings.mutate({
+        ns: DEFAULT_MODEL_NS,
+        ops: [
+          { op: 'set', path: ['provider'], value: selection.provider },
+          { op: 'set', path: ['model'], value: selection.model },
+          { op: 'unset', path: ['reasoningEffort'] },
+        ],
+        ...namespace === undefined ? {} : { expectedRevision: namespace.revision },
+      })
+      if (!response.result.ok) return response.result.error.message
+    } catch (error) {
+      // The transport rejected rather than answering; the caller can retry the
+      // idempotent write once the failure is read.
+      return messageOf(error)
+    }
+    await this.load()
+    return undefined
   }
 }
 

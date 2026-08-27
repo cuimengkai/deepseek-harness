@@ -6,7 +6,8 @@ import Schema from '@deepseek-ai/schemastery'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RpcResponse, SettingsNamespaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import {
-  ModelsSection, needsSetup, providerCopy, providerTargetLabel, removeProviderProfile,
+  duplicablePathOf, modelCopy, ModelsSection, needsSetup, profileFactsOf, providerCopy,
+  providerTargetLabel, removeProviderProfile,
 } from '../src/client/ModelsSection.tsx'
 import type { ModelsSectionInjected, ModelsSectionProps } from '../src/client/ModelsSection.tsx'
 import { pathOps } from '../src/client/ProviderEditor.tsx'
@@ -122,6 +123,18 @@ function wireNamespaces(): SettingsNamespaceView[] {
       secrets: [],
       revision: 0,
     },
+    {
+      ns: 'agent-default-model',
+      schema: JSON.parse(JSON.stringify(Schema.object({
+        provider: Schema.string(),
+        model: Schema.string(),
+      }).toJSON())) as unknown,
+      value: { provider: 'openai', model: 'gpt-4o' },
+      user: {},
+      applies: 'live',
+      secrets: [],
+      revision: 0,
+    },
   ]
 }
 
@@ -160,7 +173,17 @@ function scriptedFace(overrides: {
           { provider: 'plain', displayName: 'plain', settingsNs: 'llm-plain', settingsPath: ['profiles', 'plain'], active: false },
         ],
       }))),
-      models: vi.fn(() => Promise.resolve(ok({ groups: [], failures: [] }))),
+      models: vi.fn(() => Promise.resolve(ok({
+        groups: [{
+          id: 'openai',
+          name: 'openai',
+          models: [
+            { id: 'gpt-4o', name: 'GPT-4o' },
+            { id: 'gpt-4o-mini', name: 'GPT-4o mini' },
+          ],
+        }],
+        failures: [],
+      }))),
     },
     settings: {
       describe: vi.fn(() => Promise.resolve(ok({ writable: true, hasDocument: false, namespaces: wireNamespaces() }))),
@@ -229,6 +252,16 @@ async function mountDeepSeekCard(overrides: Parameters<typeof scriptedFace>[0] =
   return mounted
 }
 
+/**
+ * Open the add dialog from the grid tile, pick the first dormant provider
+ * (anthropic), and land on its editor modal.
+ */
+async function openAddEditor(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: en.add }))
+  fireEvent.click(await screen.findByRole('button', { name: 'anthropic' }))
+  await screen.findByLabelText(en.provider)
+}
+
 describe('ModelsSection', () => {
   it('renders nothing before the slot injects its dependencies', () => {
     const uninjected = {} as ModelsSectionProps
@@ -245,7 +278,33 @@ describe('ModelsSection', () => {
     expect(screen.getByText('openai')).toBeTruthy()
     expect(screen.queryByText('Active')).toBeNull()
     expect(screen.queryByText('Inactive')).toBeNull()
-    expect(screen.getByText(en.add)).toBeTruthy()
+    // Dormant directory providers render as adoptable tiles beside the grid's
+    // own add entry.
+    expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
+    expect(screen.getByText('anthropic').closest('li')?.textContent).toContain(en.notConfigured)
+  })
+
+  it('marks every card with a stable letter avatar derived from its route', async () => {
+    await mountSection()
+    // The route set is open, so no logos ship: each card carries the display
+    // name's first character on a palette color hashed from the route id —
+    // decorative (aria-hidden) and identical on every load.
+    const cardOf = (name: string): HTMLElement => {
+      const card = screen.getByText(name).closest('li')
+      if (card === null) throw new Error(`no card for ${name}`)
+      return card
+    }
+    const deepSeekAvatar = within(cardOf('DeepSeek')).getByText('D')
+    expect(deepSeekAvatar.className).toMatch(/avatar/)
+    expect(deepSeekAvatar.getAttribute('aria-hidden')).toBe('true')
+    // Same route, same class on both surfaces: the dormant anthropic tile and
+    // its pick-dialog row paint the same palette color.
+    const anthropicAvatar = within(cardOf('anthropic')).getByText('A')
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    const pickAvatar = within(
+      screen.getByRole('button', { name: 'anthropic' }),
+    ).getByText('A')
+    expect(pickAvatar.className).toBe(anthropicAvatar.className)
   })
 
   it('leaves the unkeyed provider a plain row once another provider is usable', async () => {
@@ -302,8 +361,8 @@ describe('ModelsSection', () => {
       schema={settingsSchema}
       t={t}
     />)
-    // Now a row with an Edit button, not an open card.
-    expect(screen.getAllByText(en.edit).length).toBeGreaterThan(1)
+    // Now rows with Edit icon actions, not an open card.
+    expect(screen.getAllByTitle(en.edit).length).toBeGreaterThan(1)
     expect(screen.queryByLabelText(en.keyInput)).toBeNull()
   })
 
@@ -313,6 +372,7 @@ describe('ModelsSection', () => {
       entry,
       configured: true,
       removable: false,
+      profile: {},
       apiKeyEnv: 'X',
       credential,
     })
@@ -359,7 +419,7 @@ describe('ModelsSection', () => {
     expect((await screen.findByRole('status')).textContent).toBe(
       providerCopy(en.savedProvider, { provider: 'deepseek-official', displayName: 'DeepSeek' }),
     )
-    fireEvent.click(screen.getByText(en.add))
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
     expect(screen.queryByRole('status')).toBeNull()
   })
 
@@ -952,7 +1012,10 @@ describe('ModelsSection', () => {
 
   it('adds a dormant provider with a derived reference and stores its key', async () => {
     const { mutate, set } = await mountSection()
-    fireEvent.click(screen.getByText(en.add))
+    fireEvent.click(screen.getByRole('button', { name: en.add }))
+    // The pick dialog lists every dormant directory provider; picking one
+    // lands on its editor with that provider selected.
+    fireEvent.click(await screen.findByRole('button', { name: 'anthropic' }))
     const pick = await screen.findByLabelText<HTMLSelectElement>(en.provider)
     expect([...pick.options].map(option => option.value)).toEqual(['anthropic', 'broken', 'plain'])
     expect(pick.value).toBe('anthropic')
@@ -975,8 +1038,7 @@ describe('ModelsSection', () => {
 
   it('keeps pi-ai provider-native authentication when no key is entered', async () => {
     const { mutate, set } = await mountSection()
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
+    await openAddEditor()
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
     expect(mutate.mock.calls[0]?.[0]).toEqual({
@@ -1006,8 +1068,7 @@ describe('ModelsSection', () => {
       .mockResolvedValueOnce(fail('credential store unavailable', 'credential-rejected'))
       .mockResolvedValueOnce(ok({}))
     const { face, controller, mirror } = await mountSection({ mutate, set })
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
+    await openAddEditor()
     fireEvent.change(screen.getByLabelText<HTMLInputElement>(en.keyInput), { target: { value: 'sk-ant' } })
     fireEvent.click(screen.getByText(en.apply))
     await screen.findByText('credential store unavailable')
@@ -1032,8 +1093,8 @@ describe('ModelsSection', () => {
 
   it('switches the add card target and degrades unknown or broken targets loudly', async () => {
     await mountSection()
-    fireEvent.click(screen.getByText(en.add))
-    const pick = await screen.findByLabelText<HTMLSelectElement>(en.provider)
+    await openAddEditor()
+    const pick = screen.getByLabelText<HTMLSelectElement>(en.provider)
     fireEvent.change(pick, { target: { value: 'broken' } })
     await screen.findByText(/unresolvable settings path/)
     fireEvent.change(pick, { target: { value: 'plain' } })
@@ -1049,8 +1110,7 @@ describe('ModelsSection', () => {
     const { set } = await mountSection({
       mutate: vi.fn(() => Promise.resolve(fail('llm-pi-ai: unknown pi-ai provider "bogus"'))),
     })
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
+    await openAddEditor()
     fireEvent.change(screen.getByLabelText<HTMLInputElement>(en.keyInput), { target: { value: 'sk-x' } })
     fireEvent.click(screen.getByText(en.apply))
     await screen.findByText(/unknown pi-ai provider/)
@@ -1236,54 +1296,205 @@ describe('ModelsSection', () => {
       t={t}
     />)
     expect(screen.getByText(en.readOnly)).toBeTruthy()
-    expect(screen.getAllByText<HTMLButtonElement>(en.remove).every(button => button.disabled)).toBe(true)
-    expect(screen.getByText<HTMLButtonElement>(en.add).disabled).toBe(true)
+    // Removal is a hover-revealed icon action named by its title; read-only
+    // disables it wherever it appears.
+    expect(screen.getAllByTitle<HTMLButtonElement>(en.remove).every(button => button.disabled)).toBe(true)
+    // Every add entry — the list tile and each dormant card — refuses writes.
+    expect(screen.getAllByText<HTMLButtonElement>(en.add).every(button => button.disabled)).toBe(true)
   })
 
-  it('toggles the row editor closed on a second edit click and on cancel', async () => {
+  it('opens the row editor in a modal and closes it on cancel without writing', async () => {
     const { update } = await mountSection()
-    const edit = screen.getByRole('button', { name: openaiCopy(en.editProvider) })
-    fireEvent.click(edit)
+    fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
     await waitFor(() => { expect(screen.queryAllByLabelText(en.keyInput).length).toBe(1) })
-    fireEvent.click(edit)
+    fireEvent.click(screen.getByText(en.cancel))
     expect(screen.queryAllByLabelText(en.keyInput)).toHaveLength(0)
-    fireEvent.click(edit)
+    // The modal reopens for another pass at the same row.
+    fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
     await waitFor(() => { expect(screen.queryAllByLabelText(en.keyInput).length).toBe(1) })
     fireEvent.click(screen.getByText(en.cancel))
     expect(screen.queryAllByLabelText(en.keyInput)).toHaveLength(0)
     expect(update).not.toHaveBeenCalled()
   })
 
-  it('cancels the add card back to the add button', async () => {
+  it('cancels the add card back to the grid tile', async () => {
     await mountSection()
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
+    await openAddEditor()
     fireEvent.click(screen.getByText(en.cancel))
-    await screen.findByText(en.add)
+    await screen.findByRole('button', { name: en.add })
     expect(screen.queryByLabelText(en.provider)).toBeNull()
   })
 
-  it('collapses the setup card on cancel without disturbing another open card', async () => {
-    // The regression: the setup card shared the row/add/declare close handler,
-    // so cancelling it discarded the add card's draft while staying open itself.
+  it('marks the default provider and refuses a switch the catalog cannot serve', async () => {
+    const { face, controller, mutate } = await mountSection()
+    // openai is the composed default: its card carries the in-use command and
+    // no second default action, while the catalog summary quotes its model count.
+    expect(screen.getByText(en.inUse).closest('li')?.textContent).toContain('openai')
+    expect(screen.queryAllByRole('button', { name: openaiCopy(en.setDefaultProvider) })).toHaveLength(0)
+    // DeepSeek becomes usable once its credential is described as stored…
+    face.credentials.describe.mockImplementation((payload: { refs: string[] }) =>
+      Promise.resolve(ok({ credentials: Object.fromEntries(payload.refs.map(ref => [ref, {
+        configured: true, source: 'file', writable: true,
+      }])) })))
+    await act(async () => { await controller.load() })
+    // …but the host catalog advertises no DeepSeek group, so the one-click
+    // command stays disabled with the reason as its title instead of offering
+    // a free-typed id the host would refuse to resolve.
+    const switchCommand = screen.getByRole<HTMLButtonElement>('button', { name: deepSeekCopy(en.setDefaultProvider) })
+    expect(switchCommand.disabled).toBe(true)
+    expect(switchCommand.title).toBe(en.defaultNoModels)
+    expect(mutate).not.toHaveBeenCalled()
+  })
+
+  it('switches the default model through the card command and reloads the page', async () => {
+    const afterDefault = wireNamespaces().map(namespace => namespace.ns === 'agent-default-model'
+      ? {
+        ...namespace,
+        value: { provider: 'deepseek-official', model: 'deepseek-v4-pro' },
+        revision: 1,
+      }
+      : namespace)
+    const mutate = vi.fn((_request: unknown) => Promise.resolve(ok(afterDefault[3]!)))
+    const { face, controller, mirror } = await mountSection({ mutate })
+    // DeepSeek needs a stored credential and a catalog group before its card
+    // offers the switch.
+    face.credentials.describe.mockImplementation((payload: { refs: string[] }) =>
+      Promise.resolve(ok({ credentials: Object.fromEntries(payload.refs.map(ref => [ref, {
+        configured: true, source: 'file', writable: true,
+      }])) })))
+    face.llm.models.mockResolvedValue(ok({
+      groups: [{
+        id: 'deepseek-official',
+        name: 'DeepSeek',
+        models: [
+          { id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash' },
+          { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro' },
+        ],
+      }],
+      failures: [],
+    }))
+    await act(async () => { await controller.load() })
+    face.settings.describe.mockResolvedValue(ok({
+      writable: true,
+      hasDocument: false,
+      namespaces: afterDefault,
+    }))
+    // The mirror holds its view; refresh it so the write's own reload reads
+    // the committed default rather than the opening snapshot.
+    await act(async () => { await mirror.load() })
+
+    // Several catalog models: the command opens a model menu; picking one
+    // commits the write — one click from the card, no dialog.
+    fireEvent.click(screen.getByRole('button', { name: deepSeekCopy(en.setDefaultProvider) }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: /DeepSeek-V4-Pro/ }))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(mutate.mock.calls[0]?.[0]).toEqual({
+      ns: 'agent-default-model',
+      ops: [
+        { op: 'set', path: ['provider'], value: 'deepseek-official' },
+        { op: 'set', path: ['model'], value: 'deepseek-v4-pro' },
+        { op: 'unset', path: ['reasoningEffort'] },
+      ],
+      expectedRevision: 0,
+    })
+    // The reload moved the in-use command and reports the saved model.
+    expect((await screen.findByRole('status')).textContent).toBe(modelCopy(en.savedDefault, 'deepseek-v4-pro'))
+    expect(screen.getByText(en.inUse).closest('li')?.textContent).toContain('DeepSeek')
+  })
+
+  it('expands a card to its profile facts and serving models', async () => {
+    await mountSection()
+    // openai: a dict-keyed pi-ai profile with an endpoint and a named
+    // credential reference, plus a catalog group of two serving models.
+    fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.detailsProvider) }))
+    const openaiRow = screen.getByText('openai').closest('li')
+    if (openaiRow === null) throw new Error('no openai row')
+    expect(openaiRow.textContent).toContain('https://proxy')
+    expect(openaiRow.textContent).toContain('OPENAI_API_KEY')
+    expect(openaiRow.textContent).toContain('GPT-4o')
+    expect(openaiRow.textContent).toContain('GPT-4o mini')
+    // The whole-section DeepSeek card reads its endpoint from the section
+    // value; with no catalog group, the models line says so.
+    fireEvent.click(screen.getByRole('button', { name: deepSeekCopy(en.detailsProvider) }))
+    const deepSeekRow = screen.getByText('DeepSeek').closest('li')
+    if (deepSeekRow === null) throw new Error('no DeepSeek row')
+    expect(deepSeekRow.textContent).toContain('https://base')
+    expect(deepSeekRow.textContent).toContain(en.defaultNoModels)
+  })
+
+  it('duplicates a dict-keyed provider profile under a fresh route key', async () => {
+    const mutate = vi.fn((_request: unknown) => Promise.resolve(ok(wireNamespaces()[2])))
+    await mountSection({ mutate })
+    fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.duplicateProvider) }))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
+    expect(mutate.mock.calls[0]?.[0]).toEqual({
+      ns: 'llm-pi-ai',
+      ops: [{
+        op: 'set',
+        path: ['providers', 'openai-copy'],
+        // The copy shares the source's credential reference: a stored key is
+        // write-only, so the page cannot re-store it under a new reference.
+        value: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy', headers: { 'X-Team': 'a' } },
+      }],
+      expectedRevision: 0,
+    })
+    expect((await screen.findByRole('status')).textContent).toContain('openai-copy')
+    // Only a providers-dict route offers the copy: the whole-section
+    // DeepSeek route and a non-providers dict layout have no sibling key.
+    expect(screen.queryByRole('button', { name: deepSeekCopy(en.duplicateProvider) })).toBeNull()
+    expect(screen.queryByRole('button', {
+      name: providerCopy(en.duplicateProvider, { provider: 'plain', displayName: 'plain' }),
+    })).toBeNull()
+  })
+
+  it('offers dormant directory providers through the primary enable command', async () => {
+    await mountSection()
+    const enable = screen.getByRole('button', {
+      name: providerCopy(en.addProvider, { provider: 'anthropic', displayName: 'anthropic' }),
+    })
+    expect(enable.textContent).toContain(en.enable)
+    expect(enable.closest('li')?.textContent).toContain(en.notConfigured)
+  })
+
+  it('reads endpoint facts and addresses only providers-dict routes for a duplicate', () => {
+    expect(profileFactsOf({ baseURL: 'https://x', api: 'openai-completions' }))
+      .toEqual({ baseURL: 'https://x', api: 'openai-completions' })
+    expect(profileFactsOf({ baseURL: '' })).toEqual({})
+    expect(profileFactsOf(undefined)).toEqual({})
+    const row = (settingsPath: string[]): ProviderRow => ({
+      entry: {
+        provider: 'p', displayName: 'p', settingsNs: 'llm-pi-ai', settingsPath, active: true,
+      },
+      configured: true,
+      removable: false,
+      profile: {},
+      apiKeyEnv: undefined,
+      credential: undefined,
+    })
+    expect(duplicablePathOf(row(['providers', 'x']))).toEqual(['providers', 'x'])
+    expect(duplicablePathOf(row([]))).toBeUndefined()
+    expect(duplicablePathOf(row(['profiles', 'x']))).toBeUndefined()
+  })
+
+  it('collapses the setup card on cancel without disturbing an open editor modal', async () => {
+    // The regression: the setup card shared the dialogs' close handler, so
+    // cancelling it discarded the editor modal's draft while staying open itself.
     await mountFirstRun()
     expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(1)
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
-    expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(2)
+    fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
+    await waitFor(() => { expect(screen.getAllByLabelText(en.keyInput).length).toBe(2) })
 
-    // The setup card is the first one on the page, above the add block.
+    // The setup card is the first one on the page, under the modal's mask.
     fireEvent.click(screen.getAllByText(en.cancel)[0] as HTMLElement)
-    // The add card kept its draft…
-    expect(screen.getByLabelText(en.provider)).toBeTruthy()
-    // …and DeepSeek collapsed to an ordinary row carrying the missing-key dot.
-    expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(1)
+    // The editor modal kept its draft…
+    expect(screen.getAllByLabelText(en.keyInput).length).toBe(1)
+    // …and DeepSeek collapsed to an ordinary card carrying the missing-key dot.
     expect(screen.getAllByRole('img', { name: en.credentialMissing })
       .some(dot => dot.closest('li')?.textContent?.includes('DeepSeek') === true)).toBe(true)
-    // Its card reopens through Edit, which closes the add card as any row does.
+    // Its card reopens through Edit, which replaces the open modal.
     fireEvent.click(screen.getByRole('button', { name: deepSeekCopy(en.editProvider) }))
     expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(1)
-    expect(screen.queryByLabelText(en.provider)).toBeNull()
   })
 
   it('loads on first render of an idle controller', async () => {

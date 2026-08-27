@@ -52,13 +52,29 @@ describe('ModelsSection theme styles', () => {
     expect((bare.match(/\}/g) ?? []).length).toBe((bare.match(/\{/g) ?? []).length)
   })
 
-  it('separates the row card from the editor it expands into', () => {
+  it('separates the provider card from the editor it opens beside', () => {
     // `bg-layer-3` and `bg-module-platform` both resolve to neutral-bluish-800
-    // under the dark theme, so filling the row with either erases the nested
-    // editor's boundary. The row is outlined; the fill is the editor's alone.
+    // under the dark theme, so filling the card with either erases the nested
+    // editor's boundary. The card is outlined; the fill is the editor's alone.
     expect(block('.editor')).toContain('background: var(--dsw-alias-bg-module-platform)')
-    expect(block('.rowCard')).toContain('border: 1px solid var(--dsw-alias-border-l2)')
-    expect(block('.rowCard')).not.toMatch(/\bbackground\s*:/)
+    expect(block('.card')).toContain('border: 1px solid var(--dsw-alias-border-l2)')
+    expect(block('.card')).not.toMatch(/\bbackground\s*:/)
+  })
+
+  it('marks the default provider card by recoloring its outline, not its fill', () => {
+    // The in-use card must stay readable next to its siblings: the brand
+    // border recolors while the fill stays empty, so the badge and the outline
+    // carry the highlight without washing out the dark theme.
+    expect(block('.cardDefault')).toContain('border-color: var(--dsw-alias-brand-primary)')
+    expect(block('.cardDefault')).not.toMatch(/\bbackground\s*:/)
+  })
+
+  it('keeps the card icon actions always visible', () => {
+    // cc-switch renders its edit/duplicate/delete row on every card; gating
+    // the row behind a hover would hide management from keyboard and touch
+    // users, so the actions carry no opacity or pointer-events gating.
+    expect(block('.iconActions')).not.toMatch(/opacity\s*:/)
+    expect(block('.iconActions')).not.toMatch(/pointer-events\s*:/)
   })
 
   it('gives every dropdown the shared chevron instead of the OS arrow', () => {

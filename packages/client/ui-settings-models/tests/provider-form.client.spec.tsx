@@ -159,10 +159,17 @@ async function mountSection(options: Parameters<typeof scriptedFace>[0] = {}) {
 function openEditor(provider: string): void {
   const row = screen.getByText(provider).closest('li')
   if (row === null) throw new Error(`no row for ${provider}`)
-  fireEvent.click(within_(row, en.edit))
+  fireEvent.click(within_(row, en.editProvider.replace('{provider}', provider)))
   const summary = document.querySelector('summary')
   if (summary === null) throw new Error('no customized fold')
   fireEvent.click(summary)
+}
+
+/** Open the declare-custom card from the grid's add dialog. */
+async function openCreateCard(): Promise<void> {
+  fireEvent.click(screen.getByRole('button', { name: en.add }))
+  fireEvent.click(await screen.findByRole('button', { name: en.customAdd }))
+  await screen.findByText(en.customTitle)
 }
 
 /** Open one model row's advanced fold, where the capacities live. */
@@ -177,9 +184,10 @@ function buttonNamed(label: string): HTMLButtonElement {
   return found
 }
 
-/** Click the button with `label` inside `scope`. */
+/** Click the button named `label` inside `scope` — visible text or aria-label. */
 function within_(scope: HTMLElement, label: string): HTMLElement {
-  const found = [...scope.querySelectorAll('button')].find(button => button.textContent === label)
+  const found = [...scope.querySelectorAll('button')].find(button =>
+    button.textContent === label || button.getAttribute('aria-label') === label)
   if (found === undefined) throw new Error(`no "${label}" button`)
   return found
 }
@@ -656,7 +664,9 @@ describe('endpoint interrogation', () => {
     openEditor('openai')
 
     fireEvent.click(screen.getByText(en.fetchModels))
-    const dialog = await screen.findByRole('dialog')
+    // The editor itself renders in a dialog now, so the fetch picker is named
+    // by its own title rather than being the only dialog on screen.
+    const dialog = await screen.findByRole('dialog', { name: en.fetchTitle })
     const boxes = [...dialog.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')]
     expect(boxes.map(box => box.checked)).toEqual([true, true, true])
 
@@ -1244,24 +1254,23 @@ describe('hand-declared providers', () => {
   it('closes the create card when an existing row is opened for editing', async () => {
     await mountSection({ providers: { openai: { baseURL: 'https://proxy.example/v1' } } })
 
-    fireEvent.click(screen.getByRole('button', { name: en.customAdd }))
-    expect(screen.getByText(en.customTitle)).toBeTruthy()
+    await openCreateCard()
 
-    // Two cards at once would each be closable by the other: whichever one is
-    // dismissed clears the shared state and discards the other's draft.
+    // Two dialogs at once would each be closable by the other: opening one
+    // replaces the shared dialog state and discards the other's draft.
     openEditor('openai')
     expect(screen.queryByText(en.customTitle)).toBeNull()
   })
 
-  it('reaches the card from the section and returns to the button on cancel', async () => {
+  it('reaches the card from the section and returns to the add entry on cancel', async () => {
     await mountSection()
 
-    fireEvent.click(screen.getByRole('button', { name: en.customAdd }))
-    expect(screen.getByText(en.customTitle)).toBeTruthy()
+    await openCreateCard()
 
     fireEvent.click(screen.getByText(en.cancel))
     await waitFor(() => { expect(screen.queryByText(en.customTitle)).toBeNull() })
-    expect(screen.getByRole('button', { name: en.customAdd })).toBeTruthy()
+    // The add entry still reaches the declare card for another pass.
+    await openCreateCard()
   })
 
   it('refuses an unusable key on the field and blocks creation', () => {
@@ -1432,7 +1441,7 @@ describe('API key field', () => {
     const { controller, mutate } = await mountSection()
     const load = vi.spyOn(controller, 'load')
 
-    fireEvent.click(screen.getByRole('button', { name: en.customAdd }))
+    await openCreateCard()
     fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'acme' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://acme.test/v1' } })
     fireEvent.click(screen.getByRole('button', { name: en.addModel }))

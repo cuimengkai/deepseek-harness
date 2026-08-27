@@ -47,31 +47,157 @@
   color: var(--dsw-alias-state-success-primary);
 }
 
-.rows {
+/* Provider cards stack as full-width rows — the cc-switch posture: one
+ * glance down the list compares providers, and each row carries its own
+ * switch action at the same right-edge position. */
+.list {
   list-style: none;
   /* Extra air between the title/intro block and the first provider card. */
   margin: 12px 0 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  align-items: stretch;
 }
 
 /* A configured provider: outlined on the panel fill, so the filled editor
-   card it expands into reads as the nested object. */
-.rowCard {
+   dialog it opens reads as the elevated object. A column that stacks the
+   horizontal row (avatar, identity block, actions at the right edge) over
+   the expandable details panel. */
+.card {
   border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 12px;
-  padding: 12px 14px;
+  padding: 10px 14px;
   display: flex;
   flex-direction: column;
+  gap: 10px;
+}
+
+/* The card's horizontal band — avatar, identity block, then the actions
+   pinned to the right edge at the same position on every card. */
+.cardRow {
+  display: flex;
+  align-items: center;
   gap: 12px;
 }
 
-.rowHead {
+/* The card carrying the default selection: the brand border names the route
+   every future Agent starts on, the same accent the composer's selection
+   carries. */
+.cardDefault {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+/* A dormant directory entry: dashed, like every other "nothing here yet"
+   affordance on this page, to read as a place rather than a command. */
+.cardDormant {
+  border-style: dashed;
+}
+
+/* The expandable details panel under a card's row: the read-only facts the
+   profile and the catalog already hold, separated from the row above by a
+   hairline. */
+.cardDetails {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding-top: 10px;
   display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Fact pairs: label column at caption size, value taking the rest. */
+.detailGrid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 16px;
+  row-gap: 4px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.detailGrid dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.detailGrid dd {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* The serving model list: wrapped chips of model names. */
+.detailModels {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 18px;
+  min-width: 0;
+}
+
+.detailModelsLabel {
+  flex: none;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.modelList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.modelChip {
+  padding: 0 8px;
+  border-radius: 9px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+  overflow-wrap: anywhere;
+}
+
+/* The details toggle's chevron flips while the panel is open. */
+.chevronOpen {
+  transform: rotate(180deg);
+}
+
+/* Provider avatar: the display name's first character on a rounded square,
+   on a palette color picked deterministically from the route id. The route
+   set is open (catalog entries and hand-declared routes alike), so no logo
+   assets exist to ship; the letter stands in for one, stays stable across
+   loads, and colors apart side-by-side cards in both themes. */
+.avatar {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: inline-flex;
   align-items: center;
-  gap: 10px;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--dsw-static-neutral-bluish-50);
+}
+
+.avatarBlue { background: var(--dsw-static-blue-500); }
+.avatarDeepseek { background: var(--dsw-static-deepseek-500); }
+.avatarGreen { background: var(--dsw-static-green-500); }
+.avatarRed { background: var(--dsw-static-red-500); }
+.avatarAmber { background: var(--dsw-static-amber-500); }
+
+/* The identity block between the avatar and the actions: the name line and
+   the one-line summary stack, taking whatever width the actions leave. */
+.cardBody {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .rowIdentity {
@@ -124,6 +250,68 @@
   align-items: center;
   gap: 4px;
   margin-left: auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* Card-row button size: 36px pills dwarf a one-line row; 30px keeps the
+   switch action prominent (it is the row's primary command) without eating
+   the identity block. */
+.cardButton {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 13px;
+  flex: none;
+}
+
+/* The one-click switch is the row's identity command; the icon actions sit
+   beside it always visible — cc-switch renders its edit/duplicate/delete row
+   on every card, so management stays one glance away without a hover. */
+.iconActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.iconButton {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.iconButtonDanger:hover:not(:disabled) {
+  background: var(--dsw-alias-state-error-primary);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.iconButton:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* One line of what the card serves: the default model on the in-use card,
+   the advertised model count on the others. */
+.cardSummary {
+  margin: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
 }
 
 /* `box-sizing` on every control here: the app has no global border-box reset,
@@ -207,6 +395,8 @@
 .secondaryButton:disabled,
 .dangerButton:disabled,
 .addButton:disabled,
+.addTileButton:disabled,
+.pickRow:disabled,
 .linkButton:disabled,
 .addModelButton:disabled {
   opacity: 0.4;
@@ -217,6 +407,8 @@
 .secondaryButton:focus-visible,
 .dangerButton:focus-visible,
 .addButton:focus-visible,
+.addTileButton:focus-visible,
+.pickRow:focus-visible,
 .linkButton:focus-visible,
 .addModelButton:focus-visible,
 .iconButton:focus-visible,
@@ -305,35 +497,8 @@
   gap: 8px;
 }
 
-.addBlock {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-/* The two ways to gain a provider, as equal siblings spanning the same width
-   as the rows above. Wraps rather than shrinking below a legible label. */
-.addActions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.addButton {
-  /* Overrides the shared button base above: these two are not pills sitting in
-     a footer but the last slot of the provider list, so they split the row
-     evenly and repeat the row cards' corner. Dashed, like every other "nothing
-     here yet" affordance on this page, to read as a place rather than a
-     command. */
-  flex: 1 1 0;
-  min-width: 180px;
-  gap: 6px;
-  height: 44px;
-  border: 1px dashed var(--dsw-alias-border-l3);
-  border-radius: 12px;
-}
-
-.addCard,
+/* The setup card is the provider's presence on the page in the first-run
+   posture, not one row among others. */
 .setupCard {
   border-radius: 12px;
   background: var(--dsw-alias-bg-module-platform);
@@ -345,10 +510,85 @@
 }
 
 /* Nested in a card that already carries the module chrome. */
-.addCard .editor,
 .setupCard .editor {
   background: none;
   padding: 0;
+}
+
+/* The list's last row: a full-width dashed button that opens the add
+   dialog, repeating the dormant card's "place, not command" language. */
+.addTile {
+  display: flex;
+}
+
+.addTileButton {
+  /* `box-sizing`: no global border-box reset (see the controls note above). */
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.addTileButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* The add dialog's preset list: one full-width row per dormant provider. */
+.pickList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pickRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.pickRow:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.addButton {
+  /* The add dialog's declare entry: the dashed "nothing here yet" border on
+     the standard capsule base the controls above already share. */
+  gap: 6px;
+  margin-top: 10px;
+  border-style: dashed;
+  border-color: var(--dsw-alias-border-l3);
+}
+
+/* The editor dialogs hold whole provider forms (key, endpoint, model list),
+   so they take more width than a confirm dialog and scroll their body. */
+.editorDialogContent {
+  width: min(640px, 100%);
 }
 
 .customized {
@@ -712,5 +952,58 @@ select.input {
   flex: 1 1 auto;
   font-family: var(--ds-font-family-code);
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+/* Default-model dialog: the current selection above one radio row per
+   advertised model, the same row anatomy the fetch picker uses. */
+.dialogCurrent {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.modelChoiceList {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 320px;
+  margin: 0;
+  overflow-y: auto;
+  padding: 0;
+  list-style: none;
+}
+
+.modelChoiceRow {
+  border-radius: 6px;
+}
+
+.modelChoiceLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.modelChoiceLabel input {
+  margin: 0;
+  accent-color: var(--dsw-alias-brand-primary);
+}
+
+.modelChoiceName {
+  color: var(--dsw-alias-label-primary);
+  font-size: 14px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+
+.modelChoiceId {
+  flex: 1 1 auto;
+  margin-left: auto;
+  font-family: var(--ds-font-family-code);
+  font-size: 13px;
+  color: var(--dsw-alias-label-tertiary);
   overflow-wrap: anywhere;
 }
