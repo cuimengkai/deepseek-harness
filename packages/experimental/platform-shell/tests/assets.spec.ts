@@ -55,7 +55,7 @@ describe('asset store', () => {
   it('rejects an unknown kind loudly', async () => {
     const db = await freshDb()
     try {
-      expectPlatformError(() => validateKind('mystery' as AssetKind), 'UNKNOWN_ASSET_KIND')
+      expectPlatformError(() =>{  validateKind('mystery' as AssetKind) }, 'UNKNOWN_ASSET_KIND')
       expectPlatformError(
         () => registerAsset(db, WorkspaceId('ws-1'), 'mystery' as AssetKind, 'x', RoleId('product'), 1),
         'UNKNOWN_ASSET_KIND',

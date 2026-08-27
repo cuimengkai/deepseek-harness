@@ -1012,15 +1012,15 @@ export class SessionStore extends Service {
    * @param session - a live entered session to detach.
    * @returns false when the session is already detached or unknown.
    */
-  async dispose(session: Session): Promise<boolean> {
+  dispose(session: Session): Promise<boolean> {
     const entry = attachments.get(session)
-    if (entry === undefined || this.store.get(entry.id) !== entry) return false
+    if (entry === undefined || this.store.get(entry.id) !== entry) return Promise.resolve(false)
     if (entry.announcing || entry.appending) {
       entry.detachRequested = true
-      return true
+      return Promise.resolve(true)
     }
     entry.detach()
-    return true
+    return Promise.resolve(true)
   }
 
   /**

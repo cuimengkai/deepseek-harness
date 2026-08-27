@@ -51,7 +51,7 @@ export class ProjectInsightVersionError extends Error {
   }
 }
 
-/** Section-key → directory-name mapping of the six typed data files. */
+/** Section-key → directory-name mapping of the seven typed data files. */
 const SECTION_DIRS: readonly { readonly key: SectionKey; readonly name: string }[] = [
   { key: 'techStack', name: 'tech-stack' },
   { key: 'moduleTopology', name: 'module-topology' },
@@ -59,6 +59,7 @@ const SECTION_DIRS: readonly { readonly key: SectionKey; readonly name: string }
   { key: 'components', name: 'components' },
   { key: 'prompts', name: 'prompts' },
   { key: 'agentTech', name: 'agent-tech' },
+  { key: 'documents', name: 'documents' },
 ]
 
 /**

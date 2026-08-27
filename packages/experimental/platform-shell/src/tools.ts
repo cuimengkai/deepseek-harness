@@ -249,7 +249,7 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: `registered ${value.asset.kind} ${value.asset.id} (${value.asset.roleId}) in ${value.asset.workspaceId}` }],
         presentationMeta: (_args, value) => ({ code: 'registered', assetId: value.asset.id }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor, session } = boundCall(exec, resolveActor)
         const asset = shell().registerAsset(actor, {
           workspaceId: brandWorkspaceId(args.workspaceId),
@@ -263,7 +263,7 @@ export function registerPlatformShellTools(
           roleId: asset.roleId,
           workspaceId: asset.workspaceId,
         })
-        return { asset }
+        return Promise.resolve({ asset })
       },
     }),
     defineTool({
@@ -303,7 +303,7 @@ export function registerPlatformShellTools(
         ],
         presentationMeta: (_args, value) => ({ code: value.found ? 'read' : 'not-found' }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor, session } = boundCall(exec, resolveActor)
         try {
           // The service reports a miss as ASSET_NOT_FOUND (handled below) rather
@@ -316,13 +316,13 @@ export function registerPlatformShellTools(
             roleId: asset.roleId,
             workspaceId: asset.workspaceId,
           })
-          return { found: true, asset }
+          return Promise.resolve({ found: true, asset })
         } catch (error) {
           // A NOT-FOUND result must not leak whether the asset exists in another
           // workspace: the placeholder is identical either way. Every other
           // platform error (e.g. PERMISSION_DENIED) propagates unchanged.
           if ((error as PlatformShellError).code === 'ASSET_NOT_FOUND') {
-            return { found: false, asset: notFoundAsset(args.assetId) }
+            return Promise.resolve({ found: false, asset: notFoundAsset(args.assetId) })
           }
           throw error
         }
@@ -355,7 +355,7 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: `ticket ${value.ticket.id} is now ${value.ticket.status}` }],
         presentationMeta: (_args, value) => ({ code: 'transitioned', status: value.ticket.status }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor, session } = boundCall(exec, resolveActor)
         const ticketId = ticketIdOf(args.ticketId)
         // The service reports an absent ticket as TICKET_NOT_FOUND rather than
@@ -373,7 +373,7 @@ export function registerPlatformShellTools(
           actorUserId: actor,
           workspaceId: updated.workspaceId,
         })
-        return { ticket: projectTicket(updated) }
+        return Promise.resolve({ ticket: projectTicket(updated) })
       },
     }),
     defineTool({
@@ -410,13 +410,13 @@ export function registerPlatformShellTools(
         render: (args, value) => [{ type: 'text', text: `${value.events.length} audit events (${args.action ?? 'any action'})` }],
         presentationMeta: (_args, value) => ({ code: 'queried', count: value.events.length }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor } = boundCall(exec, resolveActor)
         const events = shell().listAudit(actor, {
           ...args.workspaceId !== undefined ? { workspaceId: brandWorkspaceId(args.workspaceId) } : {},
           ...args.action !== undefined ? { action: args.action } : {},
         })
-        return { events: events.map(projectAuditEvent) }
+        return Promise.resolve({ events: events.map(projectAuditEvent) })
       },
     }),
     defineTool({
@@ -437,7 +437,7 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: `submitted ${value.ticket.id} for ${value.ticket.subjectKind} ${value.ticket.subjectId} (${value.ticket.status})` }],
         presentationMeta: (_args, value) => ({ code: 'submitted', ticketId: value.ticket.id, status: value.ticket.status }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor, session } = boundCall(exec, resolveActor)
         const workspaceId = brandWorkspaceId(args.workspaceId)
         const ticket = shell().submitTicket(actor, workspaceId, assetIdOf(args.subjectAssetId))
@@ -448,7 +448,7 @@ export function registerPlatformShellTools(
           actorUserId: actor,
           workspaceId,
         })
-        return { ticket: projectTicket(ticket) }
+        return Promise.resolve({ ticket: projectTicket(ticket) })
       },
     }),
     defineTool({
@@ -469,10 +469,10 @@ export function registerPlatformShellTools(
         render: () => [{ type: 'text', text: 'lineage linked' }],
         presentationMeta: () => ({ code: 'linked' }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor } = boundCall(exec, resolveActor)
         shell().linkAsset(actor, assetIdOf(args.assetId), assetIdOf(args.parentId))
-        return { ok: true }
+        return Promise.resolve({ ok: true })
       },
     }),
     defineTool({
@@ -492,13 +492,13 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: `${value.ticket.id} [${value.ticket.status}] for ${value.ticket.subjectKind} ${value.ticket.subjectId}` }],
         presentationMeta: (_args, value) => ({ code: 'read', ticketId: value.ticket.id, status: value.ticket.status }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor } = boundCall(exec, resolveActor)
         // The service reports an absent ticket as TICKET_NOT_FOUND rather than
         // returning undefined.
         // oxlint-disable-next-line typescript/no-non-null-assertion
         const ticket = shell().getTicket(actor, ticketIdOf(args.ticketId))!
-        return { ticket: projectTicket(ticket) }
+        return Promise.resolve({ ticket: projectTicket(ticket) })
       },
     }),
     defineTool({
@@ -518,9 +518,9 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: value.tickets.map(t => `${t.id}: ${t.subjectKind} ${t.subjectId} [${t.status}]`).join(', ') || 'no tickets' }],
         presentationMeta: (_args, value) => ({ code: 'listed', count: value.tickets.length }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor } = boundCall(exec, resolveActor)
-        return { tickets: shell().listTickets(actor, brandWorkspaceId(args.workspaceId)).map(projectTicket) }
+        return Promise.resolve({ tickets: shell().listTickets(actor, brandWorkspaceId(args.workspaceId)).map(projectTicket) })
       },
     }),
     defineTool({
@@ -540,9 +540,9 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: value.edges.map(e => `${e.assetId} <- ${e.parentId}`).join(', ') || 'no ancestors' }],
         presentationMeta: (_args, value) => ({ code: 'traced', count: value.edges.length }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor } = boundCall(exec, resolveActor)
-        return { edges: shell().ancestors(actor, assetIdOf(args.assetId)) }
+        return Promise.resolve({ edges: shell().ancestors(actor, assetIdOf(args.assetId)) })
       },
     }),
     defineTool({
@@ -562,9 +562,9 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: value.edges.map(e => `${e.parentId} -> ${e.assetId}`).join(', ') || 'no descendants' }],
         presentationMeta: (_args, value) => ({ code: 'traced', count: value.edges.length }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor } = boundCall(exec, resolveActor)
-        return { edges: shell().descendants(actor, assetIdOf(args.assetId)) }
+        return Promise.resolve({ edges: shell().descendants(actor, assetIdOf(args.assetId)) })
       },
     }),
     defineTool({
@@ -606,7 +606,7 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: `published ${value.capability.id} v${value.capability.version} (${value.capability.execution}, ${value.capability.rate} credits/unit)` }],
         presentationMeta: (_args, value) => ({ code: 'published', capabilityId: value.capability.id, version: value.capability.version }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor, session } = boundCall(exec, resolveActor)
         const capability = shell().publishCapability(actor, {
           id: capabilityIdOf(args.id),
@@ -627,7 +627,7 @@ export function registerPlatformShellTools(
           version: capability.version,
           roleId: capability.roleId,
         })
-        return { capability: toCapabilityJson(capability) }
+        return Promise.resolve({ capability: toCapabilityJson(capability) })
       },
     }),
     defineTool({
@@ -645,9 +645,9 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: value.capabilities.map(c => `${c.id} v${c.version} [${c.execution}]`).join(', ') || 'no capabilities' }],
         presentationMeta: (_args, value) => ({ code: 'listed', count: value.capabilities.length }),
       },
-      async execute(_args, exec) {
+      execute(_args, exec) {
         const { actor } = boundCall(exec, resolveActor)
-        return { capabilities: shell().listCapabilities(actor).map(toCapabilityJson) }
+        return Promise.resolve({ capabilities: shell().listCapabilities(actor).map(toCapabilityJson) })
       },
     }),
     defineTool({
@@ -671,7 +671,7 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: `resolved ${value.requested.length} requested into ${value.resolved.length} capabilities under preset ${value.preset}` }],
         presentationMeta: (_args, value) => ({ code: 'resolved', count: value.resolved.length, preset: value.preset }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor, session } = boundCall(exec, resolveActor)
         const workspaceId = brandWorkspaceId(args.workspaceId)
         const resolved = shell().resolveCapabilities(actor, {
@@ -686,7 +686,11 @@ export function registerPlatformShellTools(
         })
         // The output schema's items are plain JSON, so the durable readonly
         // sets project into mutable arrays.
-        return { requested: [...resolved.requested], resolved: resolved.resolved.map(toCapabilityJson), preset: resolved.preset }
+        return Promise.resolve({
+          requested: [...resolved.requested],
+          resolved: resolved.resolved.map(toCapabilityJson),
+          preset: resolved.preset,
+        })
       },
     }),
     defineTool({
@@ -780,14 +784,14 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: `${value.capability.id} gate: ${value.capability.enabled ? 'enabled' : 'disabled'} at rollout ${value.capability.rollout}` }],
         presentationMeta: (_args, value) => ({ code: 'gated', capabilityId: value.capability.id, enabled: value.capability.enabled, rollout: value.capability.rollout }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor } = boundCall(exec, resolveActor)
         const capability = shell().setCapabilityGate(
           actor,
           capabilityIdOf(args.capabilityId),
           { enabled: args.enabled, rollout: args.rollout },
         )
-        return { capability: toCapabilityJson(capability) }
+        return Promise.resolve({ capability: toCapabilityJson(capability) })
       },
     }),
     defineTool({
@@ -812,7 +816,7 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: `published workbench ${value.scenario.workbenchId} (${value.scenario.preset}) with ${value.scenario.capabilityIds.length} capabilities` }],
         presentationMeta: (_args, value) => ({ code: 'published', scenarioId: value.scenario.id, workbenchId: value.scenario.workbenchId }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor } = boundCall(exec, resolveActor)
         const scenario = shell().publishScenario(actor, {
           id: scenarioIdOf(args.id),
@@ -823,7 +827,7 @@ export function registerPlatformShellTools(
           capabilityIds: args.capabilityIds.map(capabilityIdOf),
         })
         // The output schema's capabilityIds are plain JSON strings.
-        return { scenario: { ...scenario, capabilityIds: [...scenario.capabilityIds] } }
+        return Promise.resolve({ scenario: { ...scenario, capabilityIds: [...scenario.capabilityIds] } })
       },
     }),
     defineTool({
@@ -841,9 +845,11 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: value.scenarios.map(s => `${s.workbenchId}: ${s.name} [${s.capabilityIds.length} capabilities]`).join(', ') || 'no scenarios' }],
         presentationMeta: (_args, value) => ({ code: 'listed', count: value.scenarios.length }),
       },
-      async execute(_args, exec) {
+      execute(_args, exec) {
         const { actor } = boundCall(exec, resolveActor)
-        return { scenarios: shell().listScenarios(actor).map(scenario => ({ ...scenario, capabilityIds: [...scenario.capabilityIds] })) }
+        return Promise.resolve({
+          scenarios: shell().listScenarios(actor).map(scenario => ({ ...scenario, capabilityIds: [...scenario.capabilityIds] })),
+        })
       },
     }),
     defineTool({
@@ -865,14 +871,14 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: `metered ${value.usage.qty} x ${value.usage.capabilityId} for ${value.usage.cost} credits` }],
         presentationMeta: (_args, value) => ({ code: 'metered', usageId: value.usage.id, cost: value.usage.cost }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor } = boundCall(exec, resolveActor)
         const usage = shell().consumeCapability(actor, {
           workspaceId: brandWorkspaceId(args.workspaceId),
           capabilityId: capabilityIdOf(args.capabilityId),
           ...(args.qty !== undefined ? { qty: args.qty } : {}),
         })
-        return { usage }
+        return Promise.resolve({ usage })
       },
     }),
     defineTool({
@@ -902,11 +908,11 @@ export function registerPlatformShellTools(
         render: (args, value) => [{ type: 'text', text: value.found ? `workspace ${value.account.workspaceId} holds ${value.account.balance} credits` : `no account opened for ${args.workspaceId}` }],
         presentationMeta: (_args, value) => ({ code: value.found ? 'read' : 'not-found' }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor } = boundCall(exec, resolveActor)
         const workspaceId = brandWorkspaceId(args.workspaceId)
         const account = shell().accountBalance(actor, workspaceId)
-        return { found: account !== undefined, account: account ?? { workspaceId, balance: 0, createdAt: 0 } }
+        return Promise.resolve({ found: account !== undefined, account: account ?? { workspaceId, balance: 0, createdAt: 0 } })
       },
     }),
     defineTool({
@@ -927,7 +933,7 @@ export function registerPlatformShellTools(
         render: (_args, value) => [{ type: 'text', text: `settlement ${value.settlement.id} closed ${value.settlement.period} at ${value.settlement.amount} credits (${value.settlement.status})` }],
         presentationMeta: (_args, value) => ({ code: 'settled', settlementId: value.settlement.id, amount: value.settlement.amount }),
       },
-      async execute(args, exec) {
+      execute(args, exec) {
         const { actor, session } = boundCall(exec, resolveActor)
         const settlement = shell().settleAccount(actor, brandWorkspaceId(args.workspaceId), args.period)
         session.append('billing/settlement', {
@@ -936,7 +942,7 @@ export function registerPlatformShellTools(
           period: settlement.period,
           status: settlement.status,
         })
-        return { settlement }
+        return Promise.resolve({ settlement })
       },
     }),
   ]

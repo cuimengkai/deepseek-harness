@@ -114,10 +114,10 @@ export class FlowEngine extends Service {
     // workflow package's own invariant listeners and survives a future
     // `this`-bound dispatch. Runs this service did not start are skipped by
     // `runIdByWorkflow`.
-    ctx.on('workflow/phase', (info, title) => this.onPhase(info, title), { global: true })
-    ctx.on('workflow/agent-start', (info, agent) => this.onAgentStart(info, agent), { global: true })
-    ctx.on('workflow/agent-end', (info, agent) => this.onAgentEnd(info, agent), { global: true })
-    ctx.on('workflow/end', (info, result) => this.onWorkflowEnd(info, result), { global: true })
+    ctx.on('workflow/phase', (info, title) =>{  this.onPhase(info, title) }, { global: true })
+    ctx.on('workflow/agent-start', (info, agent) =>{  this.onAgentStart(info, agent) }, { global: true })
+    ctx.on('workflow/agent-end', (info, agent) =>{  this.onAgentEnd(info, agent) }, { global: true })
+    ctx.on('workflow/end', (info, result) =>{  this.onWorkflowEnd(info, result) }, { global: true })
     // The engine's `WorkflowRun` handles are holder-owned: the seam requires
     // the holder to dispose each run, or the underlying worker thread outlives
     // the composition and pins the process at teardown. Unloading the flow
@@ -192,7 +192,7 @@ export class FlowEngine extends Service {
     return {
       runId,
       result,
-      cancel: (reason?: string) => workflowRun.cancel(reason ?? 'cancelled by the user'),
+      cancel: (reason?: string) =>{  workflowRun.cancel(reason ?? 'cancelled by the user') },
     }
   }
 

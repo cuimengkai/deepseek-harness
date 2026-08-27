@@ -102,7 +102,7 @@ describe('project-insight auto-scan hook', () => {
       const read = await ctx.projectInsight.read(root)
       expect(read.status).toBe('fresh')
       expect(read.root).toBe(basename(root))
-      expect(read.doc?.formatVersion).toBe(3)
+      expect(read.doc?.formatVersion).toBe(5)
     } finally {
       await dispose(ctx)
     }
@@ -178,7 +178,7 @@ describe('project-insight auto-scan hook', () => {
       // A fresh document reads back; a second scan is a no-op.
       const fresh = await ctx.projectInsight.read(root)
       expect(fresh.status).toBe('fresh')
-      expect(fresh.doc?.formatVersion).toBe(3)
+      expect(fresh.doc?.formatVersion).toBe(5)
       const again = await ctx.projectInsight.scan(root, session.id)
       expect(again.status).toBe('unchanged')
 
@@ -248,11 +248,11 @@ describe('project-insight auto-scan hook', () => {
       // The read schedules a background rebuild at the current format.
       await until(async () => {
         const rebuilt = JSON.parse(await readFile(metaPath, 'utf8')) as { formatVersion: number }
-        return rebuilt.formatVersion === 3
-      }, 'self-healed meta at formatVersion 3')
+        return rebuilt.formatVersion === 5
+      }, 'self-healed meta at formatVersion 5')
       const healed = await ctx.projectInsight.read(root)
       expect(healed.status).toBe('fresh')
-      expect(healed.doc?.formatVersion).toBe(3)
+      expect(healed.doc?.formatVersion).toBe(5)
     } finally {
       await dispose(ctx)
     }

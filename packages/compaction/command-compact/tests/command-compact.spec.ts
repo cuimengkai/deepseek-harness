@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import CommandRuntime, { type CommandResult } from '@deepseek-ai/dsh-commands'
+import CommandRuntime, { type CommandId, type CommandResult } from '@deepseek-ai/dsh-commands'
 import {
   CompactionId,
   CompactionEngine,
@@ -16,6 +16,9 @@ import { Session, SessionId } from '@deepseek-ai/dsh-session'
 import * as commandCompact from '@deepseek-ai/dsh-command-compact'
 
 const COMPACTION_ID = CompactionId('command-compact-test')
+
+/** The command's advertised usage line, asserted by the grammar-rejection tests. */
+const USAGE = 'Usage: /compact — policy range, or /compact <startSeq>:<endSeq> — explicit surface range'
 
 const RESULT: CompactionResult = {
   compactionId: COMPACTION_ID,
@@ -31,8 +34,16 @@ const RESULT: CompactionResult = {
 class StubCompactionEngine extends CompactionEngine {
   result: CompactionResult | null = RESULT
   failure: unknown
+  regionFailure: unknown
   operation: (() => Promise<CompactionResult | null>) | undefined
   calls: { agent: ManualCompactAgentContext; signal: AbortSignal }[] = []
+  regionCalls: {
+    start: number
+    end: number
+    agent: ManualCompactAgentContext
+    signal: AbortSignal
+    sourceCommandId: CommandId | undefined
+  }[] = []
 
   override compactIfNeeded(
     _agent: CompactionAgentContext,
@@ -57,6 +68,21 @@ class StubCompactionEngine extends CompactionEngine {
       ? Promise.resolve(this.result === null ? null : this.appendResult(agent, this.result, sourceCommandId))
       // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercise arbitrary backend rejection values.
       : Promise.reject(this.failure)
+  }
+
+  override compactRegionNow(
+    start: number,
+    end: number,
+    agent: ManualCompactAgentContext,
+    signal: AbortSignal,
+    sourceCommandId?: CommandId,
+  ): Promise<CompactionResult> {
+    this.regionCalls.push({ start, end, agent, signal, sourceCommandId })
+    if (this.regionFailure !== undefined) {
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- exercise arbitrary backend rejection values.
+      return Promise.reject(this.regionFailure)
+    }
+    return Promise.resolve(this.appendResult(agent, RESULT, sourceCommandId))
   }
 
   private appendResult(
@@ -163,7 +189,8 @@ describe('@deepseek-ai/dsh-command-compact registration', () => {
     expect(loader.unwrapExports(commandCompact)).toBe(commandCompact)
     expect(test.ctx.commands.list(test.agent)).toContainEqual({
       name: 'compact',
-      description: 'Compact older conversation history',
+      description: 'Compact older conversation history, or an explicit inclusive surface range',
+      input: { hint: '[<startSeq>:<endSeq>]' },
     })
 
     await test.plugin.dispose()
@@ -198,10 +225,46 @@ describe('/compact human command', () => {
     const rejected = await run(test, ' now')
     expect(rejected.result).toEqual({
       kind: 'error',
-      text: 'Usage: /compact (no arguments)',
+      text: USAGE,
     })
     expect(rejected.commandId).toBe(expectLastLifecycle(test, ' now', rejected.result))
     expect(test.compact.calls).toHaveLength(1)
+  })
+
+  it('compacts an explicit inclusive range through the range verb with the command identity', async () => {
+    const test = await harness()
+    const controller = new AbortController()
+    const execution = await run(test, ' 12 : 34 ', controller)
+    expect(execution.result).toEqual({
+      kind: 'success',
+      text: 'Compacted 3 history items (~42 tokens).',
+      sourceEventSeq: RESULT.summarySeq,
+    })
+    expect(execution.commandId).toBe(expectLastLifecycle(test, ' 12 : 34 ', execution.result))
+    expect(test.compact.calls).toEqual([])
+    expect(test.compact.regionCalls).toEqual([{
+      start: 12,
+      end: 34,
+      agent: test.agent,
+      signal: controller.signal,
+      sourceCommandId: execution.commandId,
+    }])
+  })
+
+  it('surfaces a rejected range verbatim and rejects malformed ranges as usage errors', async () => {
+    const test = await harness()
+    test.compact.regionFailure = new Error('compactRegion: start seq 12 is not a balanced boundary (would split a step\'s tool-call/result pair)')
+    const rejected = await run(test, ' 12:34')
+    expect(rejected.result).toEqual({
+      kind: 'error',
+      text: 'compactRegion: start seq 12 is not a balanced boundary (would split a step\'s tool-call/result pair)',
+    })
+    expect(rejected.commandId).toBe(expectLastLifecycle(test, ' 12:34', rejected.result))
+
+    const malformed = await run(test, ' 12-34')
+    expect(malformed.result).toEqual({ kind: 'error', text: USAGE })
+    expect(malformed.commandId).toBe(expectLastLifecycle(test, ' 12-34', malformed.result))
+    expect(test.compact.regionCalls).toHaveLength(1)
   })
 
   it.each([

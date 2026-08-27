@@ -45,6 +45,16 @@ class LoaderCompactionEngine extends CompactionEngine {
     return Promise.resolve(RESULT)
   }
 
+  override compactRegionNow(
+    _start: number,
+    _end: number,
+    _agent: ManualCompactAgentContext,
+    _signal: AbortSignal,
+    _sourceCommandId?: Parameters<CompactionEngine['compactRegionNow']>[4],
+  ): Promise<CompactionResult> {
+    return Promise.resolve(RESULT)
+  }
+
   override compactNow(
     agent: ManualCompactAgentContext,
     _signal: AbortSignal,
@@ -121,7 +131,8 @@ describe('command-compact real Loader composition', () => {
     } as unknown as Agent
     expect(context.commands.list(agent)).toContainEqual({
       name: 'compact',
-      description: 'Compact older conversation history',
+      description: 'Compact older conversation history, or an explicit inclusive surface range',
+      input: { hint: '[<startSeq>:<endSeq>]' },
     })
     const execution = await context.commands.execute(agent, '/compact', [], new AbortController().signal)
     if (execution === undefined) throw new Error('Loader composition did not resolve /compact')

@@ -25,7 +25,12 @@ const MAX_FLOW_BYTES = 1024 * 1024
 /** A valid kebab-case flow id (also the persisted file name). */
 const FLOW_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 
-/** The absolute path of a flow document, or throws for a non-kebab id. */
+/**
+ * The absolute path of a flow document, or throws for a non-kebab id.
+ * @param root - the workspace root directory.
+ * @param flowId - the flow id (kebab-case).
+ * @returns the flow document's absolute path.
+ */
 export function flowPath(root: string, flowId: string): string {
   if (!FLOW_ID_PATTERN.test(flowId)) {
     throw new FlowError(`flow id "${flowId}" is not kebab-case (lowercase letters, digits, hyphens)`, 'FLOW_INVALID')

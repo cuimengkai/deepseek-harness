@@ -313,9 +313,16 @@
     - id: ui-trajectory
       name: '@deepseek-ai/dsh-client-ui-trajectory'
 
-    # The develop-mode insight tabs: six conversation view entries (module
-    # topology, component dependency, tech stack, components, prompts, agent
-    # tech) gated to the develop agent preset. Absent develop sessions they
+    # The session context tab: one conversation view entry that reads the
+    # session's current model-visible context composition (envelope, priced
+    # surface, capacity bar, compaction history) through
+    # contextComposition.read and refreshes on every surface revision.
+    - id: ui-context
+      name: '@deepseek-ai/dsh-client-ui-context'
+
+    # The develop-mode insight tabs: five conversation view entries (module
+    # topology, component dependency, tech stack, components, agent tech)
+    # gated to the develop agent preset. Absent develop sessions they
     # register inertly and render nothing.
     - id: ui-project-insight
       name: '@deepseek-ai/dsh-client-ui-project-insight'

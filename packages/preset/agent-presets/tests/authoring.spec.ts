@@ -421,7 +421,7 @@ describe('composing a preset from rows', () => {
     await ctx.agentPresets.compose('composed-group', [
       {
         id: 'tool-bash', name: '@deepseek-ai/dsh-tool-bash',
-        disabled: { __jsExpr: "process.platform === 'win32'" } as unknown as boolean,
+        disabled: { __jsExpr: "process.platform === 'win32'" },
       },
       { id: 'tools', name: 'tools-group', group: true, config: [{ id: 'a', name: 'x' }] },
     ], undefined, { overwrite: false, assertResolvable: () => [] })
@@ -473,7 +473,7 @@ describe('composing a preset from rows', () => {
   it('readRows parses a shipped composition and refuses an unparsable one', async () => {
     const rows = await ctx.agentPresets.readRows('standard')
     expect(rows.length).toBeGreaterThan(0)
-    expect(rows[0]).toMatchObject({ name: expect.any(String) })
+    expect(rows[0]).toMatchObject({ name: expect.any(String) as string })
     await seedPreset(userRoot, 'broken', { composition: 'not: [valid\n' })
     await expect(ctx.agentPresets.readRows('broken')).rejects.toThrow()
   })

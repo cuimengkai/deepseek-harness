@@ -177,6 +177,11 @@ export const modelReasoningSchema = z.object({
  * the literal union for client switching.
  */
 export const modelModalitySchema = z.string().min(1) as unknown as z.ZodType<ModelModality>
+/**
+ * Merge-extensible model role vocabulary, same posture as the modality schema:
+ * any string survives validation while the wire type keeps the literal union
+ * for client switching.
+ */
 export const modelKindSchema = z.string().min(1) as unknown as z.ZodType<ModelKind>
 
 /** One advisory model entry inside a provider group. */

@@ -11,7 +11,7 @@ import { basename, dirname, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { scanProject } from '../src/scanner.ts'
 import {
-  MAX_AGENT_TECH_MARKDOWN_BYTES, MAX_AGENT_TECH_MARKDOWN_ROWS,
+  MAX_AGENT_TECH_MARKDOWN_ROWS, MAX_FILE_CONTENT_BYTES,
   MAX_FINGERPRINT_FILES, MAX_SOURCE_BYTES, MAX_SOURCE_FILES,
 } from '../src/schema.ts'
 import { readDocument, writeDocument } from '../src/fingerprint.ts'
@@ -68,7 +68,7 @@ describe('project-insight scanner', () => {
     expect(first.doc.rootName).toBe(second.doc.rootName)
     expect(first.doc.sections).toEqual(second.doc.sections)
     expect(first.summary).toEqual(second.summary)
-    expect(first.doc.formatVersion).toBe(3)
+    expect(first.doc.formatVersion).toBe(5)
   })
 
   it('never leaks an absolute host path into the document', async () => {
@@ -207,6 +207,7 @@ describe('project-insight scanner', () => {
       'prompts/review.prompt.md': '# Review guide\nCheck the diff.',
       '.github/workflows/ci.yml': 'jobs: {}',
       '.agents/skills/deploy/SKILL.md': '# Deploy',
+      '.agents/notes/README.md': '# Notes\nDecide here.',
     })
     const { doc } = await scanProject(root)
 
@@ -216,17 +217,28 @@ describe('project-insight scanner', () => {
     expect(tech.runtimes).toContainEqual({ name: 'node', version: '>=22' })
 
     expect(doc.sections.prompts.count).toBe(2)
-    expect(doc.sections.prompts.files).toContainEqual({ path: 'AGENTS.md', title: 'Repo instructions', bytes: expect.any(Number) })
+    expect(doc.sections.prompts.files).toContainEqual({ path: 'AGENTS.md', title: 'Repo instructions', bytes: expect.any(Number) as number })
 
     const agentTech = doc.sections.agentTech
-    expect(agentTech.count).toBe(3)
+    expect(agentTech.count).toBe(4)
     expect(agentTech.files).toContainEqual({ path: 'AGENTS.md', kind: 'instructions' })
     expect(agentTech.files).toContainEqual({ path: '.agents/skills/deploy/SKILL.md', kind: 'agent-config' })
     expect(agentTech.files).toContainEqual({ path: '.github/workflows/ci.yml', kind: 'tool-config' })
     expect(agentTech.tools).toContainEqual({ name: 'deploy', path: '.agents/skills/deploy/SKILL.md' })
     expect(agentTech.skills).toContainEqual({
-      name: 'deploy', path: '.agents/skills/deploy/SKILL.md', markdown: '# Deploy',
+      name: 'deploy', path: '.agents/skills/deploy/SKILL.md', content: '# Deploy',
     })
+    // The shared documents pool carries content for the source files, the
+    // manifests, and the inventory files the three markdown collections do
+    // not embed; already-embedded paths are not duplicated.
+    expect(doc.sections.documents.files).toEqual([
+      { name: 'README.md', path: '.agents/notes/README.md', content: '# Notes\nDecide here.' },
+      { name: 'ci.yml', path: '.github/workflows/ci.yml', content: 'jobs: {}' },
+      { name: 'package.json', path: 'package.json', content: expect.any(String) as string },
+      { name: 'pnpm-lock.yaml', path: 'pnpm-lock.yaml', content: 'lockfileVersion: \'9.0\'' },
+      { name: 'index.ts', path: 'src/index.ts', content: 'export {}' },
+    ])
+    expect(doc.sections.documents.count).toBe(5)
   })
 
   it('embeds skill, mcp, and prompt content with mcp env values redacted', async () => {
@@ -247,16 +259,16 @@ describe('project-insight scanner', () => {
     // Skills: one row per SKILL.md, sorted by path, name is the skill directory.
     expect(agentTech.skills.map(row => row.name)).toEqual(['deploy', 'review'])
     expect(agentTech.skills).toContainEqual({
-      name: 'deploy', path: '.agents/skills/deploy/SKILL.md', markdown: '# Deploy\n\nShip the build.',
+      name: 'deploy', path: '.agents/skills/deploy/SKILL.md', content: '# Deploy\n\nShip the build.',
     })
 
     // MCP: one row per config, env values redacted, rendered as a JSON block.
     expect(agentTech.mcp).toHaveLength(1)
     expect(agentTech.mcp[0]?.path).toBe('.mcp.json')
-    expect(agentTech.mcp[0]?.markdown).toContain('```json')
-    expect(agentTech.mcp[0]?.markdown).toContain('github')
-    expect(agentTech.mcp[0]?.markdown).toContain('<redacted>')
-    expect(agentTech.mcp[0]?.markdown).not.toContain('secret-value')
+    expect(agentTech.mcp[0]?.content).toContain('```json')
+    expect(agentTech.mcp[0]?.content).toContain('github')
+    expect(agentTech.mcp[0]?.content).toContain('<redacted>')
+    expect(agentTech.mcp[0]?.content).not.toContain('secret-value')
 
     // Prompts: agent-native prompt directories count alongside the root prompts.
     expect(agentTech.prompts.map(row => row.path)).toContain('.claude/prompts/fix.prompt.md')
@@ -265,6 +277,9 @@ describe('project-insight scanner', () => {
 
     // The mcp config is also classified as a tool-config file in the inventory.
     expect(agentTech.files).toContainEqual({ path: '.mcp.json', kind: 'tool-config' })
+    // Every inventory file is already embedded by the three collections, so
+    // the documents pool adds only the manifest here.
+    expect(doc.sections.documents.files.map(row => row.path)).toEqual(['package.json'])
   })
 
   it('caps and bounds the agent-tech markdown content deterministically', async () => {
@@ -273,14 +288,54 @@ describe('project-insight scanner', () => {
     for (let index = 0; index < MAX_AGENT_TECH_MARKDOWN_ROWS + 5; index += 1) {
       files[`.agents/skills/skill${String(index).padStart(2, '0')}/SKILL.md`] = `# Skill ${index}`
     }
-    files['.agents/skills/huge/SKILL.md'] = 'x'.repeat(MAX_AGENT_TECH_MARKDOWN_BYTES + 1)
+    files['.agents/skills/huge/SKILL.md'] = 'x'.repeat(MAX_FILE_CONTENT_BYTES + 1)
     await seed(root, files)
     const { doc } = await scanProject(root)
     const agentTech = doc.sections.agentTech
     expect(agentTech.skills).toHaveLength(MAX_AGENT_TECH_MARKDOWN_ROWS)
     // A skill over the per-row byte cap is skipped, not embedded.
     expect(agentTech.skills.some(row => row.name === 'huge')).toBe(false)
+    // The rows the markdown row cap dropped still get content through the
+    // documents pool; the over-cap file stays metadata-only everywhere and
+    // still counts as a candidate.
+    const documents = doc.sections.documents
+    expect(documents.files).toHaveLength(5)
+    expect(documents.files.every(row => row.name !== 'huge')).toBe(true)
+    expect(documents.count).toBe(6)
+    const embeddedNames = new Set(agentTech.skills.map(row => row.name))
+    expect(documents.files.some(row => embeddedNames.has(row.name))).toBe(false)
     const second = await scanProject(root)
     expect(second.doc.sections.agentTech).toEqual(agentTech)
+    expect(second.doc.sections.documents).toEqual(documents)
+  })
+
+  it('embeds the tab-listed files first when the byte budget forces drops', async () => {
+    const root = await tempProject()
+    const files: Record<string, string> = {}
+    // 79 plain sources sized so the total exceeds the documents byte budget:
+    // the pool cannot embed them all, so the priority order decides winners.
+    const filler = 'x'.repeat(60 * 1024)
+    for (let index = 0; index < 79; index += 1) {
+      files[`src/mod${String(index).padStart(3, '0')}.ts`] = filler
+    }
+    // A component sorting lexically last: under plain path order the budget
+    // would exhaust before reaching it, but the components listing outranks
+    // the unlisted topology sources.
+    files['zz/Button.tsx'] = 'export default function Button() {}\n'
+    await seed(root, files)
+    const { doc } = await scanProject(root)
+    const documents = doc.sections.documents
+
+    const paths = documents.files.map(row => row.path)
+    expect(paths).toContain('zz/Button.tsx')
+    // Every tech-stack-listed source embeds too.
+    for (const file of doc.sections.techStack.files) {
+      expect(paths).toContain(file.path)
+    }
+    // The budget dropped some unlisted topology sources, and the emitted rows
+    // stay sorted by path.
+    expect(documents.files.length).toBeLessThan(80)
+    expect(documents.count).toBe(80)
+    expect(paths).toEqual([...paths].sort((left, right) => left < right ? -1 : left > right ? 1 : 0))
   })
 })

@@ -242,6 +242,14 @@
     - id: project-insight
       name: '@deepseek-ai/dsh-project-insight'
 
+    # Host-plane read-only fold of one session's model-visible context (the
+    # request envelope, priced surface, capacity, compaction history) served
+    # to the browser context tab through the contextComposition.read RPC.
+    # Host-plane for the same reason project-insight is: every profile shares
+    # the one projection and no per-session plugin needs it.
+    - id: context-composition
+      name: '@deepseek-ai/dsh-context-composition'
+
     - id: skill
       name: '@deepseek-ai/dsh-skill'
 

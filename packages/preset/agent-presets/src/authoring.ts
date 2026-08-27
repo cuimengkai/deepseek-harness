@@ -85,7 +85,7 @@ export class ComposeModuleError extends Error {
   ) {
     super(
       `agent-presets: preset "${presetId}" references uninstalled modules: `
-      + `${unresolved.map(name => JSON.stringify(name)).join(', ')}`,
+      + unresolved.map(name => JSON.stringify(name)).join(', '),
     )
   }
 }

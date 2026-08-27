@@ -107,7 +107,7 @@ function roster(ids: readonly string[], userIds: readonly string[] = []): unknow
       const unresolved = options.assertResolvable(rows)
       if (unresolved.length > 0) return Promise.reject(new ComposeModuleError(id, unresolved))
       if (ids.includes(id) || composed.has(id)) {
-        if (options.overwrite !== true) return Promise.reject(new PresetExistsError(id))
+        if (!options.overwrite) return Promise.reject(new PresetExistsError(id))
         if (trustOf(id) === 'system') {
           return Promise.reject(new PresetNotWritableError(id, 'only a locally authored preset may be overwritten'))
         }
@@ -131,7 +131,7 @@ function roster(ids: readonly string[], userIds: readonly string[] = []): unknow
       const unresolved = options.assertResolvable(rows)
       if (unresolved.length > 0) return Promise.reject(new ComposeModuleError(id, unresolved))
       if (ids.includes(id) || composed.has(id)) {
-        if (options.overwrite !== true) return Promise.reject(new PresetExistsError(id))
+        if (!options.overwrite) return Promise.reject(new PresetExistsError(id))
         if (trustOf(id) === 'system') {
           return Promise.reject(new PresetNotWritableError(id, 'only a locally authored preset may be overwritten'))
         }

@@ -7,7 +7,6 @@ import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { boot, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
-import type { AgentPresets } from '@deepseek-ai/dsh-agent-presets'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { applyRolePolicy } from './platform-agent-demo.ts'
@@ -105,7 +104,7 @@ async function main() {
   // assembles an agent by preset id, and recomposes a live agent onto another
   // preset. `mount`/`recompose` below replace the low-level
   // `discoverPresets`/`mountPreset` pair the earlier steps used.
-  const roster = ctx.agentPresets as AgentPresets
+  const roster = ctx.agentPresets
   const catalog = (await roster.list()).map(p => p.id)
 
   // ── Product agent: authors a requirement and registers it as an asset ────
@@ -319,12 +318,13 @@ async function main() {
     e.type === 'tool/call' && e.data.name === 'write' && e.data.arguments.includes('pii-leak'))
   const aclResultEvent = devEvents.find((e): e is Extract<SessionEvent, { type: 'tool/result' }> =>
     e.type === 'tool/result'
-    && String(e.data.message.content[0]?.toolCallId ?? '').includes('acl'))
+    && String(e.data.message.content.at(0)?.toolCallId ?? '').includes('acl'))
   const aclResultBlock = aclResultEvent?.data.message.content[0]
   const aclResultText = aclResultBlock?.content.map(b => b.type === 'text' ? b.text : '').join('') ?? ''
-  const denied = aclResultEvent?.data.error?.code === 'FS_SANDBOX_DENIED'
+  const deniedError = aclResultEvent?.data.error
+  const denied = deniedError?.code === 'FS_SANDBOX_DENIED'
   const deniedRequested = aclCallEvent?.data.arguments ?? null
-  const deniedExcluded = denied ? aclResultEvent?.data.error?.code ?? null : null
+  const deniedExcluded = denied ? deniedError.code : null
   const deniedHasContent = denied ? aclResultText.includes('[sandbox:') : null
 
   // T6 approval evidence from the dev session log: the escalation retry
@@ -335,7 +335,7 @@ async function main() {
     e.type === 'tool/call' && e.data.name === 'write' && e.data.arguments.includes('danger-full-access'))
   const escalateResultEvent = devEvents.find((e): e is Extract<SessionEvent, { type: 'tool/result' }> =>
     e.type === 'tool/result'
-    && String(e.data.message.content[0]?.toolCallId ?? '').includes('escalate'))
+    && String(e.data.message.content.at(0)?.toolCallId ?? '').includes('escalate'))
   const approvalDecidedEvent = devEvents.find((e): e is Extract<SessionEvent, { type: 'approval/decided' }> =>
     e.type === 'approval/decided')
   const approvalAskedEvent = devEvents.find((e): e is Extract<SessionEvent, { type: 'approval/asked' }> =>

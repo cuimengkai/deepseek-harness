@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { ApiProxy, FlowApi, HostFrame, MuxFrame, ProjectInsightApi } from '../src/api/index.ts'
+import type { ApiProxy, ContextCompositionApi, FlowApi, HostFrame, MuxFrame, ProjectInsightApi } from '../src/api/index.ts'
 import type { ClientResponse, RpcMessage, RpcReceipt, RpcRequest } from '../src/api/rpc.ts'
 import { RpcId } from '../src/api/rpc.ts'
 import { toFetchHandler } from '../src/fetch/handler.ts'
@@ -304,6 +304,7 @@ function fakeApi(overrides: Partial<{ muxFrames: MuxFrame[]; hostFrames: HostFra
     // Transport double: these domains are not under test here, so the stubs
     // satisfy the interface without scripting any method.
     projectInsight: {} as ProjectInsightApi,
+    contextComposition: {} as ContextCompositionApi,
     flow: {} as FlowApi,
     events: {
       mux: (_request, signal) => stream(muxFrames, signal),

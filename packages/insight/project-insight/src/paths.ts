@@ -82,9 +82,9 @@ export async function readPathAliases(root: string, maxBytes: number): Promise<P
     return aliases
   }
   if (Buffer.byteLength(text, 'utf8') > maxBytes) return aliases
-  let parsed: { compilerOptions?: { paths?: Record<string, string[]> } }
+  let parsed: { compilerOptions?: { paths?: Record<string, string[] | undefined> } }
   try {
-    parsed = JSON.parse(text) as { compilerOptions?: { paths?: Record<string, string[]> } }
+    parsed = JSON.parse(text) as { compilerOptions?: { paths?: Record<string, string[] | undefined> } }
   } catch {
     return aliases
   }

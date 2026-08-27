@@ -16,6 +16,11 @@ import type {} from '@deepseek-ai/dsh-agent-presets/types'
 // Type-only: brings the `ctx.projectInsight` service merge into this program
 // (read is served over the optional `ctx.get('projectInsight')` boundary).
 import type {} from '@deepseek-ai/dsh-project-insight'
+// Type-only: brings the `ctx.contextComposition` service merge into this
+// program (read is served over the optional `ctx.get('contextComposition')`
+// boundary, so a composition without it fails contextComposition.* with an
+// internal refusal rather than at load).
+import type {} from '@deepseek-ai/dsh-context-composition'
 // Type-only: brings the `ctx.flowEngine` service merge into this program
 // (the run surface is served over the optional `ctx.get('flowEngine')`
 // boundary; the flow engine is host-plane, so a composition without it fails
@@ -3404,6 +3409,44 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
       },
     },
 
+    contextComposition: {
+      // The envelope row carries the session's system prompt text verbatim,
+      // so reading it is conversation reconnaissance (see PRIVILEGED_METHODS
+      // in dsh-client-connection) — the same posture as session.history.
+      read(request) {
+        const composition = ctx.get('contextComposition')
+        if (composition === undefined) {
+          return Promise.resolve(err(request, {
+            code: 'internal',
+            message: 'context-composition service is absent: this deployment does not mount @deepseek-ai/dsh-context-composition in its composition',
+            details: {},
+          }))
+        }
+        // The view is a live tab reading the session it renders; a detached
+        // session is not addressable here. An attached session snapshots its
+        // events array inside the service, so the result describes one log
+        // revision even while the session keeps appending.
+        const { sessionId } = request.payload
+        const session = ctx.sessions.get(sessionId)
+        if (session === undefined) {
+          return Promise.resolve(err(request, {
+            code: 'session-not-found',
+            message: `session "${sessionId}" is not live`,
+            details: { sessionId },
+          }))
+        }
+        try {
+          return Promise.resolve(ok(request, composition.read(session)))
+        } catch (error: unknown) {
+          return Promise.resolve(err(request, {
+            code: 'internal',
+            message: `context-composition read failed: ${error instanceof Error ? error.message : String(error)}`,
+            details: {},
+          }))
+        }
+      },
+    },
+
     flow: {
       // The four store methods read/write `.dsh/flows` under the payload cwd
       // — project files, so they are privileged (see PRIVILEGED_METHODS in
@@ -3463,7 +3506,7 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
             graph: request.payload.graph,
             parent: found.agent,
             ...(request.payload.input === undefined ? {} : { input: request.payload.input }),
-            ...(signal === undefined ? {} : { signal }),
+            signal,
           })
           return ok(request, { runId })
         } catch (error: unknown) {
@@ -3473,33 +3516,33 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           return err(request, flowError(error, { flowId: request.payload.graph.id }))
         }
       },
-      async getRun(request) {
+      getRun(request) {
         const flowEngine = ctx.get('flowEngine')
-        if (flowEngine === undefined) return err(request, flowUnavailable())
+        if (flowEngine === undefined) return Promise.resolve(err(request, flowUnavailable()))
         try {
           const run = flowEngine.getRun(FlowRunId(request.payload.runId))
-          return ok(request, { run: run ?? null })
+          return Promise.resolve(ok(request, { run: run ?? null }))
         } catch (error: unknown) {
-          return err(request, flowError(error, { runId: request.payload.runId }))
+          return Promise.resolve(err(request, flowError(error, { runId: request.payload.runId })))
         }
       },
-      async listRuns(request) {
+      listRuns(request) {
         const flowEngine = ctx.get('flowEngine')
-        if (flowEngine === undefined) return err(request, flowUnavailable())
+        if (flowEngine === undefined) return Promise.resolve(err(request, flowUnavailable()))
         try {
-          return ok(request, { runs: flowEngine.listRuns(request.payload.flowId) })
+          return Promise.resolve(ok(request, { runs: flowEngine.listRuns(request.payload.flowId) }))
         } catch (error: unknown) {
-          return err(request, flowError(error))
+          return Promise.resolve(err(request, flowError(error)))
         }
       },
-      async stop(request) {
+      stop(request) {
         const flowEngine = ctx.get('flowEngine')
-        if (flowEngine === undefined) return err(request, flowUnavailable())
+        if (flowEngine === undefined) return Promise.resolve(err(request, flowUnavailable()))
         try {
           flowEngine.stop(FlowRunId(request.payload.runId))
-          return ok(request, {})
+          return Promise.resolve(ok(request, {}))
         } catch (error: unknown) {
-          return err(request, flowError(error, { runId: request.payload.runId }))
+          return Promise.resolve(err(request, flowError(error, { runId: request.payload.runId })))
         }
       },
     },

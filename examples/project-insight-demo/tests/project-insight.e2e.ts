@@ -135,7 +135,7 @@ describe('project-insight demo keyless smoke', () => {
     expect(projectDir).not.toBe('')
     expect(persistedDoc).toBeDefined()
     const doc = persistedDoc!
-    expect(doc.formatVersion).toBe(3)
+    expect(doc.formatVersion).toBe(5)
     expect(doc.rootName).toBe('fixture-project')
     expect(doc.contentFingerprint).toMatch(/^[0-9a-f]{64}$/)
     expect(doc.statSignature).toMatch(/^[0-9a-f]{64}$/)
@@ -181,12 +181,28 @@ describe('project-insight demo keyless smoke', () => {
     expect(doc.sections.agentTech.files).toContainEqual({
       path: '.claude/settings.json', kind: 'tool-config',
     })
-    // The v3 agent-tech section carries the embedded markdown collections:
+    // The v5 agent-tech section carries the embedded content collections:
     // no skills or mcp configs are seeded, and the root prompt file is embedded.
     expect(doc.sections.agentTech.skills).toEqual([])
     expect(doc.sections.agentTech.mcp).toEqual([])
     expect(doc.sections.agentTech.prompts).toEqual([
-      { name: 'review.prompt.md', path: 'prompts/review.prompt.md', markdown: '# Review checklist\n' },
+      { name: 'review.prompt.md', path: 'prompts/review.prompt.md', content: '# Review checklist\n' },
     ])
+    // The shared documents pool carries content for every remaining listed
+    // file: the inventory's non-embedded configs, the source files, and the
+    // manifests, sorted by path.
+    expect(doc.sections.documents.files.map(row => row.path)).toEqual([
+      '.claude/settings.json',
+      'package.json',
+      'src/components/Button.tsx',
+      'src/components/Header.vue',
+      'src/main.ts',
+      'src/utils/format.ts',
+    ])
+    expect(doc.sections.documents.files).toContainEqual({
+      name: 'settings.json', path: '.claude/settings.json',
+      content: '{ "permissions": { "allow": [] } }\n',
+    })
+    expect(doc.sections.documents.count).toBe(6)
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 })

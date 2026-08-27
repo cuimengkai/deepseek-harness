@@ -371,34 +371,62 @@ export class BasicCompactionEngine extends CompactionEngine {
     signal: AbortSignal,
     sourceCommandId?: CommandId,
   ): Promise<CompactionResult | null> {
+    return this.runManual(agent, signal, (operationSignal) => {
+      const range = selectCompactableRange(
+        agent.session,
+        this.ctx.tokenMeter.measure(agent.session),
+        0,
+      )
+      if (range === null) return Promise.resolve(null)
+      return this.commitManual(agent, operationSignal, sourceCommandId, range)
+    })
+  }
+
+  /**
+   * Compact one caller-selected range through the same standalone
+   * idle-gated transaction as {@link compactNow}.
+   * @param start - surface seq at the earlier position of the range, inclusive.
+   * @param end - surface seq at the later position of the range, inclusive.
+   * @param agent - idle agent whose durable history is compacted.
+   * @param signal - cancellation scoped to this compaction request.
+   * @param sourceCommandId - initiating command identity for presentation correlation.
+   * @returns the committed result.
+   */
+  override compactRegionNow(
+    start: number,
+    end: number,
+    agent: Agent,
+    signal: AbortSignal,
+    sourceCommandId?: CommandId,
+  ): Promise<CompactionResult> {
+    return this.runManual(agent, signal, operationSignal =>
+      this.commitManual(agent, operationSignal, sourceCommandId, { start, end }))
+  }
+
+  /**
+   * Run one manual compaction through the idle gate with the shared
+   * cancellation, busy, and durability semantics. The task body runs inside
+   * the maintenance phase, so its surface reads happen after admission — the
+   * standalone marker pair and checkpoint bracket it identically for both
+   * manual verbs.
+   * @param agent - idle agent whose next-turn admission this call reserves.
+   * @param signal - cancellation scoped to this compaction request.
+   * @param task - the phase body: resolve a range and commit it.
+   * @returns the task's result, with busy and agent-cancellation mapped to
+   * {@link ManualCompactionError}.
+   */
+  private runManual<T>(
+    agent: Agent,
+    signal: AbortSignal,
+    task: (operationSignal: AbortSignal) => Promise<T>,
+  ): Promise<T> {
     signal.throwIfAborted()
     try {
       return agent.runMaintenance(async (agentSignal) => {
         const operationSignal = AbortSignal.any([agentSignal, signal])
         try {
           operationSignal.throwIfAborted()
-          const range = selectCompactableRange(
-            agent.session,
-            this.ctx.tokenMeter.measure(agent.session),
-            0,
-          )
-          if (range === null) return null
-          return await compactSurfaceRegion(
-            this.regionDependencies(),
-            agent.session,
-            range.start,
-            range.end,
-            agent,
-            {
-              owner: null,
-              stability: 'selected-span',
-              ...sourceCommandId === undefined ? {} : { sourceCommandId },
-              flush: async () => {
-                await this.ctx.sessions.flush(agent.session)
-              },
-            },
-            operationSignal,
-          )
+          return await task(operationSignal)
         } catch (error: unknown) {
           if (agentSignal.aborted && operationSignal.reason === agentSignal.reason) {
             throw new ManualCompactionError(
@@ -418,6 +446,35 @@ export class BasicCompactionEngine extends CompactionEngine {
         { cause: error },
       )
     }
+  }
+
+  /**
+   * Commit one resolved range as the standalone manual transaction: the
+   * selected span stays stable, the checkpoint carries the command identity,
+   * and the durability flush lands after the marker pair.
+   */
+  private commitManual(
+    agent: Agent,
+    operationSignal: AbortSignal,
+    sourceCommandId: CommandId | undefined,
+    range: { start: number; end: number },
+  ): Promise<CompactionResult> {
+    return compactSurfaceRegion(
+      this.regionDependencies(),
+      agent.session,
+      range.start,
+      range.end,
+      agent,
+      {
+        owner: null,
+        stability: 'selected-span',
+        ...sourceCommandId === undefined ? {} : { sourceCommandId },
+        flush: async () => {
+          await this.ctx.sessions.flush(agent.session)
+        },
+      },
+      operationSignal,
+    )
   }
 
   /** Bind the effective token meter and dynamically dispatched summarizer hook. */

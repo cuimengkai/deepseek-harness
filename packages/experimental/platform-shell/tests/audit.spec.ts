@@ -97,7 +97,7 @@ describe('audit log', () => {
       db.exec(sql('commit'))
       const row = listAudit(db, { action: 'asset.register' })[0]!
       expect(row.targetId).toBe('requirement-1')
-      expect(JSON.parse(row.detail as string).kind).toBe('requirement')
+      expect((JSON.parse(row.detail as string) as { kind: string }).kind).toBe('requirement')
     } finally {
       db.close()
     }

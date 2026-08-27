@@ -10,9 +10,10 @@ Human-facing `/compact` control over [`ctx.compaction`](../compaction/README.md)
 |---|---|
 | `/compact` | Summarize one useful balanced older span even below automatic pressure, then report the replaced history-item count and estimated tokens after the standalone bracket is flushed. |
 | `/compact` with no compactable history | `No compactable history yet.` — no marker or surface mutation is written. |
-| `/compact <anything>` | `Usage: /compact (no arguments)` — the command takes no arguments and calls no compaction backend. |
+| `/compact <startSeq>:<endSeq>` | Compact exactly that inclusive surface range through `compactRegionNow(start, end, …)`; both edges must be balanced surface seqs, and the range must not be reversed. |
+| `/compact <anything>` | `Usage: /compact — policy range, or /compact <startSeq>:<endSeq> — explicit surface range` — the argument is neither empty nor a well-formed range, and no compaction backend is called. |
 
-The command is backend-independent: it depends only on `compactNow(agent, signal)`. The invoking agent is the exact target, and the dispatching UI's cancellation signal is forwarded through the seam. Every resolved invocation records the executor-owned log-only pair `command/run` / `command/done`; neither event joins model history. On success, `command/done.sourceEventSeq` names the transaction's `compaction/summary` event so a presentation can fold the command lifecycle into its checkpoint without parsing result text or assuming adjacent rows.
+A rejected range (missing, reversed, or unbalanced edge) fails loud with the engine's own error message naming the violated edge; the conversation is unchanged. The command is backend-independent: it depends only on `compactNow` and `compactRegionNow`. The invoking agent is the exact target, and the dispatching UI's cancellation signal is forwarded through the seam. Every resolved invocation records the executor-owned log-only pair `command/run` / `command/done`; neither event joins model history. On success, `command/done.sourceEventSeq` names the transaction's `compaction/summary` event so a presentation can fold the command lifecycle into its checkpoint without parsing result text or assuming adjacent rows.
 
 Expected `ManualCompactionError` codes become stable direct errors:
 
@@ -62,5 +63,5 @@ Discovery and command bookkeeping do not affect the cache. The accepted surface 
 ## Known Limitations and Deferred Work
 
 - **Idle-only** — `/compact` reports `busy` when a turn or already accepted waking prompt has right of way; the command itself is not queued.
-- **No range or policy arguments** — the argument-free form keeps behavior stable across command adapters. Explicit ranges remain the programmatic `compactRegion()` path.
+- **Range seqs, not positions** — `<startSeq>:<endSeq>` names the log seqs of the range's first and last surface rows; the surface fold resolves them positionally, so a range spanning a prior replacement's shadowed rows rejects instead of silently re-compacting hidden history.
 - **Command adapters only** — surfaces without `ctx.commands` cannot invoke it and rely on automatic pressure compaction.

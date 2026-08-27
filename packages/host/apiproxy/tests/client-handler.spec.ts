@@ -7,7 +7,7 @@
 
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-import type { ApiProxy, FlowApi, GoalRef, HostFrame, ModelProviderGroup, MuxFrame, ProjectInsightApi, RpcMessage, RpcRequest, RpcResponse } from '@deepseek-ai/dsh-host-apiproxy'
+import type { ApiProxy, ContextCompositionApi, FlowApi, GoalRef, HostFrame, ModelProviderGroup, MuxFrame, ProjectInsightApi, RpcMessage, RpcRequest, RpcResponse } from '@deepseek-ai/dsh-host-apiproxy'
 import { InProcessApiClient, RpcId, toFetchHandler } from '@deepseek-ai/dsh-host-apiproxy'
 
 const sid = (id: string): SessionId => id as SessionId
@@ -134,6 +134,7 @@ function scriptedApi(overrides: {
     },
     // Wire-protocol double: these domains are not scripted per case.
     projectInsight: {} as ProjectInsightApi,
+    contextComposition: {} as ContextCompositionApi,
     flow: {} as FlowApi,
     events: { mux: () => empty<MuxFrame>(), host: () => empty<HostFrame>(), ...overrides.events },
     respond: overrides.respond ?? (() => Promise.resolve({ accepted: false as const, reason: 'not-pending' as const })),

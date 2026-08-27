@@ -145,26 +145,32 @@ export const agentTechToolRowSchema = z.object({
   path: z.string(),
 }) satisfies z.ZodType<Wire<{ name: string; path: string }>>
 
-/** AgentTechMarkdownRow row of the agent-related-technology section. */
-export const agentTechMarkdownRowSchema = z.object({
+/** FileContentRow row of the agent-tech collections and the documents pool. */
+export const fileContentRowSchema = z.object({
   name: z.string(),
   path: z.string(),
-  markdown: z.string(),
-}) satisfies z.ZodType<Wire<{ name: string; path: string; markdown: string }>>
+  content: z.string(),
+}) satisfies z.ZodType<Wire<{ name: string; path: string; content: string }>>
 
 /** The agent-related-technology section. */
 export const agentTechSectionSchema = z.object({
   files: z.array(agentTechFileRowSchema),
   tools: z.array(agentTechToolRowSchema),
   count: z.number().int().nonnegative(),
-  skills: z.array(agentTechMarkdownRowSchema),
-  mcp: z.array(agentTechMarkdownRowSchema),
-  prompts: z.array(agentTechMarkdownRowSchema),
+  skills: z.array(fileContentRowSchema),
+  mcp: z.array(fileContentRowSchema),
+  prompts: z.array(fileContentRowSchema),
+})
+
+/** The shared file-content documents section. */
+export const documentsSectionSchema = z.object({
+  files: z.array(fileContentRowSchema),
+  count: z.number().int().nonnegative(),
 })
 
 /** The committed `.dsh/insight/` document. */
 export const projectInsightDocSchema = z.object({
-  formatVersion: z.literal(3),
+  formatVersion: z.literal(5),
   rootName: z.string(),
   contentFingerprint: z.string(),
   statSignature: z.string(),
@@ -176,6 +182,7 @@ export const projectInsightDocSchema = z.object({
     components: componentsSectionSchema,
     prompts: promptsSectionSchema,
     agentTech: agentTechSectionSchema,
+    documents: documentsSectionSchema,
   }),
 })
 

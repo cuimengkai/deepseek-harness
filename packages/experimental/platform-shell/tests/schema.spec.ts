@@ -113,7 +113,7 @@ describe('validateSchemaForMutation', () => {
     const db = await openMemory()
     try {
       db.exec(sql('begin-immediate'))
-      expect(() => validateSchemaForMutation(DatabaseSync, db, ':memory:')).not.toThrow()
+      expect(() =>{  validateSchemaForMutation(DatabaseSync, db, ':memory:') }).not.toThrow()
       db.exec(sql('rollback'))
     } finally {
       db.close()
@@ -125,7 +125,7 @@ describe('validateSchemaForMutation', () => {
     try {
       db.exec(sql('begin-immediate'))
       db.exec(testSql('corrupt-row-with-wrong-app-id'))
-      expect(() => validateSchemaForMutation(DatabaseSync, db, ':memory:')).toThrow(/application id/)
+      expect(() =>{  validateSchemaForMutation(DatabaseSync, db, ':memory:') }).toThrow(/application id/)
       db.exec(sql('rollback'))
     } finally {
       db.close()
@@ -137,7 +137,7 @@ describe('validateSchemaForMutation', () => {
     try {
       db.exec(sql('begin-immediate'))
       db.exec(testSql('set-user-version-99'))
-      expect(() => validateSchemaForMutation(DatabaseSync, db, ':memory:')).toThrow(/schema/)
+      expect(() =>{  validateSchemaForMutation(DatabaseSync, db, ':memory:') }).toThrow(/schema/)
       db.exec(sql('rollback'))
     } finally {
       db.close()
@@ -149,7 +149,7 @@ describe('validateSchemaForMutation', () => {
     try {
       db.exec(sql('begin-immediate'))
       db.exec(testSql('add-unexpected-column'))
-      expect(() => validateSchemaForMutation(DatabaseSync, db, ':memory:')).toThrow(/schema/)
+      expect(() =>{  validateSchemaForMutation(DatabaseSync, db, ':memory:') }).toThrow(/schema/)
       db.exec(sql('rollback'))
     } finally {
       db.close()

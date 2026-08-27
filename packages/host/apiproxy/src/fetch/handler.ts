@@ -51,6 +51,7 @@ import {
   agentPresetRemoveRequestSchema, agentPresetSaveGraphRequestSchema, agentPresetSelectRequestSchema,
 } from '../api/agent-presets.schema.ts'
 import { projectInsightReadRequestSchema } from '../api/project-insight.schema.ts'
+import { contextCompositionReadRequestSchema } from '../api/context-composition.schema.ts'
 import {
   flowDeleteRequestSchema, flowGetRequestSchema, flowGetRunRequestSchema, flowListRequestSchema,
   flowListRunsRequestSchema, flowRunRequestSchema, flowSaveRequestSchema, flowStopRequestSchema,
@@ -135,6 +136,7 @@ const UNARY_ROUTES: UnaryRoutes = {
   'agentPreset.readGraph': { schema: agentPresetReadGraphRequestSchema, invoke: (api, r) => api.agentPresets.readGraph(r) },
   'agentPreset.saveGraph': { schema: agentPresetSaveGraphRequestSchema, invoke: (api, r) => api.agentPresets.saveGraph(r) },
   'projectInsight.read': { schema: projectInsightReadRequestSchema, invoke: (api, r, signal) => api.projectInsight.read(r, signal) },
+  'contextComposition.read': { schema: contextCompositionReadRequestSchema, invoke: (api, r, signal) => api.contextComposition.read(r, signal) },
   'flow.list': { schema: flowListRequestSchema, invoke: (api, r) => api.flow.list(r) },
   'flow.get': { schema: flowGetRequestSchema, invoke: (api, r) => api.flow.get(r) },
   'flow.save': { schema: flowSaveRequestSchema, invoke: (api, r) => api.flow.save(r) },

@@ -9,6 +9,7 @@ import type { HostApi } from './host.ts'
 import type { WorkspaceApi } from './workspace.ts'
 import type { AgentPresetsApi } from './agent-presets.ts'
 import type { ProjectInsightApi } from './project-insight.ts'
+import type { ContextCompositionApi } from './context-composition.ts'
 import type { FlowApi } from './flow.ts'
 import type { SkillsApi } from './skills.ts'
 import type { SubagentsApi } from './subagents.ts'
@@ -29,6 +30,7 @@ export interface ApiProxy {
   skills: SkillsApi
   agentPresets: AgentPresetsApi
   projectInsight: ProjectInsightApi
+  contextComposition: ContextCompositionApi
   flow: FlowApi
   events: EventsApi
   goals: GoalsApi
@@ -61,6 +63,7 @@ export type { WorkspaceApi, WorkspaceId, WorkspaceView } from './workspace.ts'
 export type { SkillsApi, SkillEntry } from './skills.ts'
 export type { AgentPresetsApi, AgentPresetEntry, ComposeRow } from './agent-presets.ts'
 export type { ProjectInsightApi, ProjectInsightReadResult, ProjectInsightReadStatus } from './project-insight.ts'
+export type { ContextCompositionApi } from './context-composition.ts'
 export type { FlowApi } from './flow.ts'
 export type { EventsApi, MuxFrame, HostFrame, QueuedInboxItem, ToolCallView, ToolEventView, ToolResultView } from './events.ts'
 export type { GoalsApi, GoalId, GoalRef } from './goals.ts'

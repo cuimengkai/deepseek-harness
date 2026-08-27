@@ -450,10 +450,7 @@ export class AgentRegistry extends Service {
    */
   async disposeAgent(id: SessionId): Promise<boolean> {
     if (this.factory === undefined) return false
-    // `?.` keeps a factory compiled against a pre-disposeAgent interface from
-    // crashing the deletion path; unknown agents and missing factories both
-    // report false and the caller's liveness re-check owns the decision.
-    return this.factory.target.disposeAgent?.(id) ?? false
+    return this.factory.target.disposeAgent(id)
   }
 
   /**

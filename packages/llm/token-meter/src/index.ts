@@ -24,6 +24,11 @@ import { estimateContent, estimateHeader, estimateMessage, ROLE_OVERHEAD } from 
 import { foldSurfaceTokens } from './surface-fold.ts'
 
 export type * from './types.ts'
+// The fixed estimator's pure functions, re-exported so the shared heuristic has
+// one importable home (context-composition prices through this subpath).
+export {
+  estimateContent, estimateMessage, estimateSystemTokens, estimateToolsTokens, estimateHeader,
+} from './estimate.ts'
 
 interface MeasurementAnchor {
   readonly header: EpochHeader | undefined

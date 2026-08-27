@@ -280,7 +280,7 @@ describe('capability resolution', () => {
         () => resolveSelection(loadCatalog(db), ws, [published.id]),
         'CAPABILITY_DISABLED',
       )
-      expect(() => assertGateOpen(getCapability(db, published.id)!, ws)).toThrow()
+      expect(() =>{  assertGateOpen(getCapability(db, published.id)!, ws) }).toThrow()
     } finally {
       db.close()
     }

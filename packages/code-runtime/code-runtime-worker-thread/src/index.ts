@@ -382,8 +382,10 @@ export class WorkerThreadCodeRuntime extends CodeRuntime {
       env: {},
       // Hermetic flags too: without this the worker inherits the host process's execArgv (a
       // test runner's or tsx's loader hooks), which a bare isolate with an empty environment
-      // cannot satisfy.
-      execArgv: [],
+      // cannot satisfy. Node's own diagnostics stay out of the captured output: loading the
+      // worker source through native type stripping raises an ExperimentalWarning that would
+      // otherwise surface to the stderr pipe and pollute the model-run log ledger.
+      execArgv: ['--disable-warning=ExperimentalWarning'],
       resourceLimits: { maxOldGenerationSizeMb: this.config.maxOldGenerationSizeMb },
       // Backstop capture: the bootstrap patches JS-level writes into its own
       // ordered buffer, so these pipes normally stay silent; anything that

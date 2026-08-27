@@ -39,6 +39,16 @@ class StubCompactionEngine extends CompactionEngine {
     return null
   }
 
+  override async compactRegionNow(
+    _start: number,
+    _end: number,
+    _agent: ManualCompactAgentContext,
+    signal: AbortSignal,
+  ): Promise<CompactionResult> {
+    this.lastSignal = signal
+    throw new Error('stub: no manual range')
+  }
+
   override async compactRegion(
     start: number,
     end: number,

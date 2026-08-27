@@ -177,64 +177,80 @@ const flowRunSnapshotSchema = flowRunSummarySchema.extend({
 }) satisfies z.ZodType<Wire<FlowRunSnapshot>>
 
 // ---- flow.list ----
+/** `flow.list` request payload: the working directory whose stored flows to enumerate. */
 export const flowListRequestSchema = z.object({
   cwd: z.string().min(1),
 }) satisfies z.ZodType<Wire<RequestPayload<'flow.list'>>>
+/** `flow.list` response value: the flow summaries stored under the working directory. */
 export const flowListValueSchema = z.object({
   flows: z.array(flowSummarySchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'flow.list'>>>
 
 // ---- flow.get ----
+/** `flow.get` request payload: the working directory and flow id to load. */
 export const flowGetRequestSchema = z.object({
   cwd: z.string().min(1),
   id: z.string().min(1),
 }) satisfies z.ZodType<Wire<RequestPayload<'flow.get'>>>
+/** `flow.get` response value: the stored flow graph. */
 export const flowGetValueSchema = flowGraphSchema satisfies z.ZodType<Wire<ResponseValue<'flow.get'>>>
 
 // ---- flow.save ----
+/** `flow.save` request payload: the working directory and the flow graph to persist. */
 export const flowSaveRequestSchema = z.object({
   cwd: z.string().min(1),
   graph: flowGraphSchema,
 }) satisfies z.ZodType<Wire<RequestPayload<'flow.save'>>>
+/** `flow.save` response value: the id under which the graph was stored. */
 export const flowSaveValueSchema = z.object({
   id: z.string(),
 }) satisfies z.ZodType<Wire<ResponseValue<'flow.save'>>>
 
 // ---- flow.delete ----
+/** `flow.delete` request payload: the working directory and flow id to remove. */
 export const flowDeleteRequestSchema = z.object({
   cwd: z.string().min(1),
   id: z.string().min(1),
 }) satisfies z.ZodType<Wire<RequestPayload<'flow.delete'>>>
+/** `flow.delete` response value: empty on success. */
 export const flowDeleteValueSchema = z.object({}) satisfies z.ZodType<Wire<ResponseValue<'flow.delete'>>>
 
 // ---- flow.run ----
+/** `flow.run` request payload: the session to drive, the flow graph, and the optional run input. */
 export const flowRunRequestSchema = z.object({
   sessionId: sessionIdSchema,
   graph: flowGraphSchema,
   input: z.unknown().optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'flow.run'>>>
+/** `flow.run` response value: the started run's id. */
 export const flowRunValueSchema = z.object({
   runId: z.string(),
 }) satisfies z.ZodType<Wire<ResponseValue<'flow.run'>>>
 
 // ---- flow.getRun ----
+/** `flow.getRun` request payload: the run id to look up. */
 export const flowGetRunRequestSchema = z.object({
   runId: z.string().min(1),
 }) satisfies z.ZodType<Wire<RequestPayload<'flow.getRun'>>>
+/** `flow.getRun` response value: the run snapshot, or null when the id is unknown. */
 export const flowGetRunValueSchema = z.object({
   run: flowRunSnapshotSchema.nullable(),
 }) satisfies z.ZodType<Wire<ResponseValue<'flow.getRun'>>>
 
 // ---- flow.listRuns ----
+/** `flow.listRuns` request payload: optionally restrict the listing to one flow's runs. */
 export const flowListRunsRequestSchema = z.object({
   flowId: z.string().optional(),
 }) satisfies z.ZodType<Wire<RequestPayload<'flow.listRuns'>>>
+/** `flow.listRuns` response value: the run summaries the filter selected. */
 export const flowListRunsValueSchema = z.object({
   runs: z.array(flowRunSummarySchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'flow.listRuns'>>>
 
 // ---- flow.stop ----
+/** `flow.stop` request payload: the run id to stop. */
 export const flowStopRequestSchema = z.object({
   runId: z.string().min(1),
 }) satisfies z.ZodType<Wire<RequestPayload<'flow.stop'>>>
+/** `flow.stop` response value: empty once the stop was requested. */
 export const flowStopValueSchema = z.object({}) satisfies z.ZodType<Wire<ResponseValue<'flow.stop'>>>

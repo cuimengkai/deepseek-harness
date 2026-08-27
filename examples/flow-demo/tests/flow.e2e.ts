@@ -52,7 +52,7 @@ describe('flow demo keyless smoke', () => {
     expect(events.filter(event => event.type === 'agent_end').map(event => event.outcome)).toEqual(['completed', 'completed'])
 
     expect(result.outcome).toEqual({ status: 'completed', agentsStarted: 2 })
-    const snapshot = result.snapshot as unknown as FlowRunSnapshot
+    const snapshot = result.snapshot as FlowRunSnapshot
     expect(snapshot.status).toBe('completed')
     expect(snapshot.stopReason).toBe('completed')
     expect(snapshot.agentsStarted).toBe(2)
@@ -74,7 +74,7 @@ describe('flow demo keyless smoke', () => {
     expect(new Set([...starts.values()].map(start => start.childId)).size).toBe(2)
 
     expect(result.outcome).toEqual({ status: 'completed', agentsStarted: 2 })
-    const snapshot = result.snapshot as unknown as FlowRunSnapshot
+    const snapshot = result.snapshot as FlowRunSnapshot
     expect(snapshot.nodeStatuses).toEqual({
       start: 'done',
       a: 'done',

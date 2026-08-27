@@ -4,13 +4,16 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { ManualCompactionError } from '@deepseek-ai/dsh-compaction'
+import { ManualCompactionError, type CompactionResult } from '@deepseek-ai/dsh-compaction'
 import type { CommandInvocation, CommandResult } from '@deepseek-ai/dsh-commands'
 
 export const name = 'command-compact'
 export const inject = ['commands', 'compaction']
 
-const USAGE = 'Usage: /compact (no arguments)'
+const USAGE = 'Usage: /compact — policy range, or /compact <startSeq>:<endSeq> — explicit surface range'
+
+/** Grammar of the explicit-range argument: two inclusive surface seqs. */
+const RANGE_INPUT = /^\s*(\d+)\s*:\s*(\d+)\s*$/u
 
 /** Fail loudly if a locally closed union gains an unhandled member. */
 /* v8 ignore start -- closed-union backstop is unreachable without violating the TypeScript contract */
@@ -54,25 +57,53 @@ function expectedFailure(error: ManualCompactionError): CommandResult {
   }
 }
 
-/** Execute one argument-free manual compaction request. */
+/**
+ * Render one committed manual compaction outcome.
+ * @param result - the committed transaction.
+ * @returns the human success text with its summary event anchor.
+ */
+function successOf(result: CompactionResult): CommandResult {
+  return {
+    kind: 'success',
+    text: `Compacted ${result.shadowedSeqs.length} history items (~${result.shadowedTokenCount} tokens).`,
+    sourceEventSeq: result.summarySeq,
+  }
+}
+
+/**
+ * Execute one manual compaction request: argument-free selects the retention
+ * policy's range; `<startSeq>:<endSeq>` compacts exactly that inclusive
+ * surface range. Any other argument is a usage error.
+ */
 async function executeCompact(
   ctx: Context,
   invocation: CommandInvocation,
 ): Promise<CommandResult> {
-  if (invocation.rawInput.trim().length > 0) {
+  const raw = invocation.rawInput.trim()
+  const range = RANGE_INPUT.exec(raw)
+  if (raw.length > 0 && range === null) {
     return { kind: 'error', text: USAGE }
   }
   try {
-    const result = await ctx.compaction.compactNow(invocation.agent, invocation.signal, invocation.commandId)
-    if (result === null) return { kind: 'success', text: 'No compactable history yet.' }
-    return {
-      kind: 'success',
-      text: `Compacted ${result.shadowedSeqs.length} history items (~${result.shadowedTokenCount} tokens).`,
-      sourceEventSeq: result.summarySeq,
+    if (range === null) {
+      const result = await ctx.compaction.compactNow(invocation.agent, invocation.signal, invocation.commandId)
+      if (result === null) return { kind: 'success', text: 'No compactable history yet.' }
+      return successOf(result)
     }
+    const result = await ctx.compaction.compactRegionNow(
+      Number(range[1]),
+      Number(range[2]),
+      invocation.agent,
+      invocation.signal,
+      invocation.commandId,
+    )
+    return successOf(result)
   } catch (error: unknown) {
     if (invocation.signal.aborted) return { kind: 'error', text: 'Compaction cancelled.' }
     if (error instanceof ManualCompactionError) return expectedFailure(error)
+    // A rejected range (missing, reversed, or unbalanced edge) is a plain
+    // Error whose message already names the violated edge; surface it verbatim.
+    if (error instanceof Error && range !== null) return { kind: 'error', text: error.message }
     throw error
   }
 }
@@ -99,7 +130,8 @@ export function apply(ctx: Context): void {
     yield async () => { await Promise.allSettled(active) }
     yield ctx.commands.register({
       name: 'compact',
-      description: 'Compact older conversation history',
+      description: 'Compact older conversation history, or an explicit inclusive surface range',
+      input: { hint: '[<startSeq>:<endSeq>]' },
       handler,
     })
   }, 'command-compact lifecycle')

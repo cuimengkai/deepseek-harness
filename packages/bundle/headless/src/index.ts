@@ -16,10 +16,12 @@ import type {} from '@deepseek-ai/dsh-agent-default-model'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
-// Empty type imports carry the loader Context merge for the settlement await
-// and the cmdline Context merge for the appExit host value.
+// Empty type imports carry the loader Context merge for the settlement await,
+// the cmdline Context merge for the appExit host value, and the sessions
+// Context merge for the post-run flush.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-cmdline'
+import type {} from '@deepseek-ai/dsh-session/context'
 
 /** Stable Cordis plugin name. */
 export const name = 'headless-runner'

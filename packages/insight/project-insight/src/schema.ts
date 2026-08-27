@@ -1,10 +1,11 @@
 /**
  * The versioned `.dsh/insight/` document vocabulary and its scan-time bounds.
  * The document is the single data contract between the deterministic scanner,
- * the model-facing `scan_project` tool, and the browser's six insight tabs:
+ * the model-facing `scan_project` tool, and the browser's five insight tabs:
  * everything the workbench renders derives from one committed document, stored
- * under `<projectRoot>/.dsh/insight/` as a meta file plus six typed section
- * files.
+ * under `<projectRoot>/.dsh/insight/` as a meta file plus seven typed section
+ * files (the prompts section renders inside the agent-tech tab; the documents
+ * section is the shared file-content pool every tab resolves through).
  * @module @deepseek-ai/dsh-project-insight/schema
  */
 
@@ -16,7 +17,7 @@
  * background, so a format bump self-heals an existing project's committed doc
  * instead of stranding it in an error state.
  */
-export const PROJECT_INSIGHT_FORMAT_VERSION = 3
+export const PROJECT_INSIGHT_FORMAT_VERSION = 5
 
 /** Source files the module topology emits; the walk itself is bounded by {@link MAX_FINGERPRINT_FILES}. */
 export const MAX_SOURCE_FILES = 300
@@ -28,14 +29,25 @@ export const MAX_SOURCE_BYTES = 256 * 1024
 export const MAX_MANIFEST_BYTES = 1 * 1024 * 1024
 /** Files the content-fingerprint projection walks before truncation. */
 export const MAX_FINGERPRINT_FILES = 5000
-/** Per-file byte guard applied when a stored document file is read. */
-export const MAX_DOC_BYTES = 1 * 1024 * 1024
+/** Per-file byte guard applied when a stored document file is read; sits above
+ *  {@link MAX_DOCUMENT_TOTAL} plus the JSON-escaping overhead a documents
+ *  section file can add to its embedded content. */
+export const MAX_DOC_BYTES = 16 * 1024 * 1024
 /** Markdown content rows the agent-tech section embeds per collection (skills, mcp, prompts). */
 export const MAX_AGENT_TECH_MARKDOWN_ROWS = 16
-/** UTF-8 byte cap for one embedded content row; larger files are skipped. */
-export const MAX_AGENT_TECH_MARKDOWN_BYTES = 64 * 1024
+/** UTF-8 byte cap for one embedded file-content row; larger files are skipped. */
+export const MAX_FILE_CONTENT_BYTES = 64 * 1024
 /** Total UTF-8 byte budget across all agent-tech markdown content, applied in sorted order. */
 export const MAX_AGENT_TECH_MARKDOWN_TOTAL = 512 * 1024
+/** File-content rows the shared documents section embeds; covers the union of
+ *  the files the tabs list (tech-stack sources and manifests, components,
+ *  agent-tech inventory, module topology — together at most
+ *  {@link MAX_SOURCE_FILES} + 100 + 20 rows) with headroom. */
+export const MAX_DOCUMENT_ROWS = 600
+/** Total UTF-8 byte budget across the documents section, kept apart from the
+ *  agent-tech markdown budget so source embeds cannot starve the skills/mcp/
+ *  prompts embeds; both budgets stay under the per-file {@link MAX_DOC_BYTES} cap. */
+export const MAX_DOCUMENT_TOTAL = 4 * 1024 * 1024
 
 /** One detected dependency manifest (package.json, lockfile, …). */
 export interface ManifestRow {
@@ -184,14 +196,15 @@ export interface AgentTechToolRow {
   readonly path: string
 }
 
-/** One embedded agent-related document the workbench renders as markdown. */
-export interface AgentTechMarkdownRow {
-  /** Display name: skill directory name, mcp config basename, or prompt basename. */
+/** One embedded file-content row a tab renders as source or markdown. */
+export interface FileContentRow {
+  /** Display name: skill directory name, config basename, or file basename. */
   readonly name: string
   /** Root-relative file path. */
   readonly path: string
-  /** The file's markdown source (mcp configs render as a fenced JSON block). */
-  readonly markdown: string
+  /** The file's text content (mcp configs arrive as a fenced JSON block; other
+   *  non-markdown files carry their verbatim source for source-view rendering). */
+  readonly content: string
 }
 
 /** The agent-related-technology section. */
@@ -203,11 +216,22 @@ export interface AgentTechSection {
   /** Total agent-related files counted before the emitted set was capped. */
   readonly count: number
   /** Skill `SKILL.md` content, sorted by path and bounded by the markdown caps. */
-  readonly skills: AgentTechMarkdownRow[]
+  readonly skills: FileContentRow[]
   /** MCP config content, sorted by path and bounded by the markdown caps. */
-  readonly mcp: AgentTechMarkdownRow[]
+  readonly mcp: FileContentRow[]
   /** Prompt-file content, sorted by path and bounded by the markdown caps. */
-  readonly prompts: AgentTechMarkdownRow[]
+  readonly prompts: FileContentRow[]
+}
+
+/** The shared file-content section: bounded content for the files every tab
+ *  lists (tech-stack sources and manifests, module-topology and component
+ *  files, agent-tech inventory files beyond the three markdown collections),
+ *  so each tab renders a selected file's content instead of its metadata. */
+export interface DocumentsSection {
+  /** Embedded file content, sorted by path and bounded by the documents caps. */
+  readonly files: FileContentRow[]
+  /** Total candidate files the pool considered before the caps dropped rows. */
+  readonly count: number
 }
 
 /**
@@ -218,7 +242,7 @@ export interface AgentTechSection {
  */
 export interface ProjectInsightDoc {
   /** Monotonic format version; readers refuse any other value. */
-  readonly formatVersion: 3
+  readonly formatVersion: 5
   /** Basename of the project root — identity only, never a host path. */
   readonly rootName: string
   /** sha256 hex over the sorted `(relativePath, size, content)` projection of the bounded file set. */
@@ -231,7 +255,7 @@ export interface ProjectInsightDoc {
   readonly statSignature: string
   /** Epoch milliseconds of the scan; runtime metadata, excluded from the fingerprint. */
   readonly scannedAt: number
-  /** The six scanned sections. */
+  /** The seven scanned sections (documents is the shared content pool, not a tab). */
   readonly sections: {
     readonly techStack: TechStackSection
     readonly moduleTopology: ModuleTopologySection
@@ -239,5 +263,6 @@ export interface ProjectInsightDoc {
     readonly components: ComponentsSection
     readonly prompts: PromptsSection
     readonly agentTech: AgentTechSection
+    readonly documents: DocumentsSection
   }
 }

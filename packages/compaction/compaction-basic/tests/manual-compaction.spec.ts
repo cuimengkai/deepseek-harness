@@ -883,3 +883,59 @@ describe('compactNow transaction and failure classification', () => {
     await expect(region).resolves.toMatchObject({ shadowedSeqs: nodes.slice(0, 2) })
   })
 })
+
+describe('compactRegionNow explicit-range manual transaction', () => {
+  it('commits exactly the selected span as a standalone bracket with command identity and flush', async () => {
+    const { compact, flushes } = detachedService()
+    const session = closedConversation(2)
+    const agent = fakeAgent(session, () => () => undefined)
+    const commandId = CommandId('manual-range-command')
+    // Snapshot: the surface mutates in place on replacement, so the live
+    // `surface.nodes` reference cannot hold the pre-compaction seqs.
+    const nodes = [...session.surface.nodes]
+    const [start, end] = [nodes[0]!, nodes[1]!]
+
+    const result = await compact.compactRegionNow(start, end, agent, SIGNAL, commandId)
+
+    expect(result.shadowedSeqs).toEqual([start, end])
+    expect(result.shadowedRange).toEqual({ start, end })
+    expect(result.sourceCommandId).toBe(commandId)
+    expect(flushes()).toBe(1)
+    expect(session.events.filter(event => event.type === 'turn/start').at(-1)?.data.turn).toBe(2)
+    const startEvent = session.events.findLast(event => event.type === 'compaction/start')
+    const endEvent = session.events.findLast(event => event.type === 'compaction/end')
+    expect(startEvent?.data).toEqual({ compactionId: result.compactionId, sourceCommandId: commandId, turn: null })
+    expect(endEvent?.data).toEqual({ compactionId: result.compactionId, sourceCommandId: commandId, turn: null })
+    const checkpoint = session.events.findLast(
+      (event): event is SessionEvent<'user/message'> => event.type === 'user/message'
+        && isCompactCheckpointSource(event.data.source),
+    )
+    expect(checkpoint?.data.source).toMatchObject({ compactionId: result.compactionId, sourceCommandId: commandId })
+    // The replacement lands at the range's position: the surviving tail follows it unchanged.
+    expect(session.surface.nodes).toEqual([checkpoint?.seq, ...nodes.slice(2)])
+    expect(derivedText(session)[0]).toContain('checkpoint')
+  })
+
+  it('rejects a reversed range as a plain error without a bracket', async () => {
+    const { compact } = detachedService()
+    const session = closedConversation(2)
+    const agent = fakeAgent(session, () => () => undefined)
+    const nodes = session.surface.nodes
+
+    await expect(compact.compactRegionNow(nodes[2]!, nodes[1]!, agent, SIGNAL))
+      .rejects.toThrow(/is after end/)
+    expect(compactEvents(session)).toEqual([])
+  })
+
+  it('reports busy without summarizing when admission is unavailable', async () => {
+    const { compact } = detachedService()
+    const session = closedConversation(2)
+    const agent = fakeAgent(session, () => undefined)
+    const nodes = session.surface.nodes
+
+    const error = await rejection(() => compact.compactRegionNow(nodes[0]!, nodes[1]!, agent, SIGNAL))
+    expect(error.code).toBe('busy')
+    expect(compact.calls).toHaveLength(0)
+    expect(compactEvents(session)).toEqual([])
+  })
+})

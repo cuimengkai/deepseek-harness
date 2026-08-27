@@ -10,9 +10,10 @@
 |---|---|
 | `/compact` | 即使未达到自动压力，也摘要一段有效、平衡的较早范围；独立标记对 flush 后，报告被替换的历史项数量与估算 token 数。 |
 | `/compact`，但没有可压缩历史 | `No compactable history yet.`：不会写入标记，也不会变更 surface。 |
-| `/compact <anything>` | `Usage: /compact (no arguments)`：该命令不接受参数，也不会调用压缩后端。 |
+| `/compact <startSeq>:<endSeq>` | 通过 `compactRegionNow(start, end, …)` 精确压缩该闭区间 surface 范围；两个端点必须是平衡的 surface seq，且范围不得倒置。 |
+| `/compact <anything>` | `Usage: /compact — policy range, or /compact <startSeq>:<endSeq> — explicit surface range`：参数既非空也非合法范围，不会调用压缩后端。 |
 
-该命令与后端无关，只依赖 `compactNow(agent, signal)`。调用该命令的 agent（智能体）就是操作的确切目标，发起分发的 UI 会通过 seam 转发取消信号。每次完成的调用都会记录执行器所属的纯日志事件对 `command/run` / `command/done`；两者都不进入模型历史。成功时，`command/done.sourceEventSeq` 会指明该事务的 `compaction/summary` 事件，让呈现层无须解析结果文本或假定两行相邻，即可将命令生命周期归并到对应检查点中。
+被拒绝的范围（缺失、倒置或不平衡的端点）会以引擎自身的错误信息指明被违反的端点并响亮失败；对话保持不变。该命令与后端无关，只依赖 `compactNow` 与 `compactRegionNow`。调用该命令的 agent（智能体）就是操作的确切目标，发起分发的 UI 会通过 seam 转发取消信号。每次完成的调用都会记录执行器所属的纯日志事件对 `command/run` / `command/done`；两者都不进入模型历史。成功时，`command/done.sourceEventSeq` 会指明该事务的 `compaction/summary` 事件，让呈现层无须解析结果文本或假定两行相邻，即可将命令生命周期归并到对应检查点中。
 
 预期的 `ManualCompactionError` 代码会成为稳定的直接错误：
 
@@ -62,5 +63,5 @@ busy 结果有意限定在进程范围内：活动的未匹配标记会阻塞，
 ## 已知限制与暂缓事项
 
 - **仅限空闲状态**：当一个轮次或已获接纳的唤醒提示词拥有优先权时，`/compact` 会报告 `busy`；命令本身不会排队。
-- **不接受范围或策略参数**：无参数形式使各命令适配器的行为保持稳定。显式范围仍由编程接口 `compactRegion()` 处理。
+- **范围是日志 seq，不是位置**：`<startSeq>:<endSeq>` 指定范围首尾 surface 行的日志 seq；surface 折叠按位置解析它们，因此跨越先前替换已遮蔽行的范围会被拒绝，而不是静默重新压缩隐藏历史。
 - **仅限命令适配器**：没有 `ctx.commands` 的接口无法调用该命令，只能依赖自动压力压缩。

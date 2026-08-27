@@ -9,6 +9,15 @@ The D3 engine-driver seam: it runs a workspace's agent runs in a dedicated child
 The service is mounted programmatically (never from `cordis.yml`): the in-process runner closure and the process-out child facts are host-supplied.
 
 ```ts
+import { EngineIsolationService, type AgentRunRequest } from '@deepseek-ai/dsh-experimental-engine-isolation'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { Context } from '@deepseek-ai/cordis'
+
+declare const ctx: Context
+declare const runInProcess: (request: AgentRunRequest) => Promise<void>
+declare const readInProcessLog: (sessionId: SessionId) => Promise<readonly SessionEvent[]>
+declare const listInProcessSessions: () => Promise<readonly SessionId[]>
+
 ctx.plugin(EngineIsolationService, {
   inProcess: {
     run: (request) => runInProcess(request),

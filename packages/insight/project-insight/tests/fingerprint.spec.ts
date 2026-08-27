@@ -160,7 +160,7 @@ describe('project-insight fingerprint', () => {
 
     const base = join(root, '.dsh', 'insight')
     const meta = JSON.parse(await readFile(join(base, 'meta.json'), 'utf8')) as Record<string, unknown>
-    expect(meta['formatVersion']).toBe(3)
+    expect(meta['formatVersion']).toBe(5)
     expect(meta['rootName']).toBe(doc.rootName)
     expect(meta['contentFingerprint']).toBe(doc.contentFingerprint)
     expect(meta['statSignature']).toBe(doc.statSignature)
@@ -168,7 +168,7 @@ describe('project-insight fingerprint', () => {
     // The meta carries only identity fields, never the sections.
     expect('sections' in meta).toBe(false)
 
-    const sections = JSON.parse(await readFile(join(base, 'module-topology', 'data.json'), 'utf8'))
+    const sections: unknown = JSON.parse(await readFile(join(base, 'module-topology', 'data.json'), 'utf8'))
     expect(sections).toEqual(doc.sections.moduleTopology)
   })
 

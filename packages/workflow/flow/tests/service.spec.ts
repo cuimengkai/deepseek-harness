@@ -107,7 +107,7 @@ async function setup() {
   const ctx = new Context()
   await ctx.plugin(StubEngine)
   await ctx.plugin(FlowEngine, { maxLiveRuns: 2, maxRunHistory: 2 })
-  const engine = ctx.flowEngine as FlowEngine
+  const engine = ctx.flowEngine
   const stub = ctx.workflowEngine as StubEngine
   const parent = {} as unknown as Agent
   return { ctx, engine, stub, parent }
@@ -198,7 +198,7 @@ describe('FlowEngine run lifecycle', () => {
 
   it('throws FLOW_RUN_NOT_FOUND for an unknown stop target', async () => {
     const { engine } = await setup()
-    expect(() => engine.stop(FlowRunId('ghost'))).toThrow(/no flow run "ghost"/)
+    expect(() =>{  engine.stop(FlowRunId('ghost')) }).toThrow(/no flow run "ghost"/)
   })
 
   it('enforces the live-run bound with FLOW_CAP', async () => {
@@ -340,7 +340,7 @@ describe('FlowEngine run lifecycle', () => {
     const ctx = new Context()
     await ctx.plugin(StubEngine)
     const flowFiber = await ctx.plugin(FlowEngine, { maxLiveRuns: 2, maxRunHistory: 2 })
-    const engine = ctx.flowEngine as FlowEngine
+    const engine = ctx.flowEngine
     const stub = ctx.workflowEngine as StubEngine
     const parent = {} as unknown as Agent
     engine.run({ graph: linearGraph(), parent })
@@ -361,7 +361,7 @@ describe('FlowEngine flow store', () => {
     const ctx = new Context()
     await ctx.plugin(StubEngine)
     await ctx.plugin(FlowEngine)
-    engine = ctx.flowEngine as FlowEngine
+    engine = ctx.flowEngine
   })
 
   afterEach(async () => {
@@ -372,7 +372,7 @@ describe('FlowEngine flow store', () => {
     const g = linearGraph()
     await engine.save(root, g)
     expect(await engine.list(root)).toEqual([
-      { id: 'demo-flow', name: 'Demo', nodeCount: 3, updatedAt: expect.any(Number) },
+      { id: 'demo-flow', name: 'Demo', nodeCount: 3, updatedAt: expect.any(Number) as number },
     ])
     expect(await engine.get(root, 'demo-flow')).toEqual(g)
     await engine.delete(root, 'demo-flow')

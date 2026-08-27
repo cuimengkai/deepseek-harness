@@ -389,13 +389,13 @@ describe('PlatformShellService capability market', () => {
       const alice = shell.registerUser('Alice')
       shell.assignRole(ws, admin, RoleId('platform-admin'))
       shell.assignRole(ws, alice, RoleId('product'))
-      expectPlatformError(() => shell.setWorkspaceIsolation(alice, ws, true), 'PERMISSION_DENIED')
+      expectPlatformError(() =>{  shell.setWorkspaceIsolation(alice, ws, true) }, 'PERMISSION_DENIED')
       shell.setWorkspaceIsolation(admin, ws, true)
       expect(shell.workspaceIsolation(ws)).toBe(true)
       const rows = shell.listAudit(admin, { workspaceId: ws, action: 'tenant.workspace.isolate' })
       expect(rows).toHaveLength(1)
       expect(rows[0]?.detail).toBe(JSON.stringify({ isolated: true }))
-      expectPlatformError(() => shell.setWorkspaceIsolation(admin, WorkspaceId('ghost'), true), 'UNKNOWN_WORKSPACE')
+      expectPlatformError(() =>{  shell.setWorkspaceIsolation(admin, WorkspaceId('ghost'), true) }, 'UNKNOWN_WORKSPACE')
     } finally {
       await dispose(ctx)
     }

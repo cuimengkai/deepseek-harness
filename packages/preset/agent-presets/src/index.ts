@@ -469,7 +469,7 @@ export class AgentPresets extends Service {
    * not parse as an entry list.
    */
   async readRows(id: string): Promise<ComposeRow[]> {
-    return await parseComposition(await readComposition(await this.resolve(id)))
+    return  parseComposition(await readComposition(await this.resolve(id)))
   }
 
   /**
@@ -570,7 +570,7 @@ export class AgentPresets extends Service {
    */
   async readGraph(id: string): Promise<FlowGraph> {
     const preset = await this.resolve(id)
-    const rows = await parseComposition(await readComposition(preset))
+    const rows = parseComposition(await readComposition(preset))
     const stored = await readCompositionGraph(preset, rows)
     if (stored !== undefined) return stored
     return rowsToGraph(preset.id, preset.name ?? preset.id, rows)

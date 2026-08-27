@@ -59,7 +59,7 @@ describe('lineage', () => {
     try {
       const { req } = seedChain(db)
       db.exec(sql('begin-immediate'))
-      expectPlatformError(() => linkAsset(db, req, req, RoleId('product'), 1), 'INVALID_ARGUMENT')
+      expectPlatformError(() =>{  linkAsset(db, req, req, RoleId('product'), 1) }, 'INVALID_ARGUMENT')
       db.exec(sql('rollback'))
     } finally {
       db.close()
@@ -71,7 +71,7 @@ describe('lineage', () => {
     try {
       const { req, code } = seedChain(db)
       db.exec(sql('begin-immediate'))
-      expectPlatformError(() => linkAsset(db, req, code, RoleId('product'), 1), 'INVALID_ARGUMENT')
+      expectPlatformError(() =>{  linkAsset(db, req, code, RoleId('product'), 1) }, 'INVALID_ARGUMENT')
       db.exec(sql('rollback'))
     } finally {
       db.close()
@@ -124,7 +124,7 @@ describe('lineage', () => {
     try {
       const { req } = seedChain(db)
       db.exec(sql('begin-immediate'))
-      expect(() => linkAsset(db, AssetId('ghost'), req, RoleId('dev'), 1)).toThrow()
+      expect(() =>{  linkAsset(db, AssetId('ghost'), req, RoleId('dev'), 1) }).toThrow()
       db.exec(sql('rollback'))
     } finally {
       db.close()

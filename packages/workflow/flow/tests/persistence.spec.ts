@@ -33,7 +33,7 @@ const agent = (id: string, prompt = 'work on it') => node('agent', id, { prompt 
 
 /** Assemble a graph from nodes and edges, optionally with a description. */
 function graph(nodes: readonly FlowNode[], edges: readonly FlowEdge[], extra?: { id?: string; description?: string }): FlowGraph {
-  return { id: 'demo-flow', name: 'Demo', nodes, edges, ...extra } as FlowGraph
+  return { id: 'demo-flow', name: 'Demo', nodes, edges, ...extra }
 }
 
 /** A linear start → agent → end flow, the shape every round-trip test uses. */
@@ -88,7 +88,7 @@ describe('listFlowFiles', () => {
     await mkdir(join(root, FLOW_DIR_REL, 'subdir'), { recursive: true })
     await writeFile(join(root, FLOW_DIR_REL, 'notes.txt'), 'not a flow')
     expect(await listFlowFiles(root)).toEqual([
-      { id: 'demo-flow', name: 'Demo', nodeCount: 3, updatedAt: expect.any(Number) },
+      { id: 'demo-flow', name: 'Demo', nodeCount: 3, updatedAt: expect.any(Number) as number },
     ])
   })
 
@@ -96,8 +96,8 @@ describe('listFlowFiles', () => {
     await writeFlowFile(root, linearGraph({ id: 'beta' }))
     await writeFlowFile(root, linearGraph({ id: 'alpha', description: 'the first' }))
     expect(await listFlowFiles(root)).toEqual([
-      { id: 'alpha', name: 'Demo', description: 'the first', nodeCount: 3, updatedAt: expect.any(Number) },
-      { id: 'beta', name: 'Demo', nodeCount: 3, updatedAt: expect.any(Number) },
+      { id: 'alpha', name: 'Demo', description: 'the first', nodeCount: 3, updatedAt: expect.any(Number) as number },
+      { id: 'beta', name: 'Demo', nodeCount: 3, updatedAt: expect.any(Number) as number },
     ])
   })
 

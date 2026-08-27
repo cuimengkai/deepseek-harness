@@ -123,7 +123,7 @@ describe('scan_project tool', () => {
       // The document is committed to the project's own `.dsh/insight/` directory.
       const { readFile } = await import('node:fs/promises')
       const doc = JSON.parse(await readFile(join(root, '.dsh', 'insight', 'meta.json'), 'utf8')) as { formatVersion: number; contentFingerprint: string; statSignature: string }
-      expect(doc.formatVersion).toBe(3)
+      expect(doc.formatVersion).toBe(5)
       expect(doc.contentFingerprint).toBeTruthy()
       expect(doc.statSignature).toMatch(/^[0-9a-f]{64}$/)
 
@@ -168,7 +168,7 @@ describe('scan_project tool', () => {
     try {
       await ctx.plugin(SystemPrompt)
       await ctx.plugin(ToolRuntime)
-      expect(() => apply(ctx)).toThrow(/projectInsight service is not mounted/)
+      expect(() =>{  apply(ctx) }).toThrow(/projectInsight service is not mounted/)
     } finally {
       await dispose(ctx)
     }

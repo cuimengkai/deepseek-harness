@@ -48,6 +48,7 @@ import {
   agentPresetRemoveValueSchema, agentPresetSaveGraphValueSchema, agentPresetSelectValueSchema,
 } from '../api/agent-presets.schema.ts'
 import { projectInsightReadValueSchema } from '../api/project-insight.schema.ts'
+import { contextCompositionReadValueSchema } from '../api/context-composition.schema.ts'
 import {
   flowDeleteValueSchema, flowGetRunValueSchema, flowGetValueSchema, flowListRunsValueSchema,
   flowListValueSchema, flowRunValueSchema, flowSaveValueSchema, flowStopValueSchema,
@@ -146,6 +147,9 @@ export interface IApiClient {
   projectInsight: {
     read(payload: RequestPayload<'projectInsight.read'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'projectInsight.read'>>>
   }
+  contextComposition: {
+    read(payload: RequestPayload<'contextComposition.read'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'contextComposition.read'>>>
+  }
   flow: {
     list(payload: RequestPayload<'flow.list'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.list'>>>
     get(payload: RequestPayload<'flow.get'>, signal?: AbortSignal): Promise<RpcResponse<ResponseValue<'flow.get'>>>
@@ -234,6 +238,7 @@ const UNARY_VALUE_SCHEMAS: { [K in keyof RpcMethodMap]: z.ZodType<Wire<ResponseV
   'agentPreset.compose': agentPresetComposeValueSchema,
   'agentPreset.saveGraph': agentPresetSaveGraphValueSchema,
   'projectInsight.read': projectInsightReadValueSchema,
+  'contextComposition.read': contextCompositionReadValueSchema,
   'flow.list': flowListValueSchema,
   'flow.get': flowGetValueSchema,
   'flow.save': flowSaveValueSchema,
@@ -514,6 +519,10 @@ export abstract class AbstractApiClient implements IApiClient {
 
   readonly projectInsight: IApiClient['projectInsight'] = {
     read: (payload, signal) => this.callUnary('projectInsight.read', payload, signal),
+  }
+
+  readonly contextComposition: IApiClient['contextComposition'] = {
+    read: (payload, signal) => this.callUnary('contextComposition.read', payload, signal),
   }
 
   readonly flow: IApiClient['flow'] = {

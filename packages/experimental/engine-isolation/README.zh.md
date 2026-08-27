@@ -9,6 +9,15 @@ D3 引擎驱动接缝:当某个工作区的隔离记录要求物理隔离时,把
 服务以编程方式挂载(绝不由 `cordis.yml` 挂载):进程内 runner 闭包与进程外子进程事实都由宿主机提供。
 
 ```ts
+import { EngineIsolationService, type AgentRunRequest } from '@deepseek-ai/dsh-experimental-engine-isolation'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import type { Context } from '@deepseek-ai/cordis'
+
+declare const ctx: Context
+declare const runInProcess: (request: AgentRunRequest) => Promise<void>
+declare const readInProcessLog: (sessionId: SessionId) => Promise<readonly SessionEvent[]>
+declare const listInProcessSessions: () => Promise<readonly SessionId[]>
+
 ctx.plugin(EngineIsolationService, {
   inProcess: {
     run: (request) => runInProcess(request),

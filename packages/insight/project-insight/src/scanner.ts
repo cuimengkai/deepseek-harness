@@ -13,13 +13,14 @@
 
 import { basename, posix } from 'node:path'
 import {
-  MAX_AGENT_TECH_MARKDOWN_BYTES, MAX_AGENT_TECH_MARKDOWN_ROWS, MAX_AGENT_TECH_MARKDOWN_TOTAL,
-  MAX_EDGES, MAX_FINGERPRINT_FILES, MAX_MANIFEST_BYTES, MAX_SOURCE_BYTES, MAX_SOURCE_FILES,
+  MAX_AGENT_TECH_MARKDOWN_ROWS, MAX_AGENT_TECH_MARKDOWN_TOTAL, MAX_DOCUMENT_ROWS,
+  MAX_DOCUMENT_TOTAL, MAX_EDGES, MAX_FINGERPRINT_FILES, MAX_FILE_CONTENT_BYTES,
+  MAX_MANIFEST_BYTES, MAX_SOURCE_BYTES, MAX_SOURCE_FILES,
   PROJECT_INSIGHT_FORMAT_VERSION,
-  type AgentTechFileRow, type AgentTechKind, type AgentTechMarkdownRow, type AgentTechSection,
-  type AgentTechToolRow,
+  type AgentTechFileRow, type AgentTechKind, type AgentTechSection, type AgentTechToolRow,
   type ComponentDependenciesSection, type ComponentDependencyRow, type ComponentKind, type ComponentRow,
-  type ComponentsSection, type DependencyRow, type ManifestRow, type ModuleFileRow, type ModuleTopologySection,
+  type ComponentsSection, type DependencyRow, type DocumentsSection, type FileContentRow,
+  type ManifestRow, type ModuleFileRow, type ModuleTopologySection,
   type ProjectInsightDoc, type PromptRow, type PromptsSection, type RuntimeRow, type SourceFileRow,
   type TechStackSection,
 } from './schema.ts'
@@ -132,6 +133,14 @@ export async function scanProject(root: string, signal?: AbortSignal): Promise<S
   const techStack = buildTechStack(walked, sourceRels, contents, manifestContents)
   const prompts = await buildPrompts(walked, signal)
   const agentTech = await buildAgentTech(walked, signal)
+  const documents = await buildDocuments({
+    techStackFiles: techStack.section.files,
+    manifests: techStack.section.manifests,
+    components: components.section.components,
+    topologyFiles: topology.section.files,
+    agentTech,
+    byRel, contents, manifestContents, signal,
+  })
 
   const doc: ProjectInsightDoc = {
     formatVersion: PROJECT_INSIGHT_FORMAT_VERSION,
@@ -146,6 +155,7 @@ export async function scanProject(root: string, signal?: AbortSignal): Promise<S
       components: components.section,
       prompts: prompts.section,
       agentTech,
+      documents,
     },
   }
 
@@ -557,9 +567,9 @@ function redactedEnv(env: object): Record<string, unknown> {
 
 /** One collection's embedded markdown rows. */
 interface AgentTechMarkdown {
-  readonly skills: AgentTechMarkdownRow[]
-  readonly mcp: AgentTechMarkdownRow[]
-  readonly prompts: AgentTechMarkdownRow[]
+  readonly skills: FileContentRow[]
+  readonly mcp: FileContentRow[]
+  readonly prompts: FileContentRow[]
 }
 
 /**
@@ -576,41 +586,113 @@ async function buildAgentTechMarkdown(
   walked: readonly WalkedFile[],
   signal?: AbortSignal,
 ): Promise<AgentTechMarkdown> {
-  const skills: AgentTechMarkdownRow[] = []
-  const mcp: AgentTechMarkdownRow[] = []
-  const prompts: AgentTechMarkdownRow[] = []
+  const skills: FileContentRow[] = []
+  const mcp: FileContentRow[] = []
+  const prompts: FileContentRow[] = []
   let budget = MAX_AGENT_TECH_MARKDOWN_TOTAL
-  const push = (row: AgentTechMarkdownRow, rows: AgentTechMarkdownRow[]): void => {
+  const push = (row: FileContentRow, rows: FileContentRow[]): void => {
     if (rows.length >= MAX_AGENT_TECH_MARKDOWN_ROWS) return
-    const bytes = Buffer.byteLength(row.markdown, 'utf8')
+    const bytes = Buffer.byteLength(row.content, 'utf8')
     if (bytes > budget) return
     budget -= bytes
     rows.push(row)
   }
   for (const file of walked) {
     if (SKILL_ENTRY_RE.test(file.rel)) {
-      const markdown = await readBounded(file.abs, MAX_AGENT_TECH_MARKDOWN_BYTES, signal)
-      if (markdown === undefined) continue
+      const content = await readBounded(file.abs, MAX_FILE_CONTENT_BYTES, signal)
+      if (content === undefined) continue
       const segments = file.rel.split('/')
       const name = segments[segments.length - 2]
-      if (name !== undefined) push({ name, path: file.rel, markdown }, skills)
+      if (name !== undefined) push({ name, path: file.rel, content }, skills)
     } else if (isMcpConfig(file.rel)) {
-      const content = await readBounded(file.abs, MAX_AGENT_TECH_MARKDOWN_BYTES, signal)
+      const content = await readBounded(file.abs, MAX_FILE_CONTENT_BYTES, signal)
       if (content === undefined) continue
       push({
         name: basename(file.rel), path: file.rel,
-        markdown: '```json\n' + redactMcpEnv(content) + '\n```',
+        content: '```json\n' + redactMcpEnv(content) + '\n```',
       }, mcp)
     } else if (isPromptFile(file.rel)) {
-      const markdown = await readBounded(file.abs, MAX_AGENT_TECH_MARKDOWN_BYTES, signal)
-      if (markdown === undefined) continue
-      push({ name: basename(file.rel), path: file.rel, markdown }, prompts)
+      const content = await readBounded(file.abs, MAX_FILE_CONTENT_BYTES, signal)
+      if (content === undefined) continue
+      push({ name: basename(file.rel), path: file.rel, content }, prompts)
     }
   }
   skills.sort(compareByPath)
   mcp.sort(compareByPath)
   prompts.sort(compareByPath)
   return { skills, mcp, prompts }
+}
+
+/** The inputs the shared documents pool embeds content for. */
+interface DocumentsInput {
+  /** The tech-stack section's emitted source files. */
+  readonly techStackFiles: readonly SourceFileRow[]
+  /** The tech-stack section's emitted manifests. */
+  readonly manifests: readonly ManifestRow[]
+  /** The components section's emitted components. */
+  readonly components: readonly ComponentRow[]
+  /** The module-topology section's emitted modules. */
+  readonly topologyFiles: readonly ModuleFileRow[]
+  /** The committed agent-tech section, whose inventory files embed here and
+   *  whose three markdown collections' paths skip re-embedding. */
+  readonly agentTech: AgentTechSection
+  /** The walked file set keyed by root-relative path, for content reads. */
+  readonly byRel: ReadonlyMap<string, WalkedFile>
+  /** Source-file contents the scan already read, reused instead of re-reading. */
+  readonly contents: ReadonlyMap<string, string>
+  /** package.json contents the scan already read, reused instead of re-reading. */
+  readonly manifestContents: ReadonlyMap<string, string>
+  /** Aborts the bounded reads. */
+  readonly signal?: AbortSignal | undefined
+}
+
+/**
+ * Build the shared documents pool: bounded content for every file the tabs
+ * list — the tech-stack sources and manifests, the components, the agent-tech
+ * inventory files the three markdown collections do not already carry (so an
+ * MCP config never bypasses its collection's env redaction), and the
+ * module-topology sources. Candidates embed in the tabs' listing priority —
+ * tech-stack files first, then manifests, components, agent-tech inventory,
+ * and the remaining topology sources — so when the row cap or the dedicated
+ * byte budget forces drops, a file some tab still lists wins over an
+ * unlisted source with a lexically earlier path. The embedded rows emit
+ * sorted by path; a file the per-row cap or the budget excludes simply stays
+ * metadata-only, and the budget is not shared with the markdown collections
+ * so source embeds cannot starve the skills/mcp/prompts embeds.
+ * @param input - the candidate sources, the walked set, and the reused reads.
+ * @returns the documents section: the embedded rows and the candidate count.
+ */
+async function buildDocuments(input: DocumentsInput): Promise<DocumentsSection> {
+  const { techStackFiles, manifests, components, topologyFiles, agentTech, byRel, contents, manifestContents, signal } = input
+  const embeddedPaths = new Set(
+    [...agentTech.skills, ...agentTech.mcp, ...agentTech.prompts].map(row => row.path),
+  )
+  const candidates = [...new Set([
+    ...techStackFiles.map(file => file.path),
+    ...manifests.map(manifest => manifest.path),
+    ...components.map(component => component.path),
+    ...agentTech.files.map(file => file.path),
+    ...topologyFiles.map(file => file.path),
+  ])]
+    .filter(path => !embeddedPaths.has(path) && byRel.has(path))
+  const files: FileContentRow[] = []
+  let budget = MAX_DOCUMENT_TOTAL
+  for (const path of candidates) {
+    if (files.length >= MAX_DOCUMENT_ROWS) break
+    const known = contents.get(path) ?? manifestContents.get(path)
+    const content = known !== undefined
+      ? (Buffer.byteLength(known, 'utf8') <= MAX_FILE_CONTENT_BYTES ? known : undefined)
+      // The candidate filter kept only walked files, so the get always hits.
+      // oxlint-disable-next-line typescript/no-non-null-assertion -- candidates are byRel keys
+      : await readBounded(byRel.get(path)!.abs, MAX_FILE_CONTENT_BYTES, signal)
+    if (content === undefined) continue
+    const bytes = Buffer.byteLength(content, 'utf8')
+    if (bytes > budget) continue
+    budget -= bytes
+    files.push({ name: basename(path), path, content })
+  }
+  files.sort(compareByPath)
+  return { files, count: candidates.length }
 }
 
 function agentTechKindOf(rel: string): AgentTechKind {

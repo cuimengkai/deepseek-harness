@@ -107,7 +107,7 @@ export class ProjectInsight extends Service {
     // A fresh develop session auto-scans once; a preset switch while the session
     // is blank re-triggers, so changing into develop mode scans the workspace
     // even when the session started under another preset.
-    ctx.on('session/created', session => this.maybeSchedule(session))
+    ctx.on('session/created', (session) =>{  this.maybeSchedule(session) })
     ctx.on('session/event', (session, event) => {
       if (event.type !== 'agent-preset/selected') return
       this.maybeSchedule(session)
@@ -196,7 +196,7 @@ export class ProjectInsight extends Service {
     const preset = resolveSessionPreset({ header: session.header, events: session.events })
     if (preset === undefined || !this.autoScanPresets.has(preset)) return
     void findProjectRoot(cwd).then(
-      root => this.scheduleScan(root, session.id),
+      (root) =>{  this.scheduleScan(root, session.id) },
       // A cwd that cannot be resolved is not worth a scan; the tool path can
       // retry explicitly.
       () => {},

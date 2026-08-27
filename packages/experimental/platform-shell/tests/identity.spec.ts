@@ -82,7 +82,7 @@ describe('identity and RBAC', () => {
     const db = await freshDb()
     try {
       const { alice, ws } = seedUsersAndWorkspace(db)
-      expect(() => requirePermission(db, alice, ws, 'asset.read')).not.toThrow()
+      expect(() =>{  requirePermission(db, alice, ws, 'asset.read') }).not.toThrow()
     } finally {
       db.close()
     }
@@ -92,7 +92,7 @@ describe('identity and RBAC', () => {
     const db = await freshDb()
     try {
       const { alice, ws } = seedUsersAndWorkspace(db)
-      expectPlatformError(() => requirePermission(db, alice, ws, 'approval.release'), 'PERMISSION_DENIED')
+      expectPlatformError(() =>{  requirePermission(db, alice, ws, 'approval.release') }, 'PERMISSION_DENIED')
     } finally {
       db.close()
     }

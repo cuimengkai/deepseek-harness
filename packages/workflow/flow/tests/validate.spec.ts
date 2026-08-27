@@ -39,7 +39,7 @@ function graph(nodes: readonly FlowNode[], edges: readonly FlowEdge[] = [], extr
 /** Expect validation to succeed. */
 function expectOk(g: FlowGraph): void {
   const result = validateFlow(g)
-  if (result.ok === false) {
+  if (!result.ok) {
     throw new Error(`expected the flow to validate, got:\n${result.errors.join('\n')}`)
   }
 }
@@ -48,7 +48,7 @@ function expectOk(g: FlowGraph): void {
 function expectErrors(g: FlowGraph, ...errorSubstrings: readonly string[]): void {
   const result = validateFlow(g)
   expect(result.ok).toBe(false)
-  if (result.ok === false) {
+  if (!result.ok) {
     for (const fragment of errorSubstrings) {
       expect(result.errors.join('\n')).toContain(fragment)
     }

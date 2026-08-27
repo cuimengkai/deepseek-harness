@@ -65,9 +65,6 @@ export function validateCapabilityRequest(request: PublishCapabilityRequest): vo
   if (rollout < 0 || rollout > 1) {
     throw new PlatformShellError('INVALID_ARGUMENT', 'capability rollout must be within 0..1')
   }
-  if (request.execution !== 'managed' && request.execution !== 'sandboxed' && request.execution !== 'none') {
-    throw new PlatformShellError('INVALID_ARGUMENT', `unknown execution mode ${request.execution}`)
-  }
   for (const toolName of request.tools ?? []) {
     if (toolName.length === 0) {
       throw new PlatformShellError('INVALID_ARGUMENT', 'capability tool names must not be empty')

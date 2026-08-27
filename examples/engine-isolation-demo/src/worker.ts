@@ -59,7 +59,14 @@ function parseArgs(argv: readonly string[]): WorkerArgs {
 /** Read the drive JSON the parent sends over stdin, to EOF. */
 async function readStdin(): Promise<string> {
   const chunks: Buffer[] = []
-  for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk))
+  for await (const chunk of process.stdin) {
+    // stdin is a process boundary: chunks arrive as strings or Buffers, and
+    // anything else means the parent's wire is broken, not worth decoding.
+    if (typeof chunk !== 'string' && !Buffer.isBuffer(chunk)) {
+      throw new Error('worker: stdin chunk is neither string nor Buffer')
+    }
+    chunks.push(Buffer.from(chunk))
+  }
   return Buffer.concat(chunks).toString('utf8')
 }
 
@@ -129,7 +136,7 @@ async function main(): Promise<void> {
     if (agent === undefined) throw new Error(`worker: agent ${sessionId} missing after createAgent`)
     // The isolated engine records its own drive in the workspace's session log —
     // the durable projection of the isolation record the parent routed by.
-    await agent.session.append('platform/workspace/isolated', { workspaceId, isolated: true })
+    agent.session.append('platform/workspace/isolated', { workspaceId, isolated: true })
     agent.followup(createUserMessage({
       content: [{ type: 'text', text: drive.prompt }],
       source: { kind: 'user' },
