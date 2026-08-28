@@ -1,16 +1,16 @@
 /**
- * One provider's editor card, hand-written per adapter family: the primary
- * field is a single write-only **API key** input (the page never asks for an
+ * One provider's editor card, hand-written per adapter family: the form leads
+ * with the identity it owns (a pi-ai route's display name), its `baseURL`, and
+ * the single write-only **API key** input (the page never asks for an
  * environment-variable name — a typed key stores through `credentials.set`
  * under the profile's reference, deriving `<ROUTE>_API_KEY` when the profile
  * has none. The pi-ai profile records that derivation as `apiKeyEnv` only when
  * a key is entered; a blank key materializes a reference-free profile for
  * provider-native authentication);
- * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
- * both families, DeepSeek's id/name/context-window model catalog, and the
- * display name and wire protocol of a pi-ai route the adapter does not ship —
- * the two fields the create card asked that route for, editable here for the
- * same reason).
+ * the collapsed 高级选项 area carries the rest: the credential reference, the
+ * User-Agent header, DeepSeek's id/name/context-window model catalog beside
+ * its `baseURL`, a hand-declared pi-ai route's wire protocol, and pi-ai's
+ * model mapping with its endpoint interrogation.
  * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
  * the models under one provider disagree about it, so a provider-scoped
  * control can only be set to a value some of them reject. The composer's
@@ -23,13 +23,17 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { CredentialView, IApiClient, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
-import {
-  DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
+import { createPortal } from 'react-dom'
+import type { CredentialView, DiscoveredModelView, IApiClient, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+import { IconApiOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
-import { ModelListEditor } from './ModelListEditor.tsx'
+import { IconField } from './IconPickerDialog.tsx'
+import { providerIconOf } from './ProviderLogo.tsx'
+import { adoptIntoMapping, ModelListEditor, prefillMapping } from './ModelListEditor.tsx'
+import { ManageTestDialog, useModelFetchOutcome } from './ManageTestDialog.tsx'
 import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
@@ -37,6 +41,21 @@ import styles from './ModelsSection.module.css'
 
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
 type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
+
+/**
+ * The adapter's installed-catalog facts for one route: the endpoint its
+ * built-in provider ships, the one protocol all its models speak, and those
+ * models themselves. Every field is optional because a route the catalog
+ * knows nothing about (a hand-declared gateway) has none of them.
+ */
+export interface ProviderCatalogFacts {
+  /** The route's built-in base URL, when the catalog ships one. */
+  baseURL?: string
+  /** The one wire protocol the catalog's models share, when they do. */
+  api?: string
+  /** The catalog's models for this route, in catalog order. */
+  models?: readonly DiscoveredModelView[]
+}
 
 /** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
@@ -69,8 +88,36 @@ export interface ProviderEditorProps {
   t: (key: keyof typeof en) => string
   /** Disable writes (read-only settings provider). */
   readOnly: boolean
+  /**
+   * The adapter's installed-catalog facts for this route — its built-in
+   * endpoint, protocol, and models. The add flow pairs this with `prefill`
+   * so a picked preset opens with the provider's own configuration
+   * materialized in the form; the edit flows pass it too, for the placeholder
+   * a cleared base-URL field shows.
+   */
+  catalog?: ProviderCatalogFacts | undefined
+  /**
+   * Seed the draft with the picked provider's built-in identity — the display
+   * name the directory reports. The add flow sets this so a picked preset
+   * opens with its name already in the form, cc-switch's preset-fill posture;
+   * the edit flows leave it off so an untouched form writes nothing.
+   */
+  prefill?: boolean
+  /**
+   * Render without the module fill — the pick dialog embeds this editor in
+   * the same scroll container as the preset flow above it, and two stacked
+   * filled surfaces would read as two cards. The standalone edit dialog
+   * leaves it off.
+   */
+  embedded?: boolean
   /** Render only the credential field and actions, without provider settings. */
   credentialOnly?: boolean
+  /**
+   * Host the cancel/commit row in this element instead of at the card's foot.
+   * A dialog that embeds the editor passes its footer region so the actions
+   * stay pinned while the form scrolls; absent, the row renders in place.
+   */
+  footerSlot?: HTMLElement | undefined
   /** Require a newly entered credential before this editor can submit. */
   credentialRequired?: boolean
   /** Give the credential field initial focus when this editor mounts. */
@@ -153,11 +200,38 @@ function refFor(
  */
 export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const { namespace, schema, settingsPath, api, t } = props
-  const [draft, setDraft] = useState<Record<string, unknown>>(() => draftAt(schema, namespace, settingsPath))
+  const [draft, setDraft] = useState<Record<string, unknown>>(() => {
+    const base = draftAt(schema, namespace, settingsPath)
+    // The add flow opens on a picked preset with its built-in configuration
+    // materialized into the form — cc-switch's preset fill: the display name,
+    // the endpoint, the protocol, and a model mapping seeded from the
+    // provider's own catalog. Everything the preset ships arrives in the
+    // directory entry, so no field keeps its placeholder on a picked preset.
+    if (props.prefill !== true || layoutOf(namespace.ns) !== 'pi-ai') return base
+    const catalog = props.catalog
+    const next: Record<string, unknown> = { ...base }
+    if (next.displayName === undefined && props.displayName.trim().length > 0) {
+      next.displayName = props.displayName
+    }
+    if (catalog !== undefined) {
+      if (next.baseURL === undefined && catalog.baseURL !== undefined) next.baseURL = catalog.baseURL
+      if (next.api === undefined && catalog.api !== undefined) next.api = catalog.api
+      if (next.models === undefined && catalog.models !== undefined && catalog.models.length > 0) {
+        next.models = prefillMapping([], catalog.models)
+      }
+    }
+    return next
+  })
   const [keyDraft, setKeyDraft] = useState('')
   const [keyState, setKeyState] = useState<CredentialView | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
+  // Whether the base-URL field's 管理与测试 dialog is open. It mounts per open,
+  // so opening it again re-asks the endpoint with whatever the form now shows.
+  const [manageOpen, setManageOpen] = useState(false)
+  // The endpoint's own listing, once an interrogation returns one: the pool
+  // the mapping rows' pick menus list, plus the banner reporting the count.
+  const { fetched, onFetched, toast } = useModelFetchOutcome(t)
   // A settings success advances both retry baselines immediately. Keeping the
   // derived fields in the draft prevents a pushed namespace refresh from
   // turning them into deletions when the following credential write is retried.
@@ -165,12 +239,58 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     () => schema.getPath(namespace.user, settingsPath),
   )
   const [expectedRevision, setExpectedRevision] = useState(() => namespace.revision)
+
+  const stringAt = (source: unknown, key: string): string | undefined => {
+    const value = schema.getPath(source, [key])
+    return typeof value === 'string' && value.trim().length > 0 ? value : undefined
+  }
+  const setField = (key: string, next: string | undefined): void => {
+    // A value of nothing but whitespace is cleared, not stored: `stringAt`
+    // already reports it as absent, so the field would otherwise render empty
+    // while the draft still carried the spaces into `settings.yaml`, where
+    // both adapters would accept that non-empty string as a real value.
+    const value = next === undefined || next.trim().length === 0 ? undefined : next
+    setDraft(current => value === undefined
+      ? schema.deletePath(current, [key])
+      : schema.setPath(current, [key], value))
+  }
+
+  const userAgentAt = (source: unknown): string => {
+    const headers = schema.getPath(source, ['headers'])
+    if (typeof headers !== 'object' || headers === null || Array.isArray(headers)) return ''
+    const value = (headers as Record<string, unknown>)['User-Agent']
+    return typeof value === 'string' ? value : ''
+  }
+  /**
+   * Replace the draft's User-Agent header alone. Other `headers` entries the
+   * profile owns must ride along untouched — the write is one key of a dict,
+   * not the whole dict — and clearing the last entry drops the dict itself so
+   * the profile stores no empty object.
+   */
+  const setUserAgent = (next: string): void => {
+    setDraft((current) => {
+      const headers = schema.getPath(current, ['headers'])
+      const merged = (typeof headers === 'object' && headers !== null && !Array.isArray(headers)
+        ? { ...(headers as Record<string, unknown>) }
+        : {}) as Record<string, unknown>
+      if (next.trim().length === 0) delete merged['User-Agent']
+      else merged['User-Agent'] = next
+      return Object.keys(merged).length === 0
+        ? schema.deletePath(current, ['headers'])
+        : schema.setPath(current, ['headers'], merged)
+    })
+  }
+
   const root = useMemo(() => schema.rehydrate(namespace.schema), [namespace.schema, schema])
   const node = useMemo(() => schema.nodeAtPath(root, settingsPath), [root, schema, settingsPath])
   const fallback = schema.getPath(namespace.value, settingsPath)
   const disabled = props.readOnly || busy
   const layout = layoutOf(namespace.ns)
-  const keyRef = refFor(schema, namespace, settingsPath, props.provider)
+  // The credential reference the form names: the draft first (the auth field
+  // is editable, and a typed key must store under the reference the user
+  // chose), then the stored profile's, then the derived conventional one.
+  const keyRef = stringAt(draft, 'apiKeyEnv')
+    ?? refFor(schema, namespace, settingsPath, props.provider)
   // The same schema read the create card makes, so the choices offered here
   // and there cannot drift apart: both come from the adapter's own `Config`.
   // Only the pi-ai layout has a per-route protocol for the read to find, and
@@ -196,21 +316,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     )
     return () => { stale = true }
   }, [api.credentials, keyRef])
-
-  const stringAt = (source: unknown, key: string): string | undefined => {
-    const value = schema.getPath(source, [key])
-    return typeof value === 'string' && value.trim().length > 0 ? value : undefined
-  }
-  const setField = (key: string, next: string | undefined): void => {
-    // A value of nothing but whitespace is cleared, not stored: `stringAt`
-    // already reports it as absent, so the field would otherwise render empty
-    // while the draft still carried the spaces into `settings.yaml`, where
-    // both adapters would accept that non-empty string as a real value.
-    const value = next === undefined || next.trim().length === 0 ? undefined : next
-    setDraft(current => value === undefined
-      ? schema.deletePath(current, [key])
-      : schema.setPath(current, [key], value))
-  }
 
   // The model list is validated by the same per-row checker for both families,
   // so a bad row is named by its position rather than by a blanket message.
@@ -323,6 +428,22 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     return <p className={styles['error']}>{`${props.provider}: unresolvable settings path`}</p>
   }
 
+  const editorFooter = (
+    <EditorFooter
+      t={t}
+      busy={busy}
+      submitDisabled={disabled || layout === 'unknown'
+        || (props.credentialOnly !== true && modelFailure !== undefined)
+        || shownKeyFailure !== undefined
+        || (props.credentialRequired === true && keyValue.length === 0)}
+      submitLabel={props.submitLabel ?? 'apply'}
+      submitBusyLabel={props.submitBusyLabel ?? 'applying'}
+      {...props.cancelLabel === undefined ? {} : { cancelLabel: props.cancelLabel }}
+      onCancel={() => { props.onClose(false) }}
+      onSubmit={() => { void apply() }}
+    />
+  )
+
   const keyLocked = keyState?.writable === false
 
   /**
@@ -368,118 +489,247 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       },
       onReset: () => { setDraft(current => schema.deletePath(current, ['models'])) },
     }
-    return (
-      <>
+    const baseURLField = (
+      <div className={styles['field']}>
+        <div className={styles['fieldHead']}>
+          <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
+          {/* The endpoint's own action, at the label row's right edge — the
+              dialog it opens asks the endpoint the form currently shows, so
+              it is offered wherever the base URL leads the form. A key the
+              form has refused disables it: asking with one spends a round
+              trip to be told what the field already says. */}
+          {family === 'pi-ai'
+            ? (
+              <button
+                type="button"
+                className={styles['manageButton']}
+                disabled={disabled || keyFailure !== undefined}
+                title={keyFailure === undefined ? undefined : t(keyFailure)}
+                onClick={() => { setManageOpen(true) }}
+              >
+                <IconApiOutline14 size={14} />
+                {t('manageAndTest')}
+              </button>
+            )
+            : null}
+        </div>
+        <input
+          className={styles['input']}
+          type="text"
+          value={stringAt(draft, 'baseURL') ?? ''}
+          placeholder={family === 'deepseek'
+            ? DEEPSEEK_PUBLIC_BASE_URL
+            : stringAt(fallback, 'baseURL') ?? props.catalog?.baseURL ?? t('baseUrlDefault')}
+          aria-label={t('baseUrl')}
+          disabled={disabled}
+          onChange={(event) => {
+            setField('baseURL', event.target.value === '' ? undefined : event.target.value)
+          }}
+        />
+      </div>
+    )
+    // The provider's logo, centered above the first identity field — the
+    // route's chosen icon, the stored one beneath it, or the built-in mark
+    // its route id maps to. The write lands on the profile's `icon` field;
+    // restoring the default clears it, so a shipped route keeps its own mark.
+    const iconField = family === 'pi-ai'
+      ? (
+        <IconField
+          provider={props.provider}
+          displayName={stringAt(draft, 'displayName') ?? props.displayName}
+          icon={stringAt(draft, 'icon') ?? providerIconOf(props.provider, fallback)}
+          onChange={(icon) => { setField('icon', icon) }}
+          disabled={disabled}
+          t={t}
+        />
+      )
+      : null
+    // The protocol asks which wire the whole profile speaks. Only a
+    // hand-declared route owns one — a shipped route's models each carry
+    // their own, and a route-level choice there could only override every
+    // one of them — so the field stays off a catalog route's form.
+    const protocolField = (
+      <div className={styles['field']}>
+        <span className={styles['fieldLabel']}>{t('customApi')}</span>
+        <select
+          className={`${styles['input']} ${styles['selectInput']}`}
+          value={probeApi ?? ''}
+          aria-label={t('customApi')}
+          disabled={disabled}
+          onChange={(event) => { setField('api', event.target.value) }}
+        >
+          {/* A profile naming no protocol — hand-written into settings.yaml
+              with no model to need one — selects nothing rather than reading
+              as if it had picked the first choice. The option is named because
+              a screen reader announces it either way, and an empty one is
+              announced as a choice with no identity. */}
+          {probeApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
+          {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
+        </select>
+      </div>
+    )
+    // The name every configuration surface calls this route. pi-ai profiles
+    // carry it; a `llm-deepseek` section has no per-route identity to name.
+    const displayNameField = family === 'pi-ai'
+      ? (
         <div className={styles['field']}>
-          <span className={styles['fieldLabel']}>{t('keyInput')}</span>
+          <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
           <input
             className={styles['input']}
-            type="password"
-            autoComplete="off"
-            value={keyDraft}
-            placeholder={keyPlaceholder}
-            aria-label={t('keyInput')}
-            aria-invalid={shownKeyFailure !== undefined}
-            required={props.credentialRequired === true}
-            autoFocus={props.autoFocusCredential === true}
-            disabled={disabled || keyLocked}
-            onChange={(event) => { setKeyDraft(event.target.value) }}
+            type="text"
+            value={stringAt(draft, 'displayName') ?? ''}
+            // What this route is called the moment the field is cleared, which
+            // is the layer beneath the one this field edits: a `cordis.yml` may
+            // pin a name for a route the catalog does not ship, and only when
+            // nothing does is the answer the route id. Reading the effective
+            // value instead would echo the stored override back as the thing
+            // clearing restores.
+            placeholder={stringAt(schema.getPath(namespace.base, settingsPath), 'displayName')
+              ?? props.provider}
+            aria-label={t('customDisplayName')}
+            disabled={disabled}
+            onChange={(event) => { setField('displayName', event.target.value) }}
           />
-          {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
         </div>
-        {props.credentialOnly === true ? null : <details className={styles['customized']}>
-          <summary className={styles['customizedSummary']}>{t('customized')}</summary>
-          <div className={styles['customizedBody']}>
-            {/* The name and the protocol are the create card's two remaining
-                profile fields; a route the adapter ships defaults both from
-                its catalog entry and neither belongs on its card. */}
-            {ownsIdentity
-              ? (
-                <div className={styles['field']}>
-                  <span className={styles['fieldLabel']}>{t('customDisplayName')}</span>
-                  <input
-                    className={styles['input']}
-                    type="text"
-                    value={stringAt(draft, 'displayName') ?? ''}
-                    // What this route is called the moment the field is
-                    // cleared, which is the layer beneath the one this field
-                    // edits: a `cordis.yml` may pin a name for a route the
-                    // catalog does not ship, and only when nothing does is
-                    // the answer the route id. Reading the effective value
-                    // instead would echo the stored override back as the
-                    // thing clearing restores.
-                    placeholder={stringAt(schema.getPath(namespace.base, settingsPath), 'displayName')
-                      ?? props.provider}
-                    aria-label={t('customDisplayName')}
-                    disabled={disabled}
-                    onChange={(event) => { setField('displayName', event.target.value) }}
-                  />
-                </div>
-              )
-              : null}
-            <div className={styles['field']}>
-              <span className={styles['fieldLabel']}>{t('baseUrl')}</span>
-              <input
-                className={styles['input']}
-                type="text"
-                value={stringAt(draft, 'baseURL') ?? ''}
-                placeholder={family === 'deepseek'
-                  ? DEEPSEEK_PUBLIC_BASE_URL
-                  : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
-                aria-label={t('baseUrl')}
-                disabled={disabled}
-                onChange={(event) => {
-                  setField('baseURL', event.target.value === '' ? undefined : event.target.value)
-                }}
+      )
+      : null
+    // The credential reference the profile names. Blank keeps the page's own
+    // convention (derive `<ROUTE>_API_KEY` the moment a key is stored); naming
+    // one here makes the profile resolve that reference instead — the one
+    // knob a shared or pre-provisioned reference needs.
+    const authField = family === 'pi-ai'
+      ? (
+        <div className={styles['field']}>
+          <span className={styles['fieldLabel']}>{t('credentialRef')}</span>
+          <input
+            className={styles['input']}
+            type="text"
+            value={stringAt(draft, 'apiKeyEnv') ?? ''}
+            placeholder={deriveKeyRef(props.provider)}
+            aria-label={t('credentialRef')}
+            disabled={disabled}
+            onChange={(event) => { setField('apiKeyEnv', event.target.value) }}
+          />
+        </div>
+      )
+      : null
+    // The User-Agent this route's requests carry, stored as the one header
+    // providers most often gate on. Other `headers` entries the profile owns
+    // ride along untouched: the write replaces only this key.
+    const userAgentField = family === 'pi-ai'
+      ? (
+        <div className={styles['field']}>
+          <span className={styles['fieldLabel']}>{t('userAgent')}</span>
+          <input
+            className={styles['input']}
+            type="text"
+            value={userAgentAt(draft)}
+            aria-label={t('userAgent')}
+            disabled={disabled}
+            onChange={(event) => { setUserAgent(event.target.value) }}
+          />
+        </div>
+      )
+      : null
+    const keyField = (
+      <div className={styles['field']}>
+        <span className={styles['fieldLabel']}>{t('keyInput')}</span>
+        <input
+          className={styles['input']}
+          type="password"
+          autoComplete="off"
+          value={keyDraft}
+          placeholder={keyPlaceholder}
+          aria-label={t('keyInput')}
+          aria-invalid={shownKeyFailure !== undefined}
+          required={props.credentialRequired === true}
+          autoFocus={props.autoFocusCredential === true}
+          disabled={disabled || keyLocked}
+          onChange={(event) => { setKeyDraft(event.target.value) }}
+        />
+        {shownKeyFailure === undefined ? null : <p className={styles['error']}>{t(shownKeyFailure)}</p>}
+      </div>
+    )
+    return (
+      <>
+        {/*
+          The cc-switch provider-form posture: logo, identity, endpoint, and
+          the key lead the form; everything else — protocol, credential
+          reference, User-Agent, and the model mapping — folds behind 高级选项.
+          A `llm-deepseek` profile has no per-route identity, so its form is
+          the key and the same fold.
+        */}
+        {family === 'pi-ai' ? iconField : null}
+        {displayNameField}
+        {family === 'pi-ai' ? baseURLField : null}
+        {keyField}
+        {/*
+          The model mapping rides the form itself, below the key — the rows
+          the endpoint's reply fills are the form's substance, not an
+          advanced detail; the DeepSeek catalog keeps its place in the fold.
+        */}
+        {props.credentialOnly !== true && family === 'pi-ai'
+          ? (
+            <>
+              <ModelListEditor
+                {...catalogProps}
+                onFetch={() => { setManageOpen(true) }}
+                fetchBlocked={keyFailure}
+                fetched={fetched}
               />
-            </div>
-            {/* The protocol sits beside the endpoint it describes, as it does
-                on the create card. */}
-            {ownsIdentity
-              ? (
-                <div className={styles['field']}>
-                  <span className={styles['fieldLabel']}>{t('customApi')}</span>
-                  <select
-                    className={`${styles['input']} ${styles['selectInput']}`}
-                    value={probeApi ?? ''}
-                    aria-label={t('customApi')}
-                    disabled={disabled}
-                    onChange={(event) => { setField('api', event.target.value) }}
-                  >
-                    {/* A profile naming no protocol — hand-written into
-                        settings.yaml with no model to need one — selects
-                        nothing rather than reading as if it had picked the
-                        first choice. The option is named because a screen
-                        reader announces it either way, and an empty one is
-                        announced as a choice with no identity. */}
-                    {probeApi === undefined ? <option value="">{t('customApiUnset')}</option> : null}
-                    {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
-                  </select>
-                </div>
-              )
-              : null}
-            {/* Both families edit the same rows through the same contract; only
-                the extras differ — DeepSeek's inherited capacities, pi-ai's
-                endpoint interrogation. */}
-            {family === 'deepseek'
-              ? (
-                <DeepSeekModelsEditor
-                  {...catalogProps}
-                  defaultContextWindow={typeof defaultContextWindow === 'number'
-                    ? defaultContextWindow
-                    : undefined}
-                  defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined}
-                />
-              )
-              : <ModelListEditor {...catalogProps} probe={probe} probeBlocked={keyFailure} api={api} />}
-          </div>
-        </details>}
+              {manageOpen
+                ? (
+                  <ManageTestDialog
+                    probe={probe}
+                    probeBlocked={keyFailure}
+                    api={api}
+                    models={models}
+                    t={t}
+                    onAdopt={(candidates) => {
+                      catalogProps.onChange(adoptIntoMapping(models, candidates))
+                    }}
+                    onFetched={onFetched}
+                    onClose={() => { setManageOpen(false) }}
+                  />
+                )
+                : null}
+            </>
+          )
+          : null}
+        {props.credentialOnly === true
+          ? null
+          : (
+            <details className={styles['customized']}>
+              <summary className={styles['customizedSummary']}>{t('advanced')}</summary>
+              <div className={styles['customizedBody']}>
+                {ownsIdentity ? protocolField : null}
+                {authField}
+                {userAgentField}
+                {family === 'deepseek'
+                  ? (
+                    <>
+                      {baseURLField}
+                      <DeepSeekModelsEditor
+                        {...catalogProps}
+                        defaultContextWindow={typeof defaultContextWindow === 'number'
+                          ? defaultContextWindow
+                          : undefined}
+                        defaultMaxTokens={typeof defaultMaxTokens === 'number' ? defaultMaxTokens : undefined}
+                      />
+                    </>
+                  )
+                  : null}
+              </div>
+            </details>
+          )}
       </>
     )
   }
 
   return (
-    <div className={props.credentialOnly === true ? styles['addBlock'] : styles['editor']}>
+    <div className={props.credentialOnly === true
+      ? styles['addBlock']
+      : (props.embedded === true ? styles['editorEmbedded'] : styles['editor'])}>
       {props.hideTitle === true
         ? null
         : (
@@ -493,6 +743,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       {layout === 'unknown'
         ? <p className={styles['advancedHint']}>{`${t('advancedHint')} (${namespace.ns})`}</p>
         : curatedFields(layout)}
+      {/* The fetch banner portals to the body's top layer, above any dialog. */}
+      {toast}
       {failure !== undefined ? <p className={styles['error']}>{failure}</p> : null}
       {props.credentialOnly === true || modelFailure === undefined
         ? null
@@ -501,19 +753,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             {`${t('model')} ${String(modelFailure.index + 1)}: ${t(modelFailure.key)}`}
           </p>
         )}
-      <EditorFooter
-        t={t}
-        busy={busy}
-        submitDisabled={disabled || layout === 'unknown'
-          || (props.credentialOnly !== true && modelFailure !== undefined)
-          || shownKeyFailure !== undefined
-          || (props.credentialRequired === true && keyValue.length === 0)}
-        submitLabel={props.submitLabel ?? 'apply'}
-        submitBusyLabel={props.submitBusyLabel ?? 'applying'}
-        {...props.cancelLabel === undefined ? {} : { cancelLabel: props.cancelLabel }}
-        onCancel={() => { props.onClose(false) }}
-        onSubmit={() => { void apply() }}
-      />
+      {props.footerSlot === undefined ? editorFooter : createPortal(editorFooter, props.footerSlot)}
     </div>
   )
 }

@@ -152,6 +152,12 @@ describe('hand-declared providers', () => {
     expect(directory.filter(entry => entry.declared).map(entry => entry.provider))
       .toEqual(['acme-gateway'])
     expect(directory.find(entry => entry.provider === 'deepseek')?.declared).toBe(false)
+    // A catalog route carries its built-in facts for a picked preset to
+    // prefill its form with; a declared route has none to offer.
+    expect(directory.find(entry => entry.provider === 'deepseek'))
+      .toMatchObject({ catalogBaseURL: 'https://api.deepseek.com', catalogApi: 'openai-completions' })
+    expect(directory.find(entry => entry.provider === 'acme-gateway'))
+      .not.toHaveProperty('catalogBaseURL')
   })
 
   it('sizes a model the catalog cannot describe from the route\u2019s own fallbacks', () => {
@@ -1184,12 +1190,12 @@ describe('configurable-provider directory', () => {
     // route pi-ai ships is not mislabelled as one this deployment invented.
     const ctx = await harness({ providers: { 'openai-codex': { apiKeyEnv: KEY_ENV } } })
 
-    expect(ctx.llm.listConfigurableProviders()).toContainEqual({
+    expect(ctx.llm.listConfigurableProviders()).toContainEqual(expect.objectContaining({
       provider: 'openai-codex',
       displayName: 'openai-codex',
       settingsNs: 'llm-pi-ai',
       settingsPath: ['providers', 'openai-codex'],
       declared: false,
-    })
+    }))
   })
 })

@@ -386,7 +386,7 @@ describe('Modal', () => {
       <Modal open={false} onClose={onClose} title="Create new workspace">body</Modal>)
     expect(screen.queryByRole('dialog')).toBeNull()
     rerender(
-      <Modal open onClose={onClose} title="Create new workspace" closeLabel="Configure later" description="Name it." contentClassName="scrolling-content" footer={<button type="button">Create</button>}>
+      <Modal open onClose={onClose} title="Create new workspace" closeLabel="Configure later" description="Name it." contentClassName="scrolling-content" bodyClassName="capped-body" footer={<button type="button">Create</button>}>
         <input aria-label="name" />
       </Modal>)
     const dialog = screen.getByRole('dialog', { name: 'Create new workspace' })
@@ -397,6 +397,9 @@ describe('Modal', () => {
     expect(screen.getByRole('button', { name: 'Configure later' })).toBeDefined()
     expect(screen.getByText('Name it.')).toBeDefined()
     expect(screen.getByText('Name it.').parentElement?.className).toContain('scrolling-content')
+    // The body region takes its own class so a capped dialog can shrink it
+    // under the pinned header; the children's wrapper is that region.
+    expect(screen.getByLabelText('name').parentElement?.className).toContain('capped-body')
     fireEvent.keyDown(document, { key: 'a' })
     expect(onClose).not.toHaveBeenCalled()
     fireEvent.keyDown(document, { key: 'Escape' })

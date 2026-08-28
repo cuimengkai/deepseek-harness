@@ -30,6 +30,26 @@ export interface ConfigurableProviderView {
    * surface must treat absence as "unknown", not as "shipped".
    */
   declared?: boolean
+  /**
+   * The endpoint the adapter's installed catalog ships for this route.
+   * Absent for a route the catalog has no endpoint for (ambient-auth or
+   * gateway routes) or knows nothing about at all; configuration surfaces
+   * prefill it as the route's built-in base URL.
+   */
+  catalogBaseURL?: string
+  /**
+   * The single wire protocol every installed model of this route speaks.
+   * Absent when the catalog does not ship the route, ships no models, or its
+   * models disagree — no value is invented to fill the field.
+   */
+  catalogApi?: string
+  /**
+   * The models the adapter's installed catalog ships for this route, in
+   * catalog order. Absent for a route the catalog knows nothing about;
+   * configuration surfaces prefill a picked preset's model mapping from
+   * these.
+   */
+  catalogModels?: readonly DiscoveredModelView[]
 }
 
 /** Llm-domain unary methods (the map keys llm.* of RpcMethodMap). */

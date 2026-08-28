@@ -90,16 +90,22 @@ describe('request-level dynamic profiles', () => {
 
     expect(ctx.llm.listProviders()).toEqual([])
     // Dormant ≠ invisible: every installed catalog provider is configurable
-    // before any route exists, each addressed inside the providers dict.
+    // before any route exists, each addressed inside the providers dict. A
+    // catalog route also ships its preset facts — endpoint, protocol, and the
+    // models themselves — for the add dialog to prefill from.
     const directory = ctx.llm.listConfigurableProviders()
     expect(directory.length).toBeGreaterThan(30)
-    expect(directory).toContainEqual({
+    expect(directory).toContainEqual(expect.objectContaining({
       provider: 'openai',
       displayName: 'openai',
       settingsNs: 'llm-pi-ai',
       settingsPath: ['providers', 'openai'],
       declared: false,
-    })
+      catalogBaseURL: 'https://api.openai.com/v1',
+      catalogApi: 'openai-responses',
+    }))
+    const openai = directory.find(entry => entry.provider === 'openai')
+    expect(openai?.catalogModels?.map(model => model.id)).toContain('gpt-4o')
     await ctx.settings.update(NS, {
       providers: { deepseek: { apiKeyEnv: 'PI_DYNAMIC_KEY', baseURL: server.url } },
     })

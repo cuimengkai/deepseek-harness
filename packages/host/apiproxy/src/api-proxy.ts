@@ -3722,6 +3722,17 @@ export function createApiProxy(ctx: Context, defaults: ApiProxyDefaults): ApiPro
           settingsPath: [...entry.settingsPath],
           active: active.has(entry.provider),
           ...entry.declared === undefined ? {} : { declared: entry.declared },
+          ...entry.catalogBaseURL === undefined ? {} : { catalogBaseURL: entry.catalogBaseURL },
+          ...entry.catalogApi === undefined ? {} : { catalogApi: entry.catalogApi },
+          ...entry.catalogModels === undefined
+            ? {}
+            : {
+              catalogModels: entry.catalogModels.map(model => ({
+                ...model,
+                ...model.inputModalities === undefined ? {} : { inputModalities: [...model.inputModalities] },
+                ...model.kinds === undefined ? {} : { kinds: [...model.kinds] },
+              })),
+            },
         }))
         // Routes registered without a directory declaration still appear —
         // they exist and serve models — just with no settings address. No

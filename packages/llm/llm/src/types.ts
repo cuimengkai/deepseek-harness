@@ -202,6 +202,29 @@ export interface LlmConfigurableProvider {
    * from outside.
    */
   declared?: boolean
+  /**
+   * The endpoint the adapter's installed catalog ships for this route.
+   * Absent for a route the catalog has no endpoint for (ambient-auth or
+   * gateway routes) or knows nothing about at all. Configuration surfaces
+   * prefill this as the route's built-in base URL, so a picked preset opens
+   * with its endpoint already materialized in the form.
+   */
+  catalogBaseURL?: string
+  /**
+   * The single wire protocol every installed model of this route speaks.
+   * Absent when the catalog does not ship the route, ships no models, or its
+   * models disagree — a route-level protocol there could only override every
+   * model's own, so no value is invented to fill the field.
+   */
+  catalogApi?: string
+  /**
+   * The models the adapter's installed catalog ships for this route, in
+   * catalog order. Absent for a route the catalog knows nothing about.
+   * Configuration surfaces prefill a picked preset's model mapping from
+   * these, so a preset opens with the provider's real models rather than an
+   * invented order.
+   */
+  catalogModels?: readonly LlmDiscoveredModel[]
 }
 
 /**

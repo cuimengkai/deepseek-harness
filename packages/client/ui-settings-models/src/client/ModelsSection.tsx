@@ -14,11 +14,14 @@
  * command opens the same editor the add flow uses. A whole-section provider
  * without a configured key renders as its open setup card instead of a row,
  * but only in the first-run posture — no provider on the page can serve
- * requests yet — and only until the user closes that card. Editing, adding,
- * declaring, and removing a provider each render in their own modal, so
- * closing one never discards a draft in another. Every mutation writes
- * through the wire, while a provider removal first requires confirmation;
- * the page re-renders from pushed invalidations or the post-apply reload.
+ * requests yet — and only until the user closes that card. Editing a provider
+ * renders in its own modal, while the add dialog is one vertical flow — the
+ * preset grid above, the configuration below — whose form is the custom
+ * creation card by default and the picked preset's prefilled editor once a
+ * cell names one, so the add path never stacks a second window. Every mutation
+ * writes through the wire, while a provider removal first requires
+ * confirmation; the page re-renders from pushed invalidations or the
+ * post-apply reload.
  */
 
 import { useState } from 'react'
@@ -34,7 +37,8 @@ import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { DEFAULT_MODEL_NS, deriveKeyRef, messageOf, protocolChoices, providerUsable } from './store.ts'
 import type { ModelsSettingsStore, ProviderRow } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
-import { ProviderEditor, type ProviderEditorProps } from './ProviderEditor.tsx'
+import { ProviderEditor, type ProviderCatalogFacts, type ProviderEditorProps } from './ProviderEditor.tsx'
+import { ProviderLogo, providerIconOf } from './ProviderLogo.tsx'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -78,20 +82,22 @@ interface EditorTarget extends ProviderIdentity {
   credentialRef?: string
   /** The adapter reports this route as one it does not ship (see {@link ProviderEditorProps.declared}). */
   declared?: boolean
+  /** The adapter's installed-catalog facts for this route (see {@link ProviderEditorProps.catalog}). */
+  catalog?: ProviderCatalogFacts
 }
 
 /**
- * The one modal the page has open, if any: editing or adding a provider
- * profile, picking what to add, or declaring a custom route. One state owns
- * them all so opening one always closes another, and no draft can sit behind
- * a second dialog. The default-model switch is not a dialog — it is the
- * card's one-click command, with a model menu when the catalog offers several.
+ * The one modal the page has open, if any: editing a provider profile, or
+ * picking what to add. One state owns both so opening one always closes
+ * another, and no draft can sit behind a second dialog. The pick dialog
+ * carries its own embedded form — the custom creation card by default, the
+ * picked preset's editor once a cell names one — so the add flow never opens a
+ * second window. The default-model switch is not a dialog — it is the card's
+ * one-click command, with a model menu when the catalog offers several.
  */
 type DialogState =
   | { kind: 'edit'; target: EditorTarget }
-  | { kind: 'add'; target: EditorTarget }
-  | { kind: 'pick' }
-  | { kind: 'declare' }
+  | { kind: 'pick'; target?: EditorTarget }
 
 /** Values that vary around the shared provider-editor rendering. */
 interface ProviderEditorRenderProps extends Pick<
@@ -109,41 +115,9 @@ function renderProviderEditor({ target, ...props }: ProviderEditorRenderProps): 
       displayName={target.displayName}
       settingsPath={target.settingsPath}
       {...target.declared === true ? { declared: true } : {}}
+      {...target.catalog === undefined ? {} : { catalog: target.catalog }}
       {...props}
     />
-  )
-}
-
-/** Avatar palette classes, cycled by the route-id hash in {@link avatarClassOf}. */
-const AVATAR_CLASSES = ['avatarBlue', 'avatarDeepseek', 'avatarGreen', 'avatarRed', 'avatarAmber'] as const
-
-/**
- * Deterministic avatar class for a provider route. The route set is open —
- * catalog entries and hand-declared routes alike — so no logo assets exist to
- * ship; the palette hash gives each card a stable identity color instead, the
- * same fallback shape preset-less providers get in cc-switch.
- * @param provider - the provider route id.
- * @returns the palette class name for its avatar.
- */
-function avatarClassOf(provider: string): string {
-  let hash = 0
-  for (const char of provider) hash = (hash * 31 + (char.codePointAt(0) ?? 0)) >>> 0
-  return styles[AVATAR_CLASSES[hash % AVATAR_CLASSES.length] as keyof typeof styles] as string
-}
-
-/**
- * The provider's letter avatar: the display name's first character on the
- * route's palette color. Purely decorative — the name sits right beside it.
- * @param props - the route id and the display name to take the initial from.
- * @returns the avatar element.
- */
-function ProviderAvatar(props: { provider: string; displayName: string }): ReactNode {
-  const first = props.displayName.trim().codePointAt(0)
-  const initial = first === undefined ? '?' : String.fromCodePoint(first).toUpperCase()
-  return (
-    <span className={`${styles['avatar']} ${avatarClassOf(props.provider)}`} aria-hidden="true">
-      {initial}
-    </span>
   )
 }
 
@@ -204,6 +178,16 @@ function targetOf(row: ProviderRow): EditorTarget {
     && row.credential.writable
     ? managedRef
     : undefined
+  const catalog: ProviderCatalogFacts | undefined
+    = row.entry.catalogBaseURL === undefined
+      && row.entry.catalogApi === undefined
+      && row.entry.catalogModels === undefined
+      ? undefined
+      : {
+        ...row.entry.catalogBaseURL === undefined ? {} : { baseURL: row.entry.catalogBaseURL },
+        ...row.entry.catalogApi === undefined ? {} : { api: row.entry.catalogApi },
+        ...row.entry.catalogModels === undefined ? {} : { models: row.entry.catalogModels },
+      }
   return {
     provider: row.entry.provider,
     displayName: row.entry.displayName,
@@ -214,6 +198,7 @@ function targetOf(row: ProviderRow): EditorTarget {
     // route-level fields only a declared route owns off the card, exactly as
     // it leaves the custom tag off the row.
     ...row.entry.declared === true ? { declared: true } : {},
+    ...catalog === undefined ? {} : { catalog },
   }
 }
 
@@ -292,6 +277,17 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   /** The provider route a duplicate is writing, and its failure text. */
   const [duplicating, setDuplicating] = useState<string | undefined>(undefined)
   const [duplicateFailure, setDuplicateFailure] = useState<string | undefined>(undefined)
+  /** Text typed into the pick dialog's preset search, filtering the grid. */
+  const [pickQuery, setPickQuery] = useState('')
+  /**
+   * The footer regions of the two dialogs that embed a provider form. The
+   * form portals its cancel/commit row into its dialog's region, so the
+   * actions stay on screen while the form scrolls past the dialog's cap.
+   * `null` until the dialog mounts its footer; the forms then re-render with
+   * the slot and move the row there.
+   */
+  const [pickFooterSlot, setPickFooterSlot] = useState<HTMLDivElement | null>(null)
+  const [editFooterSlot, setEditFooterSlot] = useState<HTMLDivElement | null>(null)
 
   const announceSaved = (target: ProviderIdentity): void => {
     // Announced only once the refreshed directory is in the snapshot the
@@ -303,6 +299,7 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
 
   const closeEditor = (changed: boolean, target: ProviderIdentity): void => {
     setDialog(undefined)
+    setPickQuery('')
     if (changed) announceSaved(target)
   }
 
@@ -439,6 +436,15 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
   const addable = state.rows.filter(row => !row.configured && row.entry.settingsNs !== '')
+  // The preset grid narrows on the search field: a match is a display name or
+  // route id that contains the typed text, case-insensitively — cc-switch's
+  // `filterPresetEntries` behavior on this harness's directory.
+  const pickMatches = addable.filter((row) => {
+    const query = pickQuery.trim().toLowerCase()
+    if (query === '') return true
+    return row.entry.displayName.toLowerCase().includes(query)
+      || row.entry.provider.toLowerCase().includes(query)
+  })
   // Hand-declared routes live in the pi-ai namespace, which is also the only
   // one whose schema names the protocols one may speak; without it mounted
   // there is nothing to declare and the entry point stays disabled.
@@ -448,11 +454,13 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
   const defaultSupported = state.namespaces.has(DEFAULT_MODEL_NS)
   const defaultProvider = state.defaultSelection?.provider
 
-  const editorDialog = dialog !== undefined && (dialog.kind === 'edit' || dialog.kind === 'add')
-    ? dialog
-    : undefined
+  const editorDialog = dialog !== undefined && dialog.kind === 'edit' ? dialog : undefined
   const editorTarget = editorDialog?.target
   const editorNamespace = editorTarget === undefined ? undefined : state.namespaces.get(editorTarget.settingsNs)
+  // The pick dialog's embedded form: the picked cell's namespace, so the form
+  // renders inside the same dialog rather than opening a second one.
+  const pickTarget = dialog !== undefined && dialog.kind === 'pick' ? dialog.target : undefined
+  const pickNamespace = pickTarget === undefined ? undefined : state.namespaces.get(pickTarget.settingsNs)
 
   return (
     <div className={styles['section']}>
@@ -473,6 +481,10 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
           // A directory entry the page cannot address is a composition fact,
           // not something this page can offer an action for.
           if (!row.configured && row.entry.settingsNs === '') return null
+          // The cc-switch list posture: the page lists what is configured, and
+          // dormant presets live only behind the add dialog's grid — a row
+          // that was never given settings is not a card here.
+          if (!row.configured) return null
           const target = targetOf(row)
           const namespace = state.namespaces.get(target.settingsNs)
           if (needsSetup(row, anyUsable) && !dismissedSetup.has(row.entry.provider)) {
@@ -491,41 +503,6 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                   readOnly: !state.writable,
                   onClose: (changed) => { closeSetup(changed, target) },
                 })}
-              </li>
-            )
-          }
-          if (!row.configured) {
-            // Dormant directory entry: a preset this deployment can adopt. The
-            // card's primary Enable command — cc-switch's additive Add — opens
-            // the same editor the add flow uses, prefilled by the provider it
-            // stands for.
-            return (
-              <li key={row.entry.provider} className={`${styles['card']} ${styles['cardDormant']}`}>
-                <div className={styles['cardRow']}>
-                  <ProviderAvatar provider={row.entry.provider} displayName={row.entry.displayName} />
-                  <div className={styles['cardBody']}>
-                    <span className={styles['rowIdentity']}>
-                      <span className={styles['rowName']}>{row.entry.displayName}</span>
-                      <span className={styles['rowTag']}>{t('notConfigured')}</span>
-                    </span>
-                  </div>
-                  <div className={styles['rowActions']}>
-                    <button
-                      type="button"
-                      className={`${styles['primaryButton']} ${styles['cardButton']}`}
-                      aria-label={providerCopy(t('addProvider'), target)}
-                      disabled={!state.writable}
-                      onClick={() => {
-                        setSavedTarget(undefined)
-                        setSavedDefault(undefined)
-                        setDialog({ kind: 'add', target })
-                      }}
-                    >
-                      <IconPlusOutline16 size={14} />
-                      {t('enable')}
-                    </button>
-                  </div>
-                </div>
               </li>
             )
           }
@@ -557,7 +534,12 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
               key={row.entry.provider}
             >
               <div className={styles['cardRow']}>
-                <ProviderAvatar provider={row.entry.provider} displayName={row.entry.displayName} />
+                <ProviderLogo
+                  provider={row.entry.provider}
+                  displayName={row.entry.displayName}
+                  icon={providerIconOf(row.entry.provider, row.profile)}
+                  size={28}
+                />
                 <div className={styles['cardBody']}>
                   <span className={styles['rowIdentity']}>
                     <span className={styles['rowName']}>{row.entry.displayName}</span>
@@ -802,75 +784,145 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
       </ul>
       <Modal
         open={dialog?.kind === 'pick'}
-        onClose={() => { setDialog(undefined) }}
+        onClose={() => {
+          setDialog(undefined)
+          setPickQuery('')
+        }}
         title={t('addTitle')}
         closeLabel={t('close')}
         description={t('addPickHint')}
+        className={styles['pickDialog'] as string}
+        contentClassName={styles['pickDialogContent'] as string}
+        bodyClassName={styles['pickDialogBody'] as string}
+        footer={<div className={styles['dialogFooterSlot']} ref={setPickFooterSlot} />}
       >
-        {addable.length === 0
-          ? null
-          : (
-            <ul className={styles['pickList']}>
-              {addable.map((row) => {
-                const target = targetOf(row)
-                return (
-                  <li key={row.entry.provider}>
-                    <button
-                      type="button"
-                      className={styles['pickRow']}
-                      onClick={() => { setDialog({ kind: 'add', target }) }}
-                    >
-                      <ProviderAvatar provider={row.entry.provider} displayName={row.entry.displayName} />
-                      {row.entry.displayName}
-                    </button>
-                  </li>
+        {/* The filter above the flow: it narrows the cells below, so it stays
+            pinned while they scroll out from under it. */}
+        <input
+          className={`${styles['input']} ${styles['pickSearch']}`}
+          type="search"
+          value={pickQuery}
+          placeholder={t('pickSearch')}
+          aria-label={t('pickSearch')}
+          onChange={(event) => { setPickQuery(event.target.value) }}
+        />
+        {/* The add flow's one container: the preset flow and the form under
+            it auto-grow together inside this scroll region — the dialog card
+            caps at the viewport, and neither the flow nor the form is its own
+            card or its own scroll. */}
+        <div className={styles['pickScroll']}>
+          <ul className={styles['pickGrid']}>
+            <li>
+              {/* The custom cell is the dialog's default selection: an absent
+                  target IS the custom form, so the add flow opens ready to
+                  declare a route, and clicking this cell again after picking a
+                  preset swaps back to it. */}
+              <button
+                type="button"
+                className={`${styles['pickCell']} ${styles['pickCellCustom']} ${pickTarget === undefined ? styles['pickCellSelected'] : ''}`}
+                disabled={protocols.length === 0}
+                aria-pressed={pickTarget === undefined}
+                title={protocols.length === 0 ? t('customUnavailable') : undefined}
+                onClick={() => { setDialog({ kind: 'pick' }) }}
+              >
+                <span className={styles['pickCellGlyph']} aria-hidden="true">+</span>
+                {t('customAdd')}
+              </button>
+            </li>
+            {pickMatches.map((row) => {
+              const target = targetOf(row)
+              return (
+                <li key={row.entry.provider}>
+                  <button
+                    type="button"
+                    className={`${styles['pickCell']} ${pickTarget?.provider === row.entry.provider ? styles['pickCellSelected'] : ''}`}
+                    aria-pressed={pickTarget?.provider === row.entry.provider}
+                    onClick={() => { setDialog({ kind: 'pick', target }) }}
+                  >
+                    <ProviderLogo
+                      provider={row.entry.provider}
+                      displayName={row.entry.displayName}
+                      icon={providerIconOf(row.entry.provider, row.profile)}
+                      size={28}
+                    />
+                    <span className={styles['pickCellName']}>{row.entry.displayName}</span>
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          {pickMatches.length === 0
+            ? <p className={styles['modelEmpty']}>{t('pickNoMatches')}</p>
+            : null}
+          {/* The configuration continuing the same container under the flow:
+              pick above, configure below — one region, no second window and no
+              second card. The custom creation form is the default selection;
+              a picked cell's editor takes its place, prefilled with the
+              preset's built-in identity. */}
+          {pickTarget === undefined
+            ? (
+              protocols.length > 0
+                ? (
+                  <div className={styles['pickForm']}>
+                    <CustomProviderCard
+                      taken={state.rows.map(row => row.entry.provider)}
+                      protocols={protocols}
+                      revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0}
+                      api={api}
+                      t={t}
+                      readOnly={!state.writable}
+                      embedded
+                      footerSlot={pickFooterSlot ?? undefined}
+                      onClose={(changed) => {
+                        // The card reports whether its profile write landed,
+                        // so a half-created provider still reloads the page
+                        // behind the close.
+                        setDialog(undefined)
+                        setPickQuery('')
+                        if (changed) void controller.load()
+                      }}
+                    />
+                  </div>
                 )
-              })}
-            </ul>
-          )}
-        <button
-          type="button"
-          className={styles['addButton']}
-          disabled={protocols.length === 0}
-          onClick={() => { setDialog({ kind: 'declare' }) }}
-        >
-          <IconPlusOutline16 size={14} />
-          {t('customAdd')}
-        </button>
+                : null
+            )
+            : pickNamespace !== undefined
+              ? (
+                <div className={styles['pickForm']}>
+                  <ProviderEditor
+                    key={pickTarget.provider}
+                    provider={pickTarget.provider}
+                    displayName={pickTarget.displayName}
+                    namespace={pickNamespace}
+                    schema={schema}
+                    settingsPath={pickTarget.settingsPath}
+                    {...pickTarget.declared === true ? { declared: true } : {}}
+                    {...pickTarget.catalog === undefined ? {} : { catalog: pickTarget.catalog }}
+                    api={api}
+                    t={t}
+                    readOnly={!state.writable}
+                    prefill
+                    embedded
+                    footerSlot={pickFooterSlot ?? undefined}
+                    onClose={(changed) => { closeEditor(changed, pickTarget) }}
+                  />
+                </div>
+              )
+              : null}
+        </div>
       </Modal>
       {editorTarget !== undefined && editorNamespace !== undefined
         ? (
           <Modal
             open
             onClose={() => { closeEditor(false, editorTarget) }}
-            title={editorDialog?.kind === 'add'
-              ? t('addTitle')
-              : providerTargetLabel(editorTarget)}
+            title={providerTargetLabel(editorTarget)}
             closeLabel={t('close')}
+            className={styles['editorDialog'] as string}
             contentClassName={styles['editorDialogContent'] as string}
+            bodyClassName={styles['editorDialogBody'] as string}
+            footer={<div className={styles['dialogFooterSlot']} ref={setEditFooterSlot} />}
           >
-            {editorDialog?.kind === 'add'
-              ? (
-                <div className={styles['field']}>
-                  <span className={styles['fieldLabel']}>{t('provider')}</span>
-                  <select
-                    className={`${styles['input']} ${styles['selectInput']}`}
-                    value={editorTarget.provider}
-                    aria-label={t('provider')}
-                    onChange={(event) => {
-                      const row = addable.find(candidate => candidate.entry.provider === event.target.value)
-                      /* v8 ignore next -- the select only lists addable rows */
-                      if (row === undefined) return
-                      setDialog({ kind: 'add', target: targetOf(row) })
-                    }}
-                  >
-                    {addable.map(row => (
-                      <option key={row.entry.provider} value={row.entry.provider}>{row.entry.displayName}</option>
-                    ))}
-                  </select>
-                </div>
-              )
-              : null}
             <ProviderEditor
               key={editorTarget.provider}
               provider={editorTarget.provider}
@@ -880,40 +932,12 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
               schema={schema}
               settingsPath={editorTarget.settingsPath}
               {...editorTarget.declared === true ? { declared: true } : {}}
+              {...editorTarget.catalog === undefined ? {} : { catalog: editorTarget.catalog }}
               api={api}
               t={t}
               readOnly={!state.writable}
+              footerSlot={editFooterSlot ?? undefined}
               onClose={(changed) => { closeEditor(changed, editorTarget) }}
-            />
-          </Modal>
-        )
-        : null}
-      {dialog?.kind === 'declare'
-        ? (
-          <Modal
-            open
-            onClose={() => {
-              // The card reports whether its profile write landed, so a
-              // half-created provider still reloads the page behind the close.
-              setDialog(undefined)
-              void controller.load()
-            }}
-            title={t('customTitle')}
-            closeLabel={t('close')}
-            contentClassName={styles['editorDialogContent'] as string}
-          >
-            <CustomProviderCard
-              taken={state.rows.map(row => row.entry.provider)}
-              protocols={protocols}
-              /* v8 ignore next -- the card only opens from a button disabled without this namespace */
-              revision={state.namespaces.get('llm-pi-ai')?.revision ?? 0}
-              api={api}
-              t={t}
-              readOnly={!state.writable}
-              onClose={(changed) => {
-                setDialog(undefined)
-                if (changed) void controller.load()
-              }}
             />
           </Modal>
         )

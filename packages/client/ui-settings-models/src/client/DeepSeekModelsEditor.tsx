@@ -365,26 +365,58 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
             {props.overridden ? props.t('modelsCustomized') : props.t('modelsInherited')}
           </span>
         </div>
-        {props.overridden
-          ? (
-            <button
-              type="button"
-              className={styles['linkButton']}
-              disabled={props.disabled}
-              onClick={reset}
-            >
-              {props.t('resetModels')}
-            </button>
-          )
-          : null}
+        {/* The same header action row the pi-ai list uses: the add command
+            sits beside the label rather than after the last row. */}
+        <div className={styles['modelListActions']}>
+          {props.overridden
+            ? (
+              <button
+                type="button"
+                className={styles['linkButton']}
+                disabled={props.disabled}
+                onClick={reset}
+              >
+                {props.t('resetModels')}
+              </button>
+            )
+            : null}
+          <button
+            type="button"
+            className={styles['addModelButton']}
+            disabled={props.disabled}
+            onClick={() => { props.onChange([...props.models.map(model => ({ ...model })), { id: '' }]) }}
+          >
+            <IconPlusOutline16 size={14} />
+            {props.t('addModel')}
+          </button>
+        </div>
       </div>
       {props.models.length === 0
         ? <p className={styles['modelEmpty']}>{props.t('modelsEmpty')}</p>
         : (
           <div className={styles['modelList']}>
+            {/* The caption strip names the two columns once, the cc-switch
+                pi-form posture; assistive tech skips it because every input
+                carries its own indexed aria-label. */}
+            <div className={styles['modelColumnHead']} aria-hidden="true">
+              <span />
+              <span>{props.t('modelId')}</span>
+              <span>{props.t('modelName')}</span>
+              <span />
+            </div>
             {props.models.map((model, index) => (
               <div className={styles['modelEntry']} key={index}>
                 <div className={styles['modelRow']}>
+                  <button
+                    type="button"
+                    className={styles['iconButton']}
+                    aria-label={`${props.t('modelAdvanced')} ${String(index + 1)}`}
+                    aria-expanded={expanded.has(index)}
+                    title={props.t('modelAdvanced')}
+                    onClick={() => { toggle(index) }}
+                  >
+                    {expanded.has(index) ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}
+                  </button>
                   <input
                     className={styles['input']}
                     type="text"
@@ -411,16 +443,6 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                       update(index, 'name', event.target.value === '' ? undefined : event.target.value)
                     }}
                   />
-                  <button
-                    type="button"
-                    className={styles['iconButton']}
-                    aria-label={`${props.t('modelAdvanced')} ${String(index + 1)}`}
-                    aria-expanded={expanded.has(index)}
-                    title={props.t('modelAdvanced')}
-                    onClick={() => { toggle(index) }}
-                  >
-                    {expanded.has(index) ? <IconChevronDownOutline14 /> : <IconChevronRightOutline14 />}
-                  </button>
                   <button
                     type="button"
                     className={`${styles['iconButton']} ${styles['iconButtonDanger']}`}
@@ -463,15 +485,6 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
             ))}
           </div>
         )}
-      <button
-        type="button"
-        className={styles['addModelButton']}
-        disabled={props.disabled}
-        onClick={() => { props.onChange([...props.models.map(model => ({ ...model })), { id: '' }]) }}
-      >
-        <IconPlusOutline16 size={14} />
-        {props.t('addModel')}
-      </button>
     </section>
   )
 }

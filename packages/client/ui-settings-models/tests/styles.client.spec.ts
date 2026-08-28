@@ -52,6 +52,73 @@ describe('ModelsSection theme styles', () => {
     expect((bare.match(/\}/g) ?? []).length).toBe((bare.match(/\{/g) ?? []).length)
   })
 
+  it('flows the add dialog as one auto-growing container', () => {
+    // The pick dialog's contract: provider cells flow left-to-right then
+    // top-to-bottom at natural width (never a stretched grid), the flow and
+    // the form below it sit in ONE scroll container (the form carries no fill
+    // and no divider — two stacked surfaces would read as two cards), and
+    // past the dialog's max height that container alone scrolls, so neither
+    // part ever scrolls separately.
+    expect(block('.pickGrid')).toContain('flex-wrap: wrap')
+    expect(block('.pickGrid')).not.toMatch(/grid-template|max-height|overflow/)
+    expect(block('.pickForm')).not.toMatch(/border|background|padding/)
+    expect(block('.pickScroll')).toContain('overflow-y: auto')
+    expect(block('.pickDialog')).toContain('max-height: calc(100vh - 48px)')
+    expect(block('.editorEmbedded')).not.toMatch(/background|border/)
+  })
+
+  it('keeps the mapping table five columns aligned across every row', () => {
+    // Every mapping row is its own grid, so a content-sized track would drift
+    // between rows — the header's label against the fallback's em dash — and
+    // break the column alignment a table of inputs owes. Only fr shares and
+    // the fixed picker track size identically everywhere, so the caption and
+    // every row must spell the same content-free template.
+    const tracks = (selector: string): string =>
+      /grid-template-columns: ([^;]+);/.exec(block(selector))?.[1] ?? ''
+    expect(tracks('.mappingRow')).toBe(tracks('.mappingHeaderRow'))
+    expect(tracks('.mappingRow')).not.toMatch(/auto|max-content|min-content/)
+  })
+
+  it('reserves the scrollbar gutter on every scroll container', () => {
+    // The theme scrollbar is space-taking (8px `::-webkit-scrollbar`, see
+    // ui-theme styles/scrollbar.css): an appearing bar eats into the content
+    // box, so rows, cells, and inputs flush with a container's right edge
+    // land under the thumb. `scrollbar-gutter: stable` reserves the slot up
+    // front — no occlusion, and no reflow when the bar appears.
+    for (const selector of [
+      '.editorDialogBody',
+      '.pickScroll',
+      '.candidateList',
+      '.iconGrid',
+      '.modelChoiceList',
+    ]) {
+      expect(block(selector), selector).toContain('overflow-y: auto')
+      expect(block(selector), selector).toContain('scrollbar-gutter: stable')
+    }
+  })
+
+  it('widens and caps every dialog through its own width and shrink chain', () => {
+    // The Modal's card declares `width: min(380px, 100%)`, and a `max-width`
+    // on the className cannot widen it — measured in chromium: the icon
+    // picker rendered 380px while its rule said 760px. Every dialog wider
+    // than the Modal default must therefore carry its own `width`. And an
+    // uncapped card grows past the fixed overlay on a short window, leaving
+    // its footer below the viewport; the cap plus the content/body
+    // `min-height: 0` chain is what hands the overflow to the list instead.
+    for (const dialog of ['.editorDialog', '.pickDialog', '.iconDialog', '.fetchDialog']) {
+      expect(block(dialog), dialog).toMatch(/width: min\(/)
+      expect(block(dialog), dialog).toContain('max-height: calc(100vh - 48px)')
+    }
+    for (const region of [
+      '.editorDialogContent', '.editorDialogBody',
+      '.pickDialogContent', '.pickDialogBody',
+      '.iconDialogContent', '.iconDialogBody',
+      '.fetchDialogContent', '.fetchDialogBody',
+    ]) {
+      expect(block(region), region).toContain('min-height: 0')
+    }
+  })
+
   it('separates the provider card from the editor it opens beside', () => {
     // `bg-layer-3` and `bg-module-platform` both resolve to neutral-bluish-800
     // under the dark theme, so filling the card with either erases the nested

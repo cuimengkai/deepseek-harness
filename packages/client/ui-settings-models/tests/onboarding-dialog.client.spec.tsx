@@ -164,7 +164,7 @@ describe('DeepSeekOnboardingDialog', () => {
     expect(screen.getByText(en.onboardingDescription)).toBeTruthy()
     const key = screen.getByLabelText<HTMLInputElement>(en.keyInput)
     await waitFor(() => { expect(document.activeElement).toBe(key) })
-    expect(screen.queryByText(en.customized)).toBeNull()
+    expect(screen.queryByText(en.advanced)).toBeNull()
   })
 
   it('cannot be dismissed implicitly and restores the previous inert state', async () => {

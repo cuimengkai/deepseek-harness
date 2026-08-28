@@ -62,7 +62,7 @@ import type { AdapterRegistrationHandle, DirectoryRegistrationHandle, LlmConfigu
 import { deepEqualJson, installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { PiAiAdapter } from './adapter.ts'
 import { authContextFrom, credentialStoreFrom } from './auth.ts'
-import { catalogProviderIds } from './catalog.ts'
+import { catalogModels, catalogProvider, catalogProviderIds } from './catalog.ts'
 import { assertServiceable, Config, resolveProfiles } from './config.ts'
 import type { ResolvedPiAiProviderProfile } from './config.ts'
 import { discoverModels } from './discovery.ts'
@@ -108,6 +108,39 @@ function registrationFacts(profiles: ReadonlyMap<string, ResolvedPiAiProviderPro
 }
 
 /**
+ * The catalog's built-in configuration facts for one route: the endpoint its
+ * installed provider ships, the one protocol all its installed models speak,
+ * and those models themselves. A route whose models disagree on protocol
+ * names none — a route-level `api` there could only override every model's
+ * own, so no value is invented.
+ * @param provider - provider route key.
+ * @returns the catalog facts the directory carries, or an empty object for a
+ * route the installed catalog does not ship.
+ */
+function catalogFacts(provider: string): Pick<
+  LlmConfigurableProvider,
+  'catalogBaseURL' | 'catalogApi' | 'catalogModels'
+> {
+  const installed = catalogProvider(provider)
+  if (installed === undefined) return {}
+  const models = [...catalogModels(provider).values()]
+  const apis = new Set(models.map(model => model.api))
+  return {
+    ...(typeof installed.baseUrl === 'string' && installed.baseUrl.length > 0
+      ? { catalogBaseURL: installed.baseUrl }
+      : {}),
+    ...(apis.size === 1 ? { catalogApi: [...apis][0] } : {}),
+    catalogModels: models.map(model => ({
+      id: model.id,
+      name: model.name,
+      contextWindow: model.contextWindow,
+      maxTokens: model.maxTokens,
+      inputModalities: model.input,
+    })),
+  }
+}
+
+/**
  * The configurable-provider directory: every installed catalog route, plus
  * every route the current profiles declare. A hand-declared route has no
  * catalog entry, so without this union it would have no settings address and
@@ -130,6 +163,9 @@ function directoryEntries(
       // narrowing a shipped provider's models stores a profile too, and that
       // route is still one pi-ai knows.
       declared: !catalog.has(provider),
+      // The built-in facts a picked preset prefills its form with; a
+      // hand-declared route has none, and its fields stay hand-entered.
+      ...catalogFacts(provider),
     })
   }
   for (const provider of catalog) declare(provider, provider)

@@ -9,6 +9,16 @@ import type { Wire } from './rpc.schema.ts'
 import type { ConfigurableProviderView, DiscoveredModelView } from './llm.ts'
 import { modelCatalogFailureSchema, modelKindSchema, modelModalitySchema, modelProviderGroupSchema } from './sessions.schema.ts'
 
+/** DiscoveredModelView row of llm.discoverModels. */
+export const discoveredModelViewSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).optional(),
+  contextWindow: z.number().int().positive().optional(),
+  maxTokens: z.number().int().positive().optional(),
+  inputModalities: z.array(modelModalitySchema).min(1).optional(),
+  kinds: z.array(modelKindSchema).min(1).optional(),
+}) satisfies z.ZodType<Wire<DiscoveredModelView>>
+
 /** ConfigurableProviderView row of llm.providers. */
 export const configurableProviderViewSchema = z.object({
   provider: z.string().min(1),
@@ -17,6 +27,9 @@ export const configurableProviderViewSchema = z.object({
   settingsPath: z.array(z.string()),
   active: z.boolean(),
   declared: z.boolean().optional(),
+  catalogBaseURL: z.string().min(1).optional(),
+  catalogApi: z.string().min(1).optional(),
+  catalogModels: z.array(discoveredModelViewSchema).optional(),
 }) satisfies z.ZodType<Wire<ConfigurableProviderView>>
 
 /** llm.providers request payload. */
@@ -35,16 +48,6 @@ export const llmModelsValueSchema = z.object({
   groups: z.array(modelProviderGroupSchema),
   failures: z.array(modelCatalogFailureSchema),
 }) satisfies z.ZodType<Wire<ResponseValue<'llm.models'>>>
-
-/** DiscoveredModelView row of llm.discoverModels. */
-export const discoveredModelViewSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1).optional(),
-  contextWindow: z.number().int().positive().optional(),
-  maxTokens: z.number().int().positive().optional(),
-  inputModalities: z.array(modelModalitySchema).min(1).optional(),
-  kinds: z.array(modelKindSchema).min(1).optional(),
-}) satisfies z.ZodType<Wire<DiscoveredModelView>>
 
 /** llm.discoverModels request payload. */
 export const llmDiscoverModelsRequestSchema = z.object({

@@ -89,12 +89,6 @@
   border-color: var(--dsw-alias-brand-primary);
 }
 
-/* A dormant directory entry: dashed, like every other "nothing here yet"
-   affordance on this page, to read as a place rather than a command. */
-.cardDormant {
-  border-style: dashed;
-}
-
 /* The expandable details panel under a card's row: the read-only facts the
    profile and the catalog already hold, separated from the row above by a
    hairline. */
@@ -318,8 +312,7 @@
    so without it the outlined variants stand 2px taller than the filled ones
    they sit beside (Cancel next to Apply, Edit next to Delete). */
 .primaryButton,
-.secondaryButton,
-.addButton {
+.secondaryButton {
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -344,16 +337,10 @@
   background: var(--dsw-alias-button-primary-hover);
 }
 
-.secondaryButton,
-.addButton {
+.secondaryButton {
   border: 1px solid var(--dsw-alias-border-l2);
   background: transparent;
   color: var(--dsw-alias-label-primary);
-}
-
-.secondaryButton:hover:not(:disabled),
-.addButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .secondaryButton:hover:not(:disabled) {
@@ -463,6 +450,43 @@
   color: var(--dsw-alias-label-secondary);
 }
 
+/* A field's label row when it carries an action of its own — the base-URL
+   field's 管理与测试 sits at the row's right end, so the action is visible
+   before the fold it would otherwise hide behind. */
+.fieldHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* The base-URL field's 管理与测试 action, at the label row's right edge —
+   cc-switch's endpoint-field posture: a quiet text button with a glyph, the
+   entry to the dialog that asks the endpoint for its models. */
+.manageButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.manageButton:hover:not(:disabled) {
+  color: var(--dsw-alias-brand-primary);
+}
+
+.manageButton:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .linkButton {
   box-sizing: border-box;
   display: inline-flex;
@@ -545,50 +569,179 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* The add dialog's preset list: one full-width row per dormant provider. */
-.pickList {
+/* The add dialog's preset search: one line above the grid, cc-switch's
+   `filterPresetEntries` posture. */
+.pickSearch {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+/* The add dialog's preset flow: every adoptable provider as one
+   avatar-and-name cell, flowing left-to-right then top-to-bottom at its
+   natural width — the flow posture the pick dialog asked for, where a wide
+   dialog gains columns instead of stretching every cell to a fixed track.
+   The flow and the form below it share one scroll container, so the grid
+   itself never scrolls separately. */
+.pickGrid {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  flex-wrap: wrap;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.pickRow {
+.pickCell {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
+  gap: 8px;
+  min-width: 0;
   padding: 8px 10px;
-  border: none;
+  border: 1px solid var(--dsw-alias-border-l2);
   border-radius: 8px;
   background: transparent;
   color: var(--dsw-alias-label-primary);
   font: inherit;
-  font-size: 14px;
-  line-height: 22px;
+  font-size: 13px;
+  line-height: 20px;
   cursor: pointer;
   text-align: left;
 }
 
-.pickRow:hover:not(:disabled) {
+.pickCell:hover:not(:disabled) {
   background: var(--dsw-alias-interactive-bg-hover);
 }
 
-.addButton {
-  /* The add dialog's declare entry: the dashed "nothing here yet" border on
-     the standard capsule base the controls above already share. */
-  gap: 6px;
-  margin-top: 10px;
-  border-style: dashed;
-  border-color: var(--dsw-alias-border-l3);
+/* The picked cell: the same brand border that names the default card names
+   the provider whose form is open beneath the grid. */
+.pickCellSelected {
+  border-color: var(--dsw-alias-brand-primary);
 }
 
-/* The editor dialogs hold whole provider forms (key, endpoint, model list),
-   so they take more width than a confirm dialog and scroll their body. */
-.editorDialogContent {
+/* The picked provider's form, continuing the pick flow's own container: no
+   fill, no divider — pick above, configure below, one region, never two
+   cards. */
+.pickForm {
+  margin-top: 16px;
+}
+
+.pickCellName {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The declare-custom tile keeps the dashed "nothing here yet" border the old
+   bottom button wore, so the grid's one non-preset entry reads as such. */
+.pickCellCustom {
+  border-style: dashed;
+}
+
+.pickCellGlyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+/* The wide dialog cards widen the Modal's card itself: it caps at 380px, and
+   a width on the content region inside cannot stretch it, so the class rides
+   the card through `className`, never `contentClassName`. Both also cap at the
+   viewport: past it the body region below the pinned header alone scrolls,
+   and the footer region — the pinned actions — never leaves the screen. */
+.editorDialog {
   width: min(640px, 100%);
+  max-height: calc(100vh - 48px);
+}
+
+/* The edit dialog's content region: it shrinks so the body, not the card,
+   takes the overflow. */
+.editorDialogContent {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The edit dialog's body: the editor form scrolls here while the header and
+   the footer stay put. */
+.editorDialogBody {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* The 8px theme scrollbar is space-taking: without the reserved gutter it
+     eats into the form's right edge when it appears (ui-theme
+     styles/scrollbar.css owns the width contract). */
+  scrollbar-gutter: stable;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+.pickDialog {
+  /* The picker spans three quarters of the viewport: its flow and the picked
+     form below share one dialog, and a 640px card would fold that flow into
+     two cramped columns. */
+  width: min(75vw, 100%);
+  /* The root layer pads 24px top and bottom, so the card grows with its
+     content up to the viewport and no further. */
+  max-height: calc(100vh - 48px);
+}
+
+/* The dialog's content region: capped so the body below the header can be
+   the part that shrinks. */
+.pickDialogContent {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The body region under the pinned header and search: it shrinks when the
+   card hits its cap, so the scroll container inside it, not the card, takes
+   the overflow. */
+.pickDialogBody {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The seat an embedded form portals its cancel/commit row into. It lives in
+   the dialog's footer region, so the actions ride pinned under the scrolling
+   form instead of scrolling away at its end. */
+.dialogFooterSlot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* The add flow's one scroll container: the preset flow and the form below
+   it auto-grow together, and past the dialog's max height this region alone
+   scrolls — the search stays pinned above it, and neither the flow nor the
+   form ever scrolls separately. */
+.pickScroll {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  /* Same reserved gutter as the edit dialog's body: the flow and the embedded
+     form below it span this container's full width. */
+  scrollbar-gutter: stable;
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* The add dialog's embedded form: the preset flow above it and this form
+   share the scroll container as their one surface, so the form drops the
+   module fill the standalone editor wears — two filled surfaces stacked
+   would read as two cards. */
+.editorEmbedded {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
 .customized {
@@ -677,12 +830,10 @@
   line-height: 18px;
 }
 
-/* Model list, shared with the pi-ai provider form: one bordered
-   entry per model, id and display name on the row, capacities behind the
-   row's own disclosure. The rules use this stylesheet's token vocabulary —
-   `--dsw-alias-border-subtle`, `--dsw-alias-text-tertiary`, and
-   `--dsw-alias-text-primary` are undefined here and would resolve to their
-   light-mode literals. */
+/* Model list, shared with the pi-ai provider form: the cc-switch pi-form
+   table posture — a caption strip, then borderless rows of
+   [disclosure][id][name][remove], capacities behind each row's own
+   disclosure under a left rule. */
 .modelList {
   display: flex;
   flex-direction: column;
@@ -696,15 +847,28 @@
   gap: 12px;
 }
 
+/* The caption strip over the rows: same track widths as `.modelRow`, so the
+   labels sit exactly over the fields they name. */
+.modelColumnHead {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1.2fr) minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
 .modelEntry {
-  border: 1px solid var(--dsw-alias-border-l2);
-  border-radius: 8px;
-  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .modelRow {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto auto;
+  grid-template-columns: 28px minmax(0, 1.2fr) minmax(0, 1fr) 28px;
   align-items: center;
   gap: 6px;
 }
@@ -745,7 +909,12 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 8px;
-  padding: 8px 4px 2px;
+  /* The cc-switch expanded panel: indented past the disclosure column and
+     hung on its own left rule, so a row's extras read as belonging to that
+     row without another boxed surface. */
+  margin-left: 34px;
+  padding: 2px 0 2px 16px;
+  border-left: 2px solid var(--dsw-alias-border-l3);
 }
 
 .modelField {
@@ -802,7 +971,6 @@
 
 .addModelButton {
   box-sizing: border-box;
-  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -836,10 +1004,10 @@
   color: var(--dsw-alias-label-primary);
 }
 
-/* Enum pickers hold a handful of short options; a field-width dropdown reads
-   as a text field the user is expected to fill. */
+/* Enum pickers sit at the field's full width, matching every text input
+   beside them in the same form column. */
 select.input {
-  max-width: 240px;
+  width: 100%;
   cursor: pointer;
 }
 
@@ -909,7 +1077,14 @@ select.input {
 }
 
 .fetchDialog {
-  max-width: 520px;
+  /* Width rides the card, not max-width: the Modal's own width is
+     min(380px, 100%), and a cap alone cannot widen it — measured: the dialog
+     rendered 380px while this said 520px. */
+  width: min(520px, 100%);
+  /* Capped like the edit dialog so a short window shrinks the body, not the
+     card: without the cap the dialog grows past the fixed overlay and its
+     footer sits below the viewport, unreachable. */
+  max-height: calc(100vh - 48px);
 
   /* The candidate list scrolls inside this dialog, an elevated surface, so the
      scrollbar indirection is rebound here rather than on the scrolling child:
@@ -917,6 +1092,29 @@ select.input {
      ui-theme styles/scrollbar.css for the contract). */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* The fetch dialog's content region: shrinks so the body below the pinned
+   header takes the overflow when the card hits its cap. */
+.fetchDialogContent {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The fetch dialog's body region: shrinks the same way, so the candidate
+   list below the latency line is the part that gives. */
+.fetchDialogBody {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+/* The interrogation's round-trip time, under the busy line: the one number
+   the dialog's "test" half owes the user. */
+.fetchLatency {
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .candidateActions {
@@ -929,9 +1127,14 @@ select.input {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  flex: 1 1 auto;
+  min-height: 0;
   max-height: 320px;
   margin: 0;
   overflow-y: auto;
+  /* Reserved gutter: the theme scrollbar takes space, so an appearing bar
+     would otherwise slide the candidate rows under its thumb. */
+  scrollbar-gutter: stable;
   padding: 0;
   list-style: none;
 }
@@ -955,6 +1158,292 @@ select.input {
   overflow-wrap: anywhere;
 }
 
+/* The endpoint's own name for a candidate, beside its id: the display name
+   adoption would land in the row it fills, shown before it is chosen. */
+.candidateName {
+  flex: none;
+  max-width: 40%;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow-wrap: anywhere;
+}
+
+/* The 1M badge a candidate with a million-token context carries: the
+   declaration adoption would check on the row it fills. */
+.candidateOneM {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+/* The mapping header's right-edge actions: restore-defaults when the user
+   layer owns the rows, then the fetch button at the far right. */
+.modelListHeadActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The 获取模型列表 button: a primary outline action at the mapping's right
+   edge, the one thing an empty mapping wants. */
+.fetchButton {
+  box-sizing: border-box;
+  height: 28px;
+  padding: 0 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 26px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.fetchButton:hover:not(:disabled) {
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.fetchButton:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+/* Model mapping table: a caption strip, then one row per fixed role plus the
+   fallback — [role][display name][request model][pick][1M] on shared tracks,
+   so the labels sit exactly over the fields they name. Every track resolves
+   without measuring content (fr shares, a fixed picker track): each row is
+   its own grid, so one content-sized track would drift between rows and break
+   the column alignment the table posture owes. */
+.mappingList {
+  display: flex;
+  flex-direction: column;
+}
+
+.mappingHeaderRow {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.8fr) minmax(0, 1.1fr) minmax(0, 1.2fr) 32px minmax(72px, 0.6fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.mappingHeaderRow > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mappingRow {
+  display: grid;
+  grid-template-columns: minmax(88px, 0.8fr) minmax(0, 1.1fr) minmax(0, 1.2fr) 32px minmax(72px, 0.6fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.mappingRowFallback {
+  border-top-style: dashed;
+  margin-top: 4px;
+}
+
+/* One row's fetched-model pick button: input-height square so the column
+   reads as the row's fifth cell, chevron down like a select affordance. */
+.rowPicker {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+}
+
+.rowPicker:hover:not(:disabled) {
+  border-color: var(--dsw-alias-brand-primary);
+  color: var(--dsw-alias-brand-primary);
+}
+
+.rowPicker:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.mappingRowLabel {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+/* A column a row cannot fill: the Subagent role's hidden note, the Haiku
+   row's em dash, the fallback's blank display name. */
+.mappingRowNote {
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.mappingRowField {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mappingRowCheck {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* The provider's chosen logo: the vendored SVG mark sized by its 1em
+   viewBox, so one inline element scales from the card's 28 to the picker
+   button's 44 without a second asset. */
+.providerLogo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+
+/* The form's logo field: the pick button centered above the first identity
+   field, cc-switch's provider-form posture. */
+.iconField {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.iconPickButton {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  border-radius: 14px;
+  background: var(--dsw-alias-bg-layer-1);
+  cursor: pointer;
+  padding: 0;
+}
+
+.iconPickButton:hover:not(:disabled) {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.iconPickButton:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* The icon-selection dialog: a search field, then the whole set as a
+   wrapping grid of cells — mark above name, one click to choose. It spans
+   most of a settings pane's width so the set reads as a grid, not a strip. */
+.iconDialog {
+  /* Width rides the card, not max-width: the Modal's own width is
+     min(380px, 100%), and a cap alone cannot widen it — measured: the dialog
+     rendered 380px while this said 760px, so the picker stayed a narrow
+     two-column strip. */
+  width: min(760px, 100%);
+  /* Capped like the edit dialog: past the viewport the grid below the pinned
+     search shrinks and scrolls, instead of the card growing through the fixed
+     overlay and leaving its footer below the screen. */
+  max-height: calc(100vh - 48px);
+
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+}
+
+/* The icon dialog's content region: shrinks so the body, not the card, takes
+   the overflow. */
+.iconDialogContent {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.iconDialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.iconSearch {
+  height: 32px;
+  flex: none;
+}
+
+.iconGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(116px, 1fr));
+  gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: 460px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+  /* Reserved gutter: the theme scrollbar takes space, so an appearing bar
+     would otherwise cover the rightmost icon cells. */
+  scrollbar-gutter: stable;
+}
+
+.iconCell {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 6px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  background: var(--dsw-alias-bg-layer-1);
+  cursor: pointer;
+  font: inherit;
+}
+
+.iconCell:hover:not(:disabled) {
+  border-color: var(--dsw-alias-brand-primary);
+}
+
+.iconCellSelected {
+  border-color: var(--dsw-alias-brand-primary);
+  box-shadow: 0 0 0 1px var(--dsw-alias-brand-primary) inset;
+}
+
+.iconCellName {
+  max-width: 100%;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Default-model dialog: the current selection above one radio row per
    advertised model, the same row anatomy the fetch picker uses. */
 .dialogCurrent {
@@ -971,6 +1460,9 @@ select.input {
   max-height: 320px;
   margin: 0;
   overflow-y: auto;
+  /* Reserved gutter: same space-taking-scrollbar clearance as the fetch
+     dialog's candidate list. */
+  scrollbar-gutter: stable;
   padding: 0;
   list-style: none;
 }

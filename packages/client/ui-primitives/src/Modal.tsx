@@ -19,7 +19,10 @@ import css from './Modal.module.css'
  * @param props.description - optional supporting sentence under the title.
  * @param props.children - body (inputs, etc.).
  * @param props.footer - action row (Cancel / Create).
- * @param props.contentClassName - optional class for a scrollable content region.
+ * @param props.contentClassName - optional class for the scrollable content region.
+ * @param props.bodyClassName - optional class for the body region under the
+ * header; a capped dialog uses it to let the body shrink and scroll while the
+ * header and description stay pinned.
  * @param props.headless - render children directly in the card (no default
  * header/close/body chrome) for dialogs whose figma frame owns its own
  * header structure; mask, card, Escape, and aria-label remain.
@@ -28,7 +31,7 @@ import css from './Modal.module.css'
  * @returns null when closed; otherwise the overlay tree.
  */
 export function Modal({
-  open, onClose, title, closeLabel = 'Close', description, children, footer, className, contentClassName, headless = false,
+  open, onClose, title, closeLabel = 'Close', description, children, footer, className, contentClassName, bodyClassName, headless = false,
 }: {
   open: boolean
   onClose: () => void
@@ -39,6 +42,7 @@ export function Modal({
   footer?: ReactNode
   className?: string
   contentClassName?: string
+  bodyClassName?: string
   headless?: boolean
 }) {
   useEffect(() => {
@@ -75,7 +79,7 @@ export function Modal({
                 {description !== undefined && description !== '' && (
                   <p className={css.description}>{description}</p>
                 )}
-                {children !== undefined && <div className={css.body}>{children}</div>}
+                {children !== undefined && <div className={clsx(css.body, bodyClassName)}>{children}</div>}
               </div>
               {footer !== undefined && <div className={css.footer}>{footer}</div>}
             </>

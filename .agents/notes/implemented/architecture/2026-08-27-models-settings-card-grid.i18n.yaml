@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-27-models-settings-card-grid.md
-2026-08-27-models-settings-card-grid.md: b03cd18bc35e6582b83eae9328ca16918682ad88
-2026-08-27-models-settings-card-grid.zh.md: 8ec30aa153f68a1f8bb3e0aa794fcff281ac56ad
+2026-08-27-models-settings-card-grid.md: abdfc373906d9aebe6b703325dfc8f737f395559
+2026-08-27-models-settings-card-grid.zh.md: edf9b95254f30986c65368f48735fbb259fdbc64
