@@ -123,7 +123,13 @@ export namespace ModuleLoader {
 
     if (major >= 24) {
       const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
-      if (raw) return _cachedLoader = Object.assign(raw, { version: 'v2' })
+      // Early Node 24 releases still ship the v1-shaped surface (specifier-first
+      // resolveSync); the v2 surface is present exactly when getOrCreateModuleJob
+      // replaced getModuleJobForImport, so detect the shape, not the version.
+      if (raw) {
+        const version: ModuleLoader['version'] = typeof raw.getOrCreateModuleJob === 'function' ? 'v2' : 'v1'
+        return _cachedLoader = Object.assign(raw, { version })
+      }
     } else if (major >= 22) {
       const raw = requireInternal('internal/modules/esm/loader')?.getOrInitializeCascadedLoader()
       if (raw) return _cachedLoader = Object.assign(raw, { version: 'v1' })
