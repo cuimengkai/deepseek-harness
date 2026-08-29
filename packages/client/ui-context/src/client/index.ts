@@ -18,8 +18,8 @@ import { ContextCompositionController } from './context-store.ts'
 import { en, NS, zh } from './locales.ts'
 import { ContextView, type ContextViewInjected } from './ContextView.tsx'
 
-/** Required services: the conversation slot, the commands Remote, and the locale service. */
-export const inject = ['slots', 'remote', 'remote.commands', 'locale']
+/** Required services: the conversation slot, the commands and context-composition Remotes, and the locale service. */
+export const inject = ['slots', 'remote', 'remote.commands', 'remote.contextComposition', 'locale']
 
 /**
  * Client plugin body: register the context view tab. The registration rides

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ContextComposition } from '@deepseek-ai/dsh-context-composition/types'
+import { inject } from '../src/client/index.ts'
 import { ContextCompositionController } from '../src/client/context-store.ts'
 
 const SID = 's-1' as SessionId
@@ -177,5 +178,14 @@ describe('the context-composition read controller', () => {
     answerOk(COMPOSITION)
     await flush()
     expect(state().status).toBe('ready')
+  })
+})
+
+describe('the plugin inject array', () => {
+  it('declares the Remote namespaces the store reads through', () => {
+    // The wire face is reached as ctx.remote.contextComposition, and the
+    // Cordis fiber refuses an undeclared property with "cannot get property …
+    // without inject" — the context tab dies on one missing name.
+    expect(inject).toEqual(['slots', 'remote', 'remote.commands', 'remote.contextComposition', 'locale'])
   })
 })
