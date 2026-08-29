@@ -75,7 +75,7 @@ const SETTINGS_PATH = '/settings/:section?'
  * The router is the page-route engine: the trigger navigates to `/settings`,
  * and the page reads its section id from the URL parameter.
  */
-export const inject = ['slots', 'locale', 'connection', 'settingsScope', 'router']
+export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope', 'router', 'sessions']
 
 /**
  * Register the `settings` dictionaries, the chrome content, the General

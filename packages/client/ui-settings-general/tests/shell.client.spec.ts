@@ -77,7 +77,7 @@ const CHILD_SPECS = {
 describe('ui-settings-general apply', () => {
   it('declares the slots, router, and sessions faces it needs', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'connection', 'settingsScope', 'router',
+      'slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope', 'router', 'sessions',
     ])
   })
 
