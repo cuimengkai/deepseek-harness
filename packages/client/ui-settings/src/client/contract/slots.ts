@@ -9,6 +9,7 @@
  * General section) is owned by ui-settings-general too.
  */
 
+import type {} from '@deepseek-ai/dsh-client-ui-slots'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {

@@ -2,7 +2,7 @@
 /**
  * AppFrame interaction spec under the four-share props form: real layout
  * store instance (createLayoutStore().create() — the test-sanctioned engine
- * path), a recording renderSlot stub, and a render-prop SessionProvider stub
+ * path), a recording renderSlot stub, and a SessionProvider component stub
  * (the real one is framework-wired to the renderer host; its own behavior is
  * ui-renderer's spec territory). Drag sequences (pointer capture + rAF flush),
  * concession response to viewport change, and details staying mounted at
@@ -17,25 +17,24 @@ import { AppFrame } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.
 import type { AppFrameProps } from '@deepseek-ai/dsh-client-ui-layout/src/client/AppFrame.tsx'
 import { SIDEBAR_COLLAPSED } from '@deepseek-ai/dsh-client-ui-layout/src/client/columns.ts'
 import { createLayoutStore } from '@deepseek-ai/dsh-client-ui-layout/src/client/stores.ts'
-import type { PagesSnapshot } from '@deepseek-ai/dsh-client-ui-layout/src/client/pages.ts'
-import type {
-  SessionId, SessionListState, WorkspaceListState,
-} from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
+import type { WorkspaceSnapshot } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 
 // Session selection controls for the SessionProvider and useSessions stubs.
 const selectedSession = { current: 's-test' as SessionId | undefined }
 const selectedSessionBlank = { current: false }
-const baselinesReady = { current: true }
-// Page-projection control for the usePages stub (undefined = no active page).
-const pageState = { activeId: undefined as string | undefined }
+const selectedSessionTitle = { current: undefined as string | undefined }
+const workspacesReady = { current: true }
+type AttentionSnapshot = Parameters<Parameters<AppFrameProps['useSessionPendingInteraction']>[0]>[0]
+const noAttention: AttentionSnapshot = new Map()
+const useSessionPendingInteraction: AppFrameProps['useSessionPendingInteraction'] = selector => selector(noAttention)
 
-// Render-prop contract stub fed through the standard seat prop (the renderer
-// injects the real one in production): session mode runs children(id), empty
-// mode runs the empty branch — the frame must work against exactly this
-// shape. Typed as the seat's own component type so the branded sessionId
-// parameter stays contract-checked.
+// Provider contract stub fed through the standard seat prop (the renderer
+// injects the real one in production): session mode renders children and
+// empty mode runs the empty branch.
 const SessionProviderStub: AppFrameProps['SessionProvider'] = ({ children, empty }) =>
-  selectedSession.current === undefined ? <>{empty?.() ?? null}</> : <>{children(selectedSession.current)}</>
+  selectedSession.current === undefined ? <>{empty?.() ?? null}</> : <>{children}</>
 
 
 /** Observer stub: captures the callback so tests can fire resizes manually. */
@@ -58,9 +57,9 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
 function mountFrame() {
   window.innerWidth = frameWidth // first-render viewport source before the observer fires
   const instance = createLayoutStore().create()
-  const slotCalls: { key: string; props: unknown; only?: string }[] = []
-  const renderSlot = ((key: string, owner: object, opts?: { only?: string }) => {
-    slotCalls.push({ key, props: owner, ...(opts?.only !== undefined ? { only: opts.only } : {}) })
+  const slotCalls: { key: string; props: unknown }[] = []
+  const renderSlot = ((key: string, owner: object) => {
+    slotCalls.push({ key, props: owner })
     if (key === 'sidebar') return <div data-testid="sidebar-content" />
     if (key === 'conversation') return <div data-testid="center-content" />
     if (key === 'details') return <div data-testid="details-content" />
@@ -73,15 +72,24 @@ function mountFrame() {
       ids: current === undefined ? [] : [current],
       byId: current === undefined
         ? {}
-        : { [current]: { id: current, displayTitle: 'Test', running: false, blank: selectedSessionBlank.current, updatedAt: 1 } },
+        : {
+          [current]: {
+            id: current,
+            displayTitle: 'Test',
+            running: false,
+            blank: selectedSessionBlank.current,
+            updatedAt: 1,
+            ...(selectedSessionTitle.current === undefined ? {} : { title: selectedSessionTitle.current }),
+          },
+        },
       current,
       phase: 'ready',
     } as SessionListState
     return sel(sessionState)
   }) as never
-  const workspaceState: WorkspaceListState = {
+  const workspaceState: WorkspaceSnapshot = {
     items: [], archivedSessionIds: [], state: 'idle', phase: 'ready', error: null,
-    baselinesReady: baselinesReady.current, recentWorkspaceId: undefined,
+    ...(workspacesReady.current ? {} : { state: 'loading' as const, phase: 'pending' as const }),
   }
   const element = () => (
     <AppFrame
@@ -89,10 +97,10 @@ function mountFrame() {
       actions={instance.actions}
       renderSlot={renderSlot}
       useSessions={useSessions}
-      useWorkspaces={((sel: (s: WorkspaceListState) => unknown) => sel(workspaceState)) as never}
+      useSessionPendingInteraction={useSessionPendingInteraction}
+      useWorkspaces={((sel: (s: WorkspaceSnapshot) => unknown) => sel(workspaceState)) as never}
       SessionProvider={SessionProviderStub}
-      usePages={((sel: (s: PagesSnapshot) => unknown) =>
-        sel({ pages: [], activeId: pageState.activeId })) as never}
+      t={key => key === 'brand.localBuild' ? 'DSH Local Build' : key}
     />
   )
   const utils = render(element())
@@ -119,8 +127,8 @@ beforeEach(() => {
   frameWidth = 1920
   selectedSession.current = 's-test' as SessionId
   selectedSessionBlank.current = false
-  baselinesReady.current = true
-  pageState.activeId = undefined
+  selectedSessionTitle.current = undefined
+  workspacesReady.current = true
   vi.useFakeTimers()
   vi.stubGlobal('ResizeObserver', ResizeObserverStub)
   vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => setTimeout(() => { cb(0) }, 16) as unknown as number)
@@ -138,11 +146,33 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  document.title = ''
   vi.useRealTimers()
   vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
 })
 
 describe('AppFrame', () => {
+  it('localizes the product title when the build does not supply one', () => {
+    mountFrame()
+    expect(document.title).toBe('DSH Local Build')
+  })
+
+  it('projects the selected durable Session title', () => {
+    vi.stubEnv('DSH_CLIENT_TITLE', 'Product')
+    selectedSessionTitle.current = 'First'
+    const { rerenderFrame } = mountFrame()
+    expect(document.title).toBe('First — Product')
+
+    selectedSessionTitle.current = 'Revised'
+    act(() => { rerenderFrame() })
+    expect(document.title).toBe('Revised — Product')
+
+    selectedSession.current = undefined
+    act(() => { rerenderFrame() })
+    expect(document.title).toBe('Product')
+  })
+
   it('renders three tracks from store state', () => {
     const { frame } = mountFrame()
     expect(tracks(frame)).toEqual([280, 0])
@@ -164,15 +194,17 @@ describe('AppFrame', () => {
     // No current session: the session-maybe conversation shell owns the New
     // Session view itself — the center column renders it unconditionally.
     selectedSession.current = undefined
-    const { slotCalls, getByTestId } = mountFrame()
+    const { slotCalls, getByTestId, queryByTestId } = mountFrame()
     expect(getByTestId('center-content')).toBeTruthy()
     expect(slotCalls.map(c => c.key)).toContain('conversation')
+    expect(queryByTestId('details-content')).toBeNull()
+    expect(slotCalls.map(c => c.key)).toContain('details')
   })
 
   it('renders both column occupants before baselines settle (no loading gate)', () => {
     // No loading gate: a bare loading status reads worse than the shell's own
     // pending rendering — both occupants mount from first paint.
-    baselinesReady.current = false
+    workspacesReady.current = false
     const { slotCalls } = mountFrame()
     expect(slotCalls.map(c => c.key)).toContain('conversation')
     expect(slotCalls.map(c => c.key)).toContain('details')
@@ -400,29 +432,5 @@ describe('AppFrame — unmount with an in-flight resize frame', () => {
     frameWidth = 1250
     act(() => { fireResize?.(); fireResize?.(); vi.advanceTimersByTime(20) })
     expect(tracks(frame)).toEqual([280, 330])
-  })
-})
-
-describe('AppFrame — routable page layer', () => {
-  it('renders no page layer while no page is active (grid not inert)', () => {
-    const { frame, slotCalls } = mountFrame()
-    expect(frame.querySelector('[class*="pageLayer"]')).toBeNull()
-    expect(frame.querySelector('[class*="appRegion"]')?.hasAttribute('inert')).toBe(false)
-    expect(slotCalls.find(c => c.key === 'page')).toBeUndefined()
-  })
-
-  it('renders the matched page over the grid and makes the app region inert', () => {
-    pageState.activeId = 'settings'
-    const { frame, slotCalls, getByTestId } = mountFrame()
-    const pageLayer = frame.querySelector('[class*="pageLayer"]')!
-    expect(pageLayer).toBeTruthy()
-    expect(pageLayer.hasAttribute('data-page')).toBe(true)
-    // The app grid below stays mounted (session state preserved) but inert.
-    expect(frame.querySelector('[class*="appRegion"]')?.hasAttribute('inert')).toBe(true)
-    expect(getByTestId('center-content')).toBeTruthy()
-    // The page slot renders only the active entry, by id.
-    const pageCall = slotCalls.find(c => c.key === 'page')!
-    expect(pageCall.props).toEqual({})
-    expect(pageCall.only).toBe('settings')
   })
 })

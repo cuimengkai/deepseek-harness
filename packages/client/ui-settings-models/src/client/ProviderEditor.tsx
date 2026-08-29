@@ -24,7 +24,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import type { CredentialView, DiscoveredModelView, IApiClient, SettingsNamespaceView, SettingsPathOpView } from '@deepseek-ai/dsh-api-remotes/client'
+import type {
+  CredentialInfo, JsonValue, LlmDiscoveredModel as DiscoveredModelView,
+  SettingsNamespaceView, SettingsPathOpView,
+} from '@deepseek-ai/dsh-api-remotes/client'
 import { IconApiOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { DeepSeekModelsEditor, modelDrafts, validateDeepSeekModels,
 } from './DeepSeekModelsEditor.tsx'
@@ -35,6 +38,7 @@ import { providerIconOf } from './ProviderLogo.tsx'
 import { adoptIntoMapping, ModelListEditor, prefillMapping } from './ModelListEditor.tsx'
 import { ManageTestDialog, useModelFetchOutcome } from './ManageTestDialog.tsx'
 import { deriveKeyRef, messageOf, protocolChoices } from './store.ts'
+import type { ModelsWire } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
@@ -83,7 +87,7 @@ export interface ProviderEditorProps {
   /** Path from the section root to this provider's profile. */
   settingsPath: readonly string[]
   /** Wire faces for writes and for interrogating a provider endpoint. */
-  api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>
+  api: ModelsWire
   /** Section copy. */
   t: (key: keyof typeof en) => string
   /** Disable writes (read-only settings provider). */
@@ -123,11 +127,11 @@ export interface ProviderEditorProps {
   /** Give the credential field initial focus when this editor mounts. */
   autoFocusCredential?: boolean
   /** Override the dismiss action copy. */
-  cancelLabel?: keyof typeof en
+  cancelLabelKey?: keyof typeof en
   /** Override the idle commit action copy. */
-  submitLabel?: keyof typeof en
+  submitLabelKey?: keyof typeof en
   /** Override the in-flight commit action copy. */
-  submitBusyLabel?: keyof typeof en
+  submitBusyLabelKey?: keyof typeof en
   /** Close the editor; `changed` reports whether an Apply committed. */
   onClose: (changed: boolean) => void
 }
@@ -164,7 +168,7 @@ export function pathOps(
   const ops: SettingsPathOpView[] = []
   for (const [key, value] of Object.entries(after)) {
     if (JSON.stringify(previous[key]) === JSON.stringify(value)) continue
-    ops.push({ op: 'set', path: [...base, key], value })
+    ops.push({ op: 'set', path: [...base, key], value: value as JsonValue })
   }
   for (const key of Object.keys(previous)) {
     if (!(key in after)) ops.push({ op: 'unset', path: [...base, key] })
@@ -223,7 +227,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     return next
   })
   const [keyDraft, setKeyDraft] = useState('')
-  const [keyState, setKeyState] = useState<CredentialView | undefined>(undefined)
+  const [keyState, setKeyState] = useState<CredentialInfo | undefined>(undefined)
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
   // Whether the base-URL field's 管理与测试 dialog is open. It mounts per open,
@@ -307,10 +311,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     // neither a business rejection nor a transport failure may reach the
     // browser as an unhandled rejection, so the card simply renders without
     // the "already configured" hint.
-    void api.credentials.describe({ refs: [keyRef] }).then(
+    void api.credentials.describe([keyRef]).then(
       (response) => {
-        if (stale || !response.result.ok) return
-        setKeyState(response.result.value.credentials[keyRef])
+        if (stale || !response.ok) return
+        setKeyState(response.value[keyRef])
       },
       () => undefined,
     )
@@ -384,19 +388,19 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         ? [{ op: 'set', path: [...settingsPath], value: {} }]
         : pathOps(settingsPath, committedOriginal, next)
     if (ops.length > 0) {
-      const response = await api.settings.mutate({ ns, ops, expectedRevision })
-      if (!response.result.ok) {
-        return response.result.error.code === 'settings-conflict'
+      const response = await api.settings.mutate(ns, ops, expectedRevision)
+      if (!response.ok) {
+        return response.error.code === 'settings-conflict'
           ? t('conflict')
-          : response.result.error.message
+          : response.error.message
       }
-      setCommittedOriginal(schema.getPath(response.result.value.user, settingsPath))
-      setExpectedRevision(response.result.value.revision)
+      setCommittedOriginal(schema.getPath(response.value.user, settingsPath))
+      setExpectedRevision(response.value.revision)
       setDraft(next)
     }
     if (keyValue.length > 0) {
-      const stored = await api.credentials.set({ ref: keyRef, value: keyValue })
-      if (!stored.result.ok) return stored.result.error.message
+      const stored = await api.credentials.set(keyRef, keyValue)
+      if (!stored.ok) return stored.error.message
     }
     setKeyDraft('')
     return undefined
@@ -425,7 +429,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   if (node === undefined) {
     // A directory entry addressing a position its schema cannot resolve is a
     // host-side inconsistency; showing it beats a blank card.
-    return <p className={styles['error']}>{`${props.provider}: unresolvable settings path`}</p>
+    return <p className={styles['error']}>{props.provider}: {props.t('settingsPathUnresolvable')}</p>
   }
 
   const editorFooter = (
@@ -436,9 +440,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         || (props.credentialOnly !== true && modelFailure !== undefined)
         || shownKeyFailure !== undefined
         || (props.credentialRequired === true && keyValue.length === 0)}
-      submitLabel={props.submitLabel ?? 'apply'}
-      submitBusyLabel={props.submitBusyLabel ?? 'applying'}
-      {...props.cancelLabel === undefined ? {} : { cancelLabel: props.cancelLabel }}
+      submitLabelKey={props.submitLabelKey ?? 'apply'}
+      submitBusyLabelKey={props.submitBusyLabelKey ?? 'applying'}
+      {...props.cancelLabelKey === undefined ? {} : { cancelLabelKey: props.cancelLabelKey }}
       onCancel={() => { props.onClose(false) }}
       onSubmit={() => { void apply() }}
     />

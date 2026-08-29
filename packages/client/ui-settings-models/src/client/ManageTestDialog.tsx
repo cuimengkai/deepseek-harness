@@ -17,9 +17,9 @@
 
 import { useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { DiscoveredModelView, IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { LlmDiscoveredModel as DiscoveredModelView } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal, Toast } from '@deepseek-ai/dsh-client-ui-primitives'
-import { messageOf } from './store.ts'
+import { type ModelsLlm, messageOf } from './store.ts'
 import { emptyMappingSlots } from './ModelListEditor.tsx'
 import type { ModelDraft } from './ModelListEditor.tsx'
 import type { en, ModelsKey } from './locales.ts'
@@ -91,7 +91,7 @@ export interface ManageTestDialogProps {
    */
   probeBlocked?: keyof typeof en | undefined
   /** Wire face the interrogation calls. */
-  api: Pick<IApiClient, 'llm'>
+  api: Pick<ModelsLlm, 'discoverModels'>
   /**
    * The mapping as currently drafted, for two judgements the dialog makes on
    * its own: an id already served starts unchecked, and with no empty row an
@@ -143,8 +143,7 @@ export function ManageTestDialog(props: ManageTestDialogProps): ReactNode {
     setBusy(true)
     const startedAt = performance.now()
     let stale = false
-    void api.llm.discoverModels({
-      settingsNs: probe.settingsNs,
+    void api.discoverModels(probe.settingsNs, {
       ...probe.provider === undefined ? {} : { provider: probe.provider },
       ...probe.baseURL === undefined || probe.baseURL.length === 0 ? {} : { baseURL: probe.baseURL },
       ...probe.api === undefined ? {} : { api: probe.api },
@@ -153,11 +152,11 @@ export function ManageTestDialog(props: ManageTestDialogProps): ReactNode {
       (response) => {
         if (stale) return
         setBusy(false)
-        if (!response.result.ok) {
-          setFailure(response.result.error.message)
+        if (!response.ok) {
+          setFailure(response.error.message)
           return
         }
-        const found = response.result.value.models
+        const found = response.value
         setLatency(Math.round(performance.now() - startedAt))
         props.onFetched(found)
         if (found.length === 0) {

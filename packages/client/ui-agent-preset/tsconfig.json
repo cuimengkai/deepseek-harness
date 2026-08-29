@@ -15,7 +15,7 @@
       "path": "../../../vendor/cordis"
     },
     {
-      "path": "../runtime"
+      "path": "../store"
     },
     {
       "path": "../../test-support/client-runtime"
@@ -24,10 +24,16 @@
       "path": "../ui-conversation"
     },
     {
-      "path": "../ui-flow-editor"
+      "path": "../ui-primitives"
     },
     {
-      "path": "../ui-primitives"
+      "path": "../ui-renderer"
+    },
+    {
+      "path": "../ui-session"
+    },
+    {
+      "path": "../ui-workspace"
     },
     {
       "path": "../ui-settings"
@@ -42,7 +48,13 @@
       "path": "../../api/remotes/tsconfig.client.json"
     },
     {
-      "path": "../../workflow/flow"
+      "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../../preset/agent-presets"
+    },
+    {
+      "path": "../../core/session"
     }
   ]
 }

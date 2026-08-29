@@ -38,6 +38,11 @@
     },
     {
       "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "ImageAttachmentAccess",
+      "source": "packages/llm/llm/src/content.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
       "symbol": "FinishReasonMap",
       "source": "packages/llm/llm/src/types.ts"
     },
@@ -129,7 +134,13 @@
     {
       "doc": "docs/subsystems/core.md",
       "symbol": "Agent",
-      "source": "packages/core/agent/src/runtime-types.ts"
+      "source": "packages/core/agent/src/types.ts",
+      "augmentations": [
+        {
+          "source": "packages/core/agent/src/runtime-types.ts",
+          "module": "./types.ts"
+        }
+      ]
     },
     {
       "doc": "docs/subsystems/core.md",
@@ -458,6 +469,16 @@
     },
     {
       "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmImageRequestPrice",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
+      "symbol": "LlmImageRequestPricing",
+      "source": "packages/llm/llm/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/llm-streaming.md",
       "symbol": "ContentBlockMap",
       "source": "packages/llm/llm/src/types.ts"
     },
@@ -514,9 +535,9 @@
       "source": "packages/core/session/src/types.ts"
     },
     {
-      "doc": "docs/subsystems/session.md",
+      "doc": "docs/subsystems/todo.md",
       "symbol": "TodoItem",
-      "source": "packages/core/session/src/types.ts"
+      "source": "packages/todo/tool-todo/src/types.ts"
     },
     {
       "doc": "docs/subsystems/session.md",
@@ -837,7 +858,7 @@
     },
     {
       "doc": "docs/subsystems/tools.md",
-      "symbol": "CodeDispatchLog",
+      "symbol": "PtcDispatchLog",
       "source": "packages/core/tools/src/index.ts"
     },
     {
@@ -937,11 +958,6 @@
     },
     {
       "doc": "docs/subsystems/user-questions.md",
-      "symbol": "UserQuestionProvider",
-      "source": "packages/interaction/user-questions/src/index.ts"
-    },
-    {
-      "doc": "docs/subsystems/user-questions.md",
       "symbol": "UserQuestionError",
       "source": "packages/interaction/user-questions/src/index.ts"
     },
@@ -993,6 +1009,16 @@
     {
       "doc": "docs/subsystems/attachment.md",
       "symbol": "StoredImageAttachment",
+      "source": "packages/attachment/attachment/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/attachment.md",
+      "symbol": "ImageRequestPolicy",
+      "source": "packages/attachment/attachment/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/attachment.md",
+      "symbol": "RequestImageAttachment",
       "source": "packages/attachment/attachment/src/types.ts"
     },
     {
@@ -1703,7 +1729,7 @@
     {
       "doc": "docs/subsystems/credentials.md",
       "symbol": "CredentialInfo",
-      "source": "packages/credentials/credentials/src/index.ts"
+      "source": "packages/credentials/credentials/src/types.ts"
     },
     {
       "doc": "docs/subsystems/settings.md",
@@ -1812,8 +1838,23 @@
     },
     {
       "doc": "docs/subsystems/client-modules.md",
+      "symbol": "WebBootBatchPhase",
+      "source": "packages/client/modules/src/client/manifest.ts"
+    },
+    {
+      "doc": "docs/subsystems/client-modules.md",
+      "symbol": "WebBootBatch",
+      "source": "packages/client/modules/src/client/manifest.ts"
+    },
+    {
+      "doc": "docs/subsystems/client-modules.md",
       "symbol": "WebBootGraph",
       "source": "packages/client/modules/src/client/manifest.ts"
+    },
+    {
+      "doc": "docs/subsystems/client-modules.md",
+      "symbol": "ClientArtifactBaseline",
+      "source": "packages/client/modules/src/index.ts"
     },
     {
       "doc": "docs/subsystems/session-telemetry.md",
@@ -2029,6 +2070,11 @@
       "doc": "docs/subsystems/feedback.md",
       "symbol": "MessageFeedbackDeleteResult",
       "source": "packages/feedback/message-feedback/src/types.ts"
+    },
+    {
+      "doc": "packages/client/ui-conversation/README.md",
+      "symbol": "ComposerChainProps",
+      "source": "packages/client/ui-conversation/src/client/contract/slots.ts"
     }
   ]
 }

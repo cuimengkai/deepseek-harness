@@ -1,27 +1,23 @@
 /**
- * Agent-presets settings section: the roster as cards, a composer that
- * assembles an agent from the installed plugins, a copy dialog, and a
- * read-only canvas view over the shipped compositions.
+ * Agent-presets settings section: the roster as cards, a copy dialog as the
+ * only way a preset is created, and a read-only viewer over the shipped
+ * compositions.
  *
- * The browser edits no composition text — a shipped preset opens as a
- * read-only design page (it is the known-good composition a copy starts
- * from), and a custom preset is edited in the composer or in its own files,
- * which is what the location action leads to. Deleting a preset leaves running
- * sessions alone: a composition is mounted once at session creation and
- * nothing re-reads the file.
+ * The browser edits no composition text — a shipped preset opens read-only to
+ * be READ (it is the known-good composition a copy starts from), and a custom
+ * preset is edited in its own files, which is what the location action leads
+ * to. Deleting a preset leaves running sessions alone: a composition is
+ * mounted once at session creation and nothing re-reads the file.
  */
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
-  Button, IconBrowseOutline16, IconCopyOutline16, IconEditOutline16, IconFolderOpenOutline16, IconPlusOutline16,
-  IconTrashOutline16, Modal, Tooltip,
+  Button, IconBrowseOutline16, IconCopyOutline16, IconFolderOpenOutline16, IconPlusOutline16, IconTrashOutline16, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { ModelKind } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { draftBlocker, type AgentPresetSectionState, type ComposeDraft } from './section-store.ts'
-import { AgentPresetComposer } from './AgentPresetComposer.tsx'
+import { draftBlocker, type AgentPresetSectionState } from './section-store.ts'
 import { presetDisplayText, type AgentPresetSettingsKey } from './locales.ts'
 import css from './AgentPresetSection.module.css'
 
@@ -33,9 +29,9 @@ export interface AgentPresetSectionInjected {
   }
   /** Read the roster; called once when the section first renders. */
   load: () => Promise<void>
-  /** Open one shipped preset's composition in the read-only canvas view. */
+  /** Open one shipped preset's composition in the read-only viewer. */
   view: (id: string) => Promise<void>
-  /** Close the read-only canvas view. */
+  /** Close the read-only viewer. */
   closeView: () => void
   /** Open the copy dialog over one preset. */
   beginCopy: (from: string) => void
@@ -47,53 +43,12 @@ export interface AgentPresetSectionInjected {
   setCopyName: (name: string) => void
   /** Submit the copy. */
   confirmCopy: () => Promise<void>
-  /** Open the drag-and-drop composer; null starts a new preset, an id edits one. */
-  beginCompose: (id: string | null) => Promise<void>
-  /** Close the composer, discarding the draft. */
-  closeComposer: () => void
-  /** Name the preset the composition lands on. */
-  setComposerId: (id: string) => void
-  /** Name the composed preset's display name. */
-  setComposerName: (name: string) => void
-  /**
-   * Add a plugin module to the composition from the palette's click path.
-   * Returns the new node's canvas id, or undefined when the module is already
-   * composed, so the caller can select it.
-   */
-  addRow: (moduleName: string) => string | undefined
-  /**
-   * Add a plugin module to the composition from the palette's drop path, at
-   * the graph position it landed on. Returns the new node's canvas id, or
-   * undefined when the module is already composed.
-   */
-  addNodeAt: (moduleName: string, position: { x: number; y: number }) => string | undefined
-  /** Remove one row from the composition, by its row id (or module name). */
-  removeRow: (rowId: string) => void
-  /** Remove one node from the composition by its canvas id (the delete key). */
-  removeNode: (nodeId: string) => void
-  /** Reorder the composition by chain index. */
-  moveRow: (from: number, to: number) => void
-  /** Move one node's canvas position (the drag gesture). */
-  moveNode: (nodeId: string, position: { x: number; y: number }) => void
-  /** Reorder the composition so one node runs right after another (connect). */
-  reorderNode: (fromNodeId: string, toNodeId: string) => void
-  /**
-   * Bind one model kind's route on one composition node — the inspector's
-   * model-kind picker. The route is part of the draft, so an edit wakes Save.
-   */
-  updateAgentModelKind: (nodeId: string, kind: ModelKind, field: 'provider' | 'model', value: string) => void
-  /**
-   * Save the composition. Resolves true when it saved, false when it was
-   * blocked or failed, so a caller can chain a follow-up on success.
-   */
-  confirmCompose: () => Promise<boolean>
   /** Open one preset's directory, or reveal its path where there is no desktop. */
   openLocation: (id: string) => Promise<void>
   /**
    * Stage the self-referential preset and start a new session on it — the
-   * guided way to author a preset, reached from the composer's Creator-mode
-   * handoff. Absent when the surface is composed without the conversation
-   * flow to land the session in.
+   * guided way to author a preset, beside copying. Absent when the surface
+   * is composed without the conversation flow to land the session in.
    */
   startCreatorDraft?: () => void
   /** Ask for delete confirmation, or dismiss it with null. */
@@ -223,6 +178,11 @@ function CardDescription({ text }: { text: string }): ReactNode {
 export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
   const { useAgentPresetSection, t, load } = props
   const state = useAgentPresetSection(snapshot => snapshot)
+  const viewedId = state.view?.id
+  const viewedRow = viewedId === undefined ? undefined : state.rows.find(row => row.id === viewedId)
+  const viewedTitle = state.view === null
+    ? ''
+    : viewedRow === undefined ? state.view.title : presetDisplayText(viewedRow, t).name
 
   useEffect(() => {
     void load()
@@ -244,115 +204,28 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
     )
   }
 
-  /* The composer entry: assemble an agent from the installed plugin palette
-     by dragging rows into a pipeline. The dashed affordance marks it the
-     same way the old creator button did — a place a preset will appear.
-     Creator mode is reached from inside the composer, as the handoff that
-     builds or refines the draft in conversation. */
-  const composerEntry = (
-    <button
-      type="button"
-      className={css.creatorButton}
-      disabled={!state.authorable}
-      title={state.authorable ? undefined : t('duplicateUnavailable')}
-      onClick={() => { void props.beginCompose(null) }}
-    >
-      <IconPlusOutline16 size={14} />
-      {t('newAgent')}
-    </button>
-  )
-
-  // The composer owns the whole section while open: the roster it edits is
-  // the workspace, not context to keep on screen.
-  if (state.composer !== null) {
-    return (
-      <div className={`${css.section} ${css.sectionComposer}`}>
-        <AgentPresetComposer
-          draft={state.composer}
-          palette={state.palette}
-          modelCatalog={state.modelCatalog}
-          roster={state.rows}
-          t={t}
-          actions={{
-            closeComposer: props.closeComposer,
-            setComposerId: props.setComposerId,
-            setComposerName: props.setComposerName,
-            addRow: props.addRow,
-            addNodeAt: props.addNodeAt,
-            removeRow: props.removeRow,
-            removeNode: props.removeNode,
-            moveRow: props.moveRow,
-            moveNode: props.moveNode,
-            reorderNode: props.reorderNode,
-            updateAgentModelKind: props.updateAgentModelKind,
-            confirmCompose: props.confirmCompose,
-            // The handoff leaves settings with the new session, exactly as the
-            // old creator button did.
-            ...props.startCreatorDraft === undefined
-              ? {}
-              : { startCreatorDraft: () => { props.startCreatorDraft?.(); props.close() } },
-          }}
-        />
-      </div>
+  /* The guided alternative to copying: the self-referential preset can
+     read this very composition and author a new one in conversation.
+     Offered only where that preset is actually on the roster and a
+     session can be landed; without a writable root the draft could
+     never be discovered, so the reason rides the disabled button. */
+  const creatorButton = props.startCreatorDraft !== undefined && state.rows.some(row => row.id === 'cordis')
+    ? (
+      <button
+        type="button"
+        className={css.creatorButton}
+        disabled={!state.authorable}
+        title={state.authorable ? undefined : t('duplicateUnavailable')}
+        onClick={() => {
+          props.startCreatorDraft?.()
+          props.close()
+        }}
+      >
+        <IconPlusOutline16 size={14} />
+        {t('creatorDraft')}
+      </button>
     )
-  }
-
-  // A shipped preset opens as the same design page an edit shows, but
-  // read-only: its composition graph is the known-good one a copy starts from,
-  // so the canvas explains the chain without any edit affordance. The roster it
-  // views is the workspace, not context to keep on screen.
-  if (state.view !== null) {
-    const view = state.view
-    // The head names the preset the way its roster card does: a known shipped
-    // preset reads its localized display name, anything else keeps the title
-    // the view loaded (so a row that left the roster mid-view still has one).
-    const row = state.rows.find(candidate => candidate.id === view.id)
-    const title = row === undefined ? view.title : presetDisplayText(row, t).name
-    const draft: ComposeDraft = {
-      id: view.id,
-      name: title,
-      graph: view.graph,
-      saving: false,
-      error: null,
-      original: { id: view.id, name: title, graph: view.graph },
-    }
-    return (
-      <div className={`${css.section} ${css.sectionComposer}`}>
-        <AgentPresetComposer
-          readOnly
-          draft={draft}
-          palette={state.palette}
-          modelCatalog={state.modelCatalog}
-          roster={state.rows}
-          t={t}
-          actions={{
-            // Read-only renders none of the edit controls, so only the close
-            // action (and, on an authoring deployment, the copy handoff) is
-            // reachable; the rest stay as inert stubs so a read-only path
-            // cannot mutate a shipped composition by accident.
-            closeComposer: props.closeView,
-            ...(state.authorable
-              ? { onEdit: () => { props.closeView(); props.beginCopy(view.id) } }
-              : {}),
-            /* v8 ignore start -- the read-only view renders no fields, palette,
-               or edit affordances, so the composer never invokes these stubs. */
-            setComposerId: () => {},
-            setComposerName: () => {},
-            addRow: () => undefined,
-            addNodeAt: () => undefined,
-            removeRow: () => {},
-            removeNode: () => {},
-            moveRow: () => {},
-            moveNode: () => {},
-            reorderNode: () => {},
-            updateAgentModelKind: () => {},
-            confirmCompose: () => Promise.resolve(false),
-            /* v8 ignore stop */
-          }}
-        />
-      </div>
-    )
-  }
+    : null
 
   return (
     <div className={css.section}>
@@ -364,10 +237,8 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
           .filter(row => row.trust === trust)
           .map(row => ({ row, text: presetDisplayText(row, t) }))
         // The custom group is where a preset of one's own will appear, so it
-        // stays on screen even while empty: heading plus the creation entries.
-        const tail = trust === 'user'
-          ? <div className={css.createRow}>{composerEntry}</div>
-          : null
+        // stays on screen even while empty: heading plus the creator entry.
+        const tail = trust === 'user' ? creatorButton : null
         if (group.length === 0 && tail === null) return null
         return (
           <section key={trust} className={css.group}>
@@ -385,23 +256,45 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                       common act, so it should not hide behind a small button.
                       The action row sits outside it — nesting buttons is
                       invalid, and these act on the card rather than select it.
-                      A broken preset cannot compose a session, so its body is
-                      disabled and the card says why instead of offering it. */}
+                      A broken preset cannot compose a session, so its body
+                      refuses the pick; the reason rides the badge rather than
+                      the card face, which stays the preset's own
+                      description. */}
                     <button
                       type="button"
                       className={css.cardMain}
                       aria-pressed={row.isDefault}
-                      disabled={row.isDefault || row.broken !== undefined}
+                      // Broken says so through `aria-disabled` rather than
+                      // `disabled`, which would take the card out of the tab
+                      // order. With the reason moved onto the badge, that is
+                      // the only way anyone without a pointer reaches it.
+                      disabled={row.isDefault}
+                      aria-disabled={row.broken !== undefined}
                       // Without this the name is the whole card read aloud —
                       // title, badge, description, id.
                       aria-label={`${row.broken !== undefined ? t('brokenBadge') : row.isDefault ? t('inUse') : t('setDefault')}: ${text.name}`}
-                      title={row.broken ?? (row.isDefault ? t('inUse') : t('setDefault'))}
-                      onClick={() => { void props.makeDefault(row.id) }}
+                      // The reason rides the badge, not the whole card: two
+                      // tooltips over one target would race, and the card's
+                      // own label answers what clicking it would do.
+                      title={row.broken !== undefined ? t('brokenBadge') : row.isDefault ? t('inUse') : t('setDefault')}
+                      onClick={() => {
+                        if (row.broken !== undefined) return
+                        void props.makeDefault(row.id)
+                      }}
                     >
                       <span className={css.cardHead}>
                         <span className={css.cardName}>{text.name}</span>
                         {row.broken !== undefined
-                          ? <span className={css.brokenBadge}>{t('brokenBadge')}</span>
+                          ? (
+                            <span className={css.brokenBadge}>
+                              {t('brokenBadge')}
+                              {/* Pointer-only, hence `aria-hidden`: the same
+                                reason reaches assistive technology through the
+                                alert below, and a second copy inside the card's
+                                own text would be read out twice. */}
+                              <span className={css.brokenTip} aria-hidden="true">{row.broken}</span>
+                            </span>
+                          )
                           : null}
                         <span className={css.badge}>
                           {row.trust === 'user' ? t('userTrust') : t('builtIn')}
@@ -409,6 +302,10 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                         {row.isDefault ? <span className={css.inUse}>{t('inUse')}</span> : null}
                       </span>
                       <CardDescription text={text.description ?? t('noDescription')} />
+                      {/* Visually hidden, deliberately: the pointer path is the
+                        badge's tooltip, and a disabled card body is out of the
+                        tab order, so this is the only reading a screen reader
+                        or a keyboard-only user gets. */}
                       {row.broken === undefined
                         ? null
                         : <span className={css.cardBrokenReason} role="alert">{row.broken}</span>}
@@ -447,26 +344,6 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
                             <IconFolderOpenOutline16 />
                           </button>
                         )}
-                      {/* A custom preset is the one thing the composer may
-                        overwrite; a shipped one is the composition a copy
-                        starts from, so its rows stay read-only. A broken
-                        custom preset cannot even load its rows to edit. */}
-                      {row.trust === 'user'
-                        ? (
-                          <button
-                            type="button"
-                            className={css.iconButton}
-                            disabled={!state.authorable || row.broken !== undefined}
-                            data-tip={row.broken !== undefined
-                              ? t('brokenNoCompose')
-                              : state.authorable ? t('compose') : t('duplicateUnavailable')}
-                            aria-label={`${t('compose')}: ${text.name}`}
-                            onClick={() => { void props.beginCompose(row.id) }}
-                          >
-                            <IconEditOutline16 />
-                          </button>
-                        )
-                        : null}
                       <button
                         type="button"
                         className={css.iconButton}
@@ -519,6 +396,23 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
           setCopyName: props.setCopyName,
         }}
       />
+      <Modal
+        open={state.view !== null}
+        onClose={() => { props.closeView() }}
+        title={state.view === null ? '' : `${t('view')} · ${viewedTitle}`}
+        closeLabel={t('close')}
+        description={t('composition')}
+        className={css.dialog as string}
+        footer={(
+          <Button variant="outline" autoFocus onClick={() => { props.closeView() }}>
+            {t('close')}
+          </Button>
+        )}
+      >
+        {state.view === null
+          ? null
+          : <pre className={css.viewerCode}>{state.view.content}</pre>}
+      </Modal>
       <Modal
         open={state.pendingDelete !== null}
         onClose={() => { props.confirmDelete(null) }}

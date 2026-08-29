@@ -25,7 +25,7 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import type { DiscoveredModelView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { LlmDiscoveredModel as DiscoveredModelView } from '@deepseek-ai/dsh-api-remotes/client'
 import { IconChevronDownOutline14, Menu } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'

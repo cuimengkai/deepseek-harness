@@ -1071,7 +1071,8 @@ select.input {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .customizedSummary::before {
+  .customizedSummary::before,
+  .switchThumb {
     transition: none;
   }
 }

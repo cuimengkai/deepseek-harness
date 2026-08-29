@@ -7,8 +7,8 @@
  */
 
 import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SessionId } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
 /** The pure-types wire vocabulary the store republishes. */
 export type ContextComposition = import('@deepseek-ai/dsh-context-composition/types').ContextComposition

@@ -4,7 +4,7 @@
  * to every consumer. Provides, never consumes: no injected services.
  * @module @deepseek-ai/dsh-client-ui-router/client
  */
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { RouterService } from './router.ts'
 
 export { RouterService } from './router.ts'

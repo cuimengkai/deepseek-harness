@@ -3,28 +3,17 @@
 /** Locale keys these surfaces render. */
 export type AgentPresetSettingsKey =
   | 'title' | 'description' | 'loading' | 'error' | 'userTrust' | 'seatHint' | 'headerHint'
-  | 'nav' | 'sectionIntro' | 'builtIn' | 'setDefault' | 'view' | 'editCopy'
+  | 'nav' | 'sectionIntro' | 'builtIn' | 'setDefault' | 'view'
   | 'presetStandardName' | 'presetStandardDescription'
-  | 'presetCodeName' | 'presetCodeDescription'
+  | 'presetPtcName' | 'presetPtcDescription'
   | 'presetMinimalName' | 'presetMinimalDescription'
   | 'presetCordisName' | 'presetCordisDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
-  | 'brokenBadge' | 'brokenNoCopy' | 'brokenNoCompose'
-  | 'cancel' | 'close' | 'retry'
-  | 'copyTitle' | 'copyIntro' | 'create' | 'creating'
-  | 'compose' | 'composeTitle' | 'composeIntro' | 'newAgent'
-  | 'handoff' | 'handoffHint'
-  | 'palette' | 'paletteHint' | 'paletteSearch' | 'paletteLoading' | 'paletteUnavailable' | 'paletteEmpty'
-  | 'compositionLabel' | 'canvasHint' | 'connectLabel'
-  | 'canvasStart' | 'canvasEnd' | 'inspectorTitle' | 'rowId' | 'moveUp' | 'moveDown' | 'paletteCategoryOther'
-  | 'modelKinds' | 'modelKindText' | 'modelKindImage' | 'modelKindAudio' | 'modelKindEmbedding'
-  | 'modelKindProvider' | 'modelKindModel' | 'modelKindInherit' | 'modelKindsLoading' | 'modelKindsUnavailable'
-  | 'paletteCollapse' | 'paletteExpand'
-  | 'rowAdded' | 'alreadyAdded' | 'removeRow'
-  | 'nodeAddLabel' | 'nodeInsertLabel' | 'nodePickerTitle' | 'nodePickerAfter' | 'nodePickerEmpty'
-  | 'save' | 'saving' | 'noRows' | 'unchanged' | 'overwriteWarning' | 'back'
+  | 'brokenBadge' | 'brokenNoCopy' | 'switchRefused'
+  | 'composition' | 'cancel' | 'close' | 'retry'
+  | 'copyTitle' | 'copyIntro' | 'create' | 'creating' | 'creatorDraft'
   | 'openLocation' | 'showLocation' | 'revealedPathLabel'
   | 'idRequired' | 'idInvalid' | 'idTaken'
   | 'deleteTitle' | 'deleteDescription' | 'deleteConfirm' | 'deleting'
@@ -41,18 +30,16 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   nav: 'Agent presets',
   sectionIntro:
     'A preset is the plugin composition one session\'s agent runs — its tools, prompt, and capabilities. '
-    + 'Assemble one from the installed plugins, duplicate an existing one and make it yours, '
-    + 'or let the agent draft one for you in Creator mode.',
+    + 'Duplicate an existing one and make it yours, or let the agent draft one for you in Creator mode.',
   builtIn: 'Built-in',
   setDefault: 'Set as default',
   view: 'View',
-  editCopy: 'Edit a copy',
   presetStandardName: 'Standard mode',
   presetStandardDescription:
     'Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.',
-  presetCodeName: 'PTC mode',
-  presetCodeDescription:
-    'All Standard mode capabilities, with tools exposed through the Code Mode SDK so the model can combine multi-step operations in one TypeScript program.',
+  presetPtcName: 'PTC mode',
+  presetPtcDescription:
+    'All Standard mode capabilities, with tools exposed through the PTC mode SDK so the model can combine multi-step operations in one TypeScript program.',
   presetMinimalName: 'Minimal mode',
   presetMinimalDescription:
     'Two-tool coding agent with persistent bash and str_replace_editor.',
@@ -72,8 +59,9 @@ export const en: Record<AgentPresetSettingsKey, string> = {
   noDescription: 'No description.',
   brokenBadge: 'Failed to load',
   brokenNoCopy: 'A preset that failed to load cannot be duplicated',
-  brokenNoCompose: 'A preset that failed to load has no rows to edit',
+  switchRefused: 'Could not switch to {name}: {reason}',
   copyOf: 'Copied from',
+  composition: 'Composition (agent.cordis.yml)',
   cancel: 'Cancel',
   close: 'Close',
   retry: 'Retry',
@@ -83,56 +71,7 @@ export const en: Record<AgentPresetSettingsKey, string> = {
     + 'be changed later; everything else is edited in the preset\'s own files.',
   create: 'Create',
   creating: 'Creating…',
-  compose: 'Edit composition',
-  composeTitle: 'Edit agent composition',
-  composeIntro:
-    'An agent is the plugin composition one session runs. Arrange installed plugins left to right as the '
-    + 'pipeline that composes it, or hand the draft to Creator mode to build or refine it.',
-  newAgent: 'New agent',
-  handoff: 'Let the agent build on this',
-  handoffHint: 'Save, then hand this draft to Creator mode to build or refine it.',
-  palette: 'Plugins',
-  paletteHint: 'Drag into the composition',
-  paletteSearch: 'Search plugins',
-  paletteLoading: 'Loading installed plugins…',
-  paletteUnavailable: 'This deployment reports no plugin inventory, so nothing can be dragged in.',
-  paletteEmpty: 'No installed plugins to add.',
-  compositionLabel: 'Composition',
-  canvasHint: 'Drag plugins in; connect a port to reorder; Delete removes.',
-  connectLabel: 'Connect after this node',
-  canvasStart: 'Start',
-  canvasEnd: 'End',
-  inspectorTitle: 'Plugin details',
-  rowId: 'Row id',
-  moveUp: 'Move up',
-  moveDown: 'Move down',
-  modelKinds: 'Models',
-  modelKindText: 'Text',
-  modelKindImage: 'Image',
-  modelKindAudio: 'Audio',
-  modelKindEmbedding: 'Embedding',
-  modelKindProvider: 'Provider',
-  modelKindModel: 'Model',
-  modelKindInherit: 'Inherit node default',
-  modelKindsLoading: 'Loading configured models…',
-  modelKindsUnavailable: 'No configured models yet — add providers and models in Settings first.',
-  paletteCategoryOther: 'Other',
-  paletteCollapse: 'Collapse plugins',
-  paletteExpand: 'Open plugins',
-  rowAdded: 'Added',
-  alreadyAdded: 'Already in the composition',
-  removeRow: 'Remove',
-  nodeAddLabel: 'Add a node after',
-  nodeInsertLabel: 'Insert a node between',
-  nodePickerTitle: 'Add a node',
-  nodePickerAfter: 'Add after',
-  nodePickerEmpty: 'No matching plugins.',
-  save: 'Save',
-  saving: 'Saving…',
-  noRows: 'The composition needs at least one plugin.',
-  unchanged: 'Nothing changed yet.',
-  overwriteWarning: 'Saving overwrites this preset\'s existing composition.',
-  back: 'Back',
+  creatorDraft: 'Draft a custom preset with Creator mode',
   openLocation: 'Open folder',
   showLocation: 'Show location',
   revealedPathLabel: 'Preset files:',
@@ -156,15 +95,14 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   seatHint: '即将开始的这个会话所用的 Agent 预设',
   headerHint: '本会话运行的 Agent 预设，开始时即固定',
   nav: 'Agent 预设',
-  sectionIntro: '预设即一个会话的 Agent 所运行的插件组装 —— 它的工具、提示词与能力。从已安装的插件组装一个、复制一份既有预设改成自己的，或用「创造模式」让 Agent 帮你创建。',
+  sectionIntro: '预设即一个会话的 Agent 所运行的插件组装 —— 它的工具、提示词与能力。复制一份既有预设改成自己的，或用「创造模式」让 Agent 帮你创建。',
   builtIn: '内置',
   setDefault: '设为默认',
   view: '查看',
-  editCopy: '编辑副本',
   presetStandardName: '标准模式',
   presetStandardDescription: '功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。',
-  presetCodeName: 'PTC 模式',
-  presetCodeDescription: '具备标准模式的全部能力，并通过 Code Mode SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作。',
+  presetPtcName: 'PTC 模式',
+  presetPtcDescription: '具备标准模式的全部能力，并通过 PTC 模式 SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作。',
   presetMinimalName: '极简模式',
   presetMinimalDescription: '仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。',
   presetCordisName: '创造模式',
@@ -182,8 +120,9 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   noDescription: '暂无描述。',
   brokenBadge: '加载失败',
   brokenNoCopy: '预设加载失败，不能复制',
-  brokenNoCompose: '预设加载失败，没有可编辑的行',
+  switchRefused: '无法切换到「{name}」：{reason}',
   copyOf: '复制自',
+  composition: '组装（agent.cordis.yml）',
   cancel: '取消',
   close: '关闭',
   retry: '重试',
@@ -191,54 +130,7 @@ export const zh: Record<AgentPresetSettingsKey, string> = {
   copyIntro: '整个预设会在本机复制一份。标识符将成为目录名，事后无法更改；其余内容之后直接在预设自己的文件里编辑。',
   create: '创建',
   creating: '正在创建…',
-  compose: '编辑组合',
-  composeTitle: '编辑 Agent 组合',
-  composeIntro: 'Agent 就是一个会话所运行的插件组装。把已安装的插件从左到右排成一条流水线，或把草稿交给「创造模式」搭建或完善。',
-  newAgent: '新建 Agent',
-  handoff: '让 Agent 帮我搭建/完善',
-  handoffHint: '保存后交给「创造模式」搭建或完善。',
-  palette: '插件',
-  paletteHint: '拖入组合',
-  paletteSearch: '搜索插件',
-  paletteLoading: '正在加载已安装插件…',
-  paletteUnavailable: '此部署没有提供插件清单，无法拖入插件。',
-  paletteEmpty: '没有可添加的已安装插件。',
-  compositionLabel: '组合',
-  canvasHint: '把插件拖入画布；从节点端口拖到另一个节点以调整顺序；Delete 删除。',
-  connectLabel: '把该节点接到此节点之后',
-  canvasStart: '开始',
-  canvasEnd: '结束',
-  inspectorTitle: '插件详情',
-  rowId: '行标识',
-  moveUp: '上移',
-  moveDown: '下移',
-  modelKinds: '模型',
-  modelKindText: '文本',
-  modelKindImage: '图像',
-  modelKindAudio: '音频',
-  modelKindEmbedding: '向量',
-  modelKindProvider: '提供商',
-  modelKindModel: '模型',
-  modelKindInherit: '继承节点默认',
-  modelKindsLoading: '正在加载已配置的模型…',
-  modelKindsUnavailable: '还没有配置模型，请先在设置中添加提供商与模型。',
-  paletteCategoryOther: '其他',
-  paletteCollapse: '收起插件',
-  paletteExpand: '展开插件',
-  rowAdded: '已添加',
-  alreadyAdded: '已在组合中',
-  removeRow: '移除',
-  nodeAddLabel: '在其后添加节点',
-  nodeInsertLabel: '在节点之间插入',
-  nodePickerTitle: '添加节点',
-  nodePickerAfter: '在其后添加',
-  nodePickerEmpty: '没有匹配的插件。',
-  save: '保存',
-  saving: '正在保存…',
-  noRows: '组合至少需要一个插件。',
-  unchanged: '还没有改动。',
-  overwriteWarning: '保存将覆盖该预设现有的组合。',
-  back: '返回',
+  creatorDraft: '用「创造模式」创作自定义预设',
   openLocation: '打开目录',
   showLocation: '查看路径',
   revealedPathLabel: '预设文件：',
@@ -278,7 +170,7 @@ interface PresetLocaleKeys {
 
 const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> = {
   standard: { name: 'presetStandardName', description: 'presetStandardDescription' },
-  code: { name: 'presetCodeName', description: 'presetCodeDescription' },
+  ptc: { name: 'presetPtcName', description: 'presetPtcDescription' },
   minimal: { name: 'presetMinimalName', description: 'presetMinimalDescription' },
   cordis: { name: 'presetCordisName', description: 'presetCordisDescription' },
 }

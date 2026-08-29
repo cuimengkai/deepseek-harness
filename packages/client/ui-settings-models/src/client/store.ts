@@ -1,18 +1,20 @@
 /**
  * Models settings page store: one snapshot joining the configurable-provider
- * directory (`llm.providers`), the settings namespaces (shared settings mirror),
- * and the referenced credentials (`credentials.describe`). The host stays the
+ * directory (`llm/listProviders` joined with `llm/listConfigurableProviders`),
+ * the settings namespaces (shared settings mirror),
+ * the referenced credentials (`credentials/describe`), the host model
+ * catalog, and the composed default-model selection. The host stays the
  * single fact source — every mutation writes through the wire and the page
  * re-renders from the next describe, pushed or refetched.
  */
 
 import type {
-  ConfigurableProviderView, CredentialView, IApiClient, ModelProviderGroup,
-  SettingsNamespaceView,
+  ClientRemote, CredentialInfo, LlmConfigurableProvider, LlmDiscoveredModel, LlmProviderInfo,
+  ModelProviderGroup, SettingsNamespaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import type { SettingsDescribeFace } from '@deepseek-ai/dsh-client-ui-settings/client'
+import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { SettingsDescribeFace, SettingsRemote } from '@deepseek-ai/dsh-client-ui-settings/client'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 
 /**
@@ -49,10 +51,99 @@ function defaultSelectionOf(namespace: SettingsNamespaceView | undefined): Defau
   return { provider: value.provider, model: value.model }
 }
 
+/** The credentials Remote methods the Models page reads and writes through. */
+export type ModelsCredentials = Pick<ClientRemote['credentials'], 'describe' | 'set' | 'unset'>
+
+/** LLM Remote methods used by the Models page. */
+export type ModelsLlm = Pick<
+  ClientRemote['llm'],
+  'discoverModels' | 'listConfigurableProviders' | 'listProviders'
+>
+
+/** One provider row after joining the configurable directory with live routes. */
+export interface ProviderDirectoryEntry {
+  readonly provider: string
+  readonly displayName: string
+  readonly settingsNs: string
+  readonly settingsPath: readonly string[]
+  readonly active: boolean
+  readonly declared?: boolean
+  /**
+   * The endpoint the adapter's installed catalog ships for this route.
+   * Absent for a route the catalog has no endpoint for (ambient-auth or
+   * gateway routes) or knows nothing about at all; configuration surfaces
+   * prefill it as the route's built-in base URL.
+   */
+  readonly catalogBaseURL?: string
+  /**
+   * The single wire protocol every installed model of this route speaks.
+   * Absent when the catalog does not ship the route, ships no models, or its
+   * models disagree — no value is invented to fill the field.
+   */
+  readonly catalogApi?: string
+  /**
+   * The models the adapter's installed catalog ships for this route, in
+   * catalog order. Absent for a route the catalog knows nothing about;
+   * configuration surfaces prefill a picked preset's model mapping from
+   * these.
+   */
+  readonly catalogModels?: readonly LlmDiscoveredModel[]
+}
+
+/**
+ * Join declared configurable providers with the currently registered routes.
+ * @param registered - live provider routes in registration order.
+ * @param directory - declared configurable providers in declaration order.
+ * @returns declared rows followed by live routes with no declaration.
+ */
+export function joinProviderDirectory(
+  registered: readonly LlmProviderInfo[],
+  directory: readonly LlmConfigurableProvider[],
+): ProviderDirectoryEntry[] {
+  const active = new Set(registered.map(provider => provider.id))
+  const declared = new Set(directory.map(entry => entry.provider))
+  const rows: ProviderDirectoryEntry[] = directory.map(entry => ({
+    provider: entry.provider,
+    displayName: entry.displayName,
+    settingsNs: entry.settingsNs,
+    settingsPath: [...entry.settingsPath],
+    active: active.has(entry.provider),
+    ...entry.declared === undefined ? {} : { declared: entry.declared },
+    ...entry.catalogBaseURL === undefined ? {} : { catalogBaseURL: entry.catalogBaseURL },
+    ...entry.catalogApi === undefined ? {} : { catalogApi: entry.catalogApi },
+    ...entry.catalogModels === undefined ? {} : { catalogModels: entry.catalogModels },
+  }))
+  for (const provider of registered) {
+    if (declared.has(provider.id)) continue
+    rows.push({
+      provider: provider.id,
+      displayName: provider.name,
+      settingsNs: '',
+      settingsPath: [],
+      active: true,
+    })
+  }
+  return rows
+}
+
+/**
+ * Every Remote wire face the Models page reaches.
+ */
+export interface ModelsWire {
+  /** The settings Remote namespace: the redacted read and the profile writes. */
+  settings: SettingsRemote
+  /** Credential state and writes for the references provider profiles name. */
+  credentials: ModelsCredentials
+  /** Provider directory reads and draft endpoint discovery. */
+  llm: ModelsLlm
+  /** Host-generation model catalog behind the default-model picker. */
+  session: Pick<ClientRemote['session'], 'modelCatalog'>
+}
+
 /** One provider row the page renders. */
 export interface ProviderRow {
   /** The directory entry (route id, display name, settings address, live state). */
-  entry: ConfigurableProviderView
+  entry: ProviderDirectoryEntry
   /** Whether any layer configures this provider (its profile resolves). */
   configured: boolean
   /** Whether the user layer alone carries the profile (removal restores the base). */
@@ -66,7 +157,14 @@ export interface ProviderRow {
   /** The credential reference the resolved profile names, when one does. */
   apiKeyEnv: string | undefined
   /** Credential state for {@link apiKeyEnv}, once described. */
-  credential: CredentialView | undefined
+  credential: CredentialInfo | undefined
+  /**
+   * Credential state for the page's derived `<ROUTE>_API_KEY`, described only
+   * while the profile names no reference — the provider-card seat's
+   * `keyConfigured` fact for dormant and keyless rows, matching the editor's
+   * own derivation rule.
+   */
+  derivedCredential?: CredentialInfo
 }
 
 /** Page snapshot. */
@@ -157,11 +255,11 @@ export class ModelsSettingsStore {
   private generation = 0
 
   /**
-   * @param api - the wire face (credentials/llm domains, and settings writes).
+   * @param api - the page's settings, credentials, and LLM wire faces.
    * @param describeFace - the shared mirror's describe face (namespace views and writability).
    */
   constructor(
-    private readonly api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>,
+    private readonly api: Pick<ModelsWire, 'settings' | 'credentials' | 'llm' | 'session'>,
     private readonly schema: SettingsSchemaOperations,
     private readonly describeFace: SettingsDescribeFace,
   ) {}
@@ -177,20 +275,22 @@ export class ModelsSettingsStore {
   async load(): Promise<void> {
     const generation = ++this.generation
     this.store.update((s) => { s.status = 'loading'; s.error = null })
-    let providers: ConfigurableProviderView[]
+    let providers: ProviderDirectoryEntry[]
     let writable: boolean
     let views: readonly SettingsNamespaceView[]
     try {
-      const [providersResponse] = await Promise.all([
-        this.api.llm.providers({}),
+      const [registered, declared] = await Promise.all([
+        this.api.llm.listProviders(),
+        this.api.llm.listConfigurableProviders(),
         this.describeFace.ensure(),
       ])
-      if (!providersResponse.result.ok) throw new Error(providersResponse.result.error.message)
+      if (!registered.ok) throw new Error(registered.error.message)
+      if (!declared.ok) throw new Error(declared.error.message)
       const mirrored = this.describeFace.getSnapshot()
       if (mirrored.view === undefined) {
         throw new Error(mirrored.error ?? 'settings are unavailable in this browser')
       }
-      providers = providersResponse.result.value.providers
+      providers = joinProviderDirectory(registered.value, declared.value)
       writable = mirrored.view.writable
       views = mirrored.view.namespaces
     } catch (error) {
@@ -220,7 +320,7 @@ export class ModelsSettingsStore {
         credential: undefined,
       }
     })
-    const refs = [...new Set(rows.flatMap(row => row.apiKeyEnv === undefined ? [] : [row.apiKeyEnv]))]
+    const refs = [...new Set(rows.map(row => row.apiKeyEnv ?? deriveKeyRef(row.entry.provider)))]
     // Both enrichments fold their own failure into their half and never
     // reject, so the page load itself cannot fail on either.
     const [credentialsResult, catalogResult] = await Promise.all([
@@ -237,12 +337,15 @@ export class ModelsSettingsStore {
       s.error = null
       s.credentialError = credentialError
       s.writable = writable
-      s.rows = rows.map(row => ({
-        ...row,
-        ...row.apiKeyEnv !== undefined && credentials[row.apiKeyEnv] !== undefined
-          ? { credential: credentials[row.apiKeyEnv] }
-          : {},
-      }))
+      s.rows = rows.map((row) => {
+        const named = row.apiKeyEnv === undefined ? undefined : credentials[row.apiKeyEnv]
+        const derived = row.apiKeyEnv !== undefined ? undefined : credentials[deriveKeyRef(row.entry.provider)]
+        return {
+          ...row,
+          ...named === undefined ? {} : { credential: named },
+          ...derived === undefined ? {} : { derivedCredential: derived },
+        }
+      })
       s.namespaces = namespaces
       s.defaultSelection = defaultSelectionOf(namespaces.get(DEFAULT_MODEL_NS))
       s.catalog = catalog
@@ -257,14 +360,17 @@ export class ModelsSettingsStore {
    * @returns the described views and a failure message, never a rejection.
    */
   private async describeCredentials(refs: readonly string[]): Promise<{
-    credentials: Record<string, CredentialView>
+    credentials: Record<string, CredentialInfo>
     error: string | null
   }> {
     if (refs.length === 0) return { credentials: {}, error: null }
     try {
-      const response = await this.api.credentials.describe({ refs: [...refs] })
-      if (response.result.ok) return { credentials: response.result.value.credentials, error: null }
-      return { credentials: {}, error: response.result.error.message }
+      const response = await this.api.credentials.describe(refs)
+      // Credential state is an enrichment for the Models page: neither a
+      // business rejection nor a transport failure fails the load. The
+      // onboarding projection below retains the failure distinction.
+      if (response.ok) return { credentials: response.value, error: null }
+      return { credentials: {}, error: response.error.message }
     } catch (error) {
       return { credentials: {}, error: messageOf(error) }
     }
@@ -278,9 +384,9 @@ export class ModelsSettingsStore {
    */
   private async loadCatalog(): Promise<{ groups: ModelProviderGroup[]; error: string | null }> {
     try {
-      const response = await this.api.llm.models({})
-      if (response.result.ok) return { groups: response.result.value.groups, error: null }
-      return { groups: [], error: response.result.error.message }
+      const response = await this.api.session.modelCatalog()
+      if (response.ok) return { groups: [...response.value.groups], error: null }
+      return { groups: [], error: `${response.error.code}: ${response.error.message}` }
     } catch (error) {
       return { groups: [], error: messageOf(error) }
     }
@@ -297,16 +403,16 @@ export class ModelsSettingsStore {
   async setDefaultModel(selection: DefaultModelSelection): Promise<string | undefined> {
     const namespace = this.store.getSnapshot().namespaces.get(DEFAULT_MODEL_NS)
     try {
-      const response = await this.api.settings.mutate({
-        ns: DEFAULT_MODEL_NS,
-        ops: [
+      const response = await this.api.settings.mutate(
+        DEFAULT_MODEL_NS,
+        [
           { op: 'set', path: ['provider'], value: selection.provider },
           { op: 'set', path: ['model'], value: selection.model },
           { op: 'unset', path: ['reasoningEffort'] },
         ],
-        ...namespace === undefined ? {} : { expectedRevision: namespace.revision },
-      })
-      if (!response.result.ok) return response.result.error.message
+        namespace?.revision,
+      )
+      if (!response.ok) return response.error.message
     } catch (error) {
       // The transport rejected rather than answering; the caller can retry the
       // idempotent write once the failure is read.

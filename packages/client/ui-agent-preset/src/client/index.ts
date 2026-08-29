@@ -11,7 +11,8 @@
  * before-the-fact, while the header only reports what a session already runs.
  */
 
-import type { ConnectionHandle, ModelKind } from '@deepseek-ai/dsh-api-remotes/client'
+// Type-only: pulls the Session Controller service merge (ctx.sessions).
+import type {} from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: pulls the ctx.remote merge and the forwarded-event key face
@@ -19,7 +20,10 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the settings shell's SlotMap merge (the 'settings.section' entry).
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
+// Type-only: pulls the Workspace UI navigation service merge (ctx.uiWorkspace).
+import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import { AgentPresetLabel } from './AgentPresetLabel.tsx'
 import type { AgentPresetLabelInjected } from './AgentPresetLabel.tsx'
 import { AgentPresetRow } from './AgentPresetRow.tsx'
@@ -29,9 +33,7 @@ import type { AgentPresetSeatInjected } from './AgentPresetSeat.tsx'
 import { AgentPresetSection } from './AgentPresetSection.tsx'
 import type { AgentPresetSectionInjected } from './AgentPresetSection.tsx'
 import { AgentPresetSeatController } from './seat-store.ts'
-import type { SeatSessionSummary } from './seat-store.ts'
 import { AgentPresetSectionController } from './section-store.ts'
-import { displayNameFor, type ModuleSource, type PaletteModule } from './section-store.ts'
 import { en, zh } from './locales.ts'
 import { AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController } from './settings-store.ts'
 
@@ -39,63 +41,32 @@ export type { AgentPresetLabelInjected, AgentPresetLabelProps } from './AgentPre
 export type { AgentPresetRowInjected, AgentPresetRowProps } from './AgentPresetRow.tsx'
 export type { AgentPresetSeatInjected, AgentPresetSeatProps } from './AgentPresetSeat.tsx'
 export type { AgentPresetSectionInjected, AgentPresetSectionProps } from './AgentPresetSection.tsx'
-export type { AgentPresetSeatState, SeatSessionSummary } from './seat-store.ts'
+export type { AgentPresetSeatState } from './seat-store.ts'
 export {
-  composeBlocker, composeDirty, displayNameFor, draftBlocker, handoffBlocker, rowIdFor,
-  type AgentPresetSectionState, type ComposeDraft, type ComposePalette, type CopyDraft,
-  type ModelCatalog, type ModuleSource, type PaletteModule, type PresetRow, type PresetView,
+  draftBlocker, type AgentPresetSectionState, type CopyDraft, type PresetRow, type PresetView,
 } from './section-store.ts'
-export {
-  cascadePosition, chainAddModule, chainAgents, chainMoveIndex, chainMoveNode,
-  chainRemoveNode, chainReorder, compositionToRow, emptyChainGraph, graphLayoutEqual,
-  graphRows, insertSlot, setAgentModelKind,
-} from './preset-graph.ts'
-export { filterAndGroupPalette, type PaletteGroup } from './palette-group.ts'
 export type { AgentPresetOption, AgentPresetSettingsState } from './settings-store.ts'
 export { AGENT_PRESET_SETTINGS_NS, writeDefaultPreset } from './settings-store.ts'
 
 /** Required services (cordis fiber inject). */
-export const inject = ['slots', 'locale', 'connection', 'remote', 'remote.pluginInventory', 'settingsScope']
+export const inject = [
+  'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'settingsScope',
+]
 
 /**
  * Mount the General-settings row.
  * @param ctx - the browser plugin context.
  */
 export function apply(ctx: ClientContext): void {
-  const { api } = ctx.get('connection') as ConnectionHandle
-  const controller = new AgentPresetSettingsController(api, ctx.settingsScope.describe())
+  const settingsWire = { settings: ctx.remote.settings }
+  const controller = new AgentPresetSettingsController(settingsWire, ctx.remote, ctx.settingsScope.describe())
   // One roster, four surfaces. The chip is registered in a later scope, so it
   // subscribes here rather than being reached from this one.
   const rosterReaders = new Set<() => void>()
-  // The composer palette reads the deployment's installed plugins through the
-  // generated Remote; a host that mounts no inventory makes the call fail and
-  // the palette degrades to "unavailable" without touching an edit in flight.
-  const modules: ModuleSource = {
-    list: async () => {
-      const result = await ctx.remote.pluginInventory.list()
-      if (!result.ok) {
-        throw new Error(`pluginInventory.list failed: ${result.error.code}: ${result.error.message}`)
-      }
-      // The inventory is entry-ordered, and the same module can be shipped by
-      // more than one Loader entry; the palette is a set of installable
-      // plugins, and duplicate moduleNames would collide as React list keys.
-      const byName = new Map<string, PaletteModule>()
-      for (const entry of result.value.entries) {
-        if (byName.has(entry.moduleName)) continue
-        byName.set(entry.moduleName, {
-          moduleName: entry.moduleName,
-          displayName: displayNameFor(entry.moduleName),
-          ...entry.category === undefined ? {} : { category: entry.category },
-          ...entry.description === undefined ? {} : { description: entry.description },
-        })
-      }
-      return [...byName.values()]
-    },
-  }
-  const section = new AgentPresetSectionController(api, () => {
+  const section = new AgentPresetSectionController(ctx.remote, () => {
     void controller.load()
     for (const read of rosterReaders) read()
-  }, modules)
+  })
 
   ctx.effect(() => ctx.locale.register('settings.agentPreset', { zh, en }), 'ui-agent-preset: settings row dictionaries')
 
@@ -124,25 +95,6 @@ export function apply(ctx: ClientContext): void {
     return () => { for (const dispose of disposers) dispose() }
   }, 'ui-agent-preset: settings refresh')
 
-  ctx.effect(() => {
-    // The configured model catalog can move while the composer is open: adapter
-    // topology commits and settings documents both feed it, and the picker
-    // re-reads so a provider or model that changed mid-edit shows up. The
-    // composer owns the section while open, so an overlay check is all the
-    // gate needed — no namespace filter, exactly like the model selection
-    // surface's own refresh.
-    const refresh = (): void => {
-      const state = section.store.getSnapshot()
-      if (state.composer === null && state.view === null) return
-      void section.loadModelCatalog()
-    }
-    const disposers = [
-      ctx.remote.$on('llm/adapters-updated', refresh),
-      ctx.remote.$on('settings/document-updated', refresh),
-    ]
-    return () => { for (const dispose of disposers) dispose() }
-  }, 'ui-agent-preset: model catalog refresh')
-
   // The settings section's conversational authoring entry: stage the
   // self-referential preset and land a new session on it. Bound inside the
   // conversation scope below (the seat and the session flow live there) and
@@ -152,30 +104,10 @@ export function apply(ctx: ClientContext): void {
 
   // The new-session chip and the header label: one controller, because the
   // staged choice belongs to the flow rather than to any one session.
-  ctx.inject(['slots', 'conversation', 'sessions', 'workspaces'], (scope: ClientContext) => {
-    const api = (scope.get('connection') as ConnectionHandle).api
-    const seat = new AgentPresetSeatController(api, (): SeatSessionSummary | undefined => {
+  ctx.inject(['slots', 'conversation', 'sessions', 'uiWorkspace'], (scope: ClientContext) => {
+    const seat = new AgentPresetSeatController(scope.remote, () => {
       const state = scope.sessions.list.getSnapshot()
-      const summary = state.current === undefined ? undefined : state.byId[state.current]
-      return summary === undefined
-        ? undefined
-        : {
-          id: summary.id,
-          blank: summary.blank,
-          ...summary.agentPreset === undefined ? {} : { agentPreset: summary.agentPreset },
-        }
-    }, (sessionId, agentPreset) => {
-      scope.sessions.noteAgentPreset(sessionId as never, agentPreset)
-    }, (agentPreset) => {
-      // The connect decides create vs reuse, so the staged preset binds there:
-      // a pick that creates a new session carries it instead of opening on the
-      // deployment default (the develop-mode workspace-pick bug).
-      scope.workspaces.notePendingAgentPreset(agentPreset)
-    }, () => {
-      // A settled stage must not ride a later unrelated connect: the pending
-      // preset the stage recorded is dropped the moment it is applied, dropped
-      // as unservable, or rejected.
-      scope.workspaces.clearPendingAgentPreset()
+      return state.current === undefined ? undefined : state.byId[state.current]
     })
 
     const seatInjected = (): AgentPresetSeatInjected => ({
@@ -204,26 +136,21 @@ export function apply(ctx: ClientContext): void {
         if (ns !== AGENT_PRESET_SETTINGS_NS) return
         void seat.load()
       })
-      // Every tab folds the committed preset into the shared session row; the
-      // initiating tab may already have applied the RPC echo, which is idempotent.
-      const presetSelected = scope.remote.$on('agent-preset/selected', (sessionId, agentPreset) => {
-        scope.sessions.noteAgentPreset(sessionId, agentPreset)
-      })
       // Authoring writes a FILE, not a setting, so nothing on the wire
       // announces it — without this the screen that starts the next session
       // keeps offering the roster as it stood when the chip first loaded, and
       // a preset authored to be used is missing from the one place it is used.
       const readRoster = (): void => { void seat.load() }
       rosterReaders.add(readRoster)
-      // Stage WITHOUT applying — the still-current running session cannot take
-      // the choice, and the connect this entry starts is what carries it —
-      // then start the session it lands on: the chip's list-change applier
-      // composes the blank session the workspace connect produces or reuses.
+      // Stage WITHOUT applying — the still-current running session would
+      // refuse the swap and drop the stage — then start the session it lands
+      // on: the chip's list-change applier composes the blank session the
+      // workspace connect produces or reuses.
       creatorDraft = () => {
         // The introduce cue makes the chip announce the pick the user never
         // made on this screen — the stage happened back in settings.
         seat.stage('cordis', true)
-        scope.workspaces.startSession()
+        scope.uiWorkspace.startSession()
       }
       const chip = scope.slots.register({
         name: 'conversation.hero.agentPreset',
@@ -241,7 +168,6 @@ export function apply(ctx: ClientContext): void {
       return () => {
         stop()
         settingsMoved()
-        presetSelected()
         rosterReaders.delete(readRoster)
         creatorDraft = undefined
         chip()
@@ -260,21 +186,6 @@ export function apply(ctx: ClientContext): void {
     setCopyId: (id: string) => { section.setCopyId(id) },
     setCopyName: (name: string) => { section.setCopyName(name) },
     confirmCopy: () => section.confirmCopy(),
-    beginCompose: (id: string | null) => section.beginCompose(id),
-    closeComposer: () => { section.closeComposer() },
-    setComposerId: (id: string) => { section.setComposerId(id) },
-    setComposerName: (name: string) => { section.setComposerName(name) },
-    addRow: (moduleName: string) => section.addRow(moduleName),
-    addNodeAt: (moduleName: string, position: { x: number; y: number }) => section.addNodeAt(moduleName, position),
-    removeRow: (rowId: string) => { section.removeRow(rowId) },
-    removeNode: (nodeId: string) => { section.removeNode(nodeId) },
-    moveRow: (from: number, to: number) => { section.moveRow(from, to) },
-    moveNode: (nodeId: string, position: { x: number; y: number }) => { section.moveNode(nodeId, position) },
-    reorderNode: (fromNodeId: string, toNodeId: string) => { section.reorderNode(fromNodeId, toNodeId) },
-    updateAgentModelKind: (nodeId: string, kind: ModelKind, field: 'provider' | 'model', value: string) => {
-      section.updateAgentModelKind(nodeId, kind, field, value)
-    },
-    confirmCompose: () => section.confirmCompose(),
     openLocation: (id: string) => section.openLocation(id),
     ...creatorDraft === undefined ? {} : { startCreatorDraft: creatorDraft },
     confirmDelete: (id: string | null) => { section.confirmDelete(id) },

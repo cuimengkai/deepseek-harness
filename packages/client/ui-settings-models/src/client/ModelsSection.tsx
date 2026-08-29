@@ -26,16 +26,17 @@
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
 import {
   Button, IconCheckOutline16, IconChevronDownOutline14, IconCopyOutline16, IconEditOutline16,
   IconPlusOutline16, IconTrashOutline16, Menu, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { InjectFace } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
+// Type-only: pulls this package's SlotMap merge (the two Models child slots).
+import type {} from './slot-contract.ts'
 import { CustomProviderCard } from './CustomProviderCard.tsx'
 import { DEFAULT_MODEL_NS, deriveKeyRef, messageOf, protocolChoices, providerUsable } from './store.ts'
-import type { ModelsSettingsStore, ProviderRow } from './store.ts'
+import type { ModelsSettingsStore, ModelsWire, ProviderRow } from './store.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import { ProviderEditor, type ProviderCatalogFacts, type ProviderEditorProps } from './ProviderEditor.tsx'
 import { ProviderLogo, providerIconOf } from './ProviderLogo.tsx'
@@ -51,18 +52,27 @@ export interface ModelsSectionInjected {
     snapshot: ModelsSettingsStore['store']
   }
   /** Wire faces the editor writes through. */
-  api: Pick<IApiClient, 'settings' | 'credentials' | 'llm'>
+  api: ModelsWire
   /** Settings schema and immutable path callbacks. */
   schema: SettingsSchemaOperations
   /** Section copy. */
   t: (key: keyof typeof en) => string
 }
 
+/** The child slots this section declares and dispatches (see ./slot-contract.ts). */
+type ModelsChildSlots = 'settings.models.provider-card' | 'settings.models.footer'
+
+/** The child-slot dispatch function the renderer binds for the section. */
+type ModelsRenderSlot = PropsRenderSlots<ModelsChildSlots>['renderSlot']
+
 /**
  * Props delivered by the slot outlet: the inject face spread flat (the
- * renderer erases the share boundary at the render call).
+ * renderer erases the share boundary at the render call) plus the child-slot
+ * dispatch seat. The seat is required: the renderer binds it at the render
+ * call itself — unlike the inject face it is never absent at runtime — and a
+ * direct render that forgets it fails to compile instead of mounting nothing.
  */
-export type ModelsSectionProps = Partial<InjectFace<ModelsSectionInjected>>
+export type ModelsSectionProps = Partial<InjectFace<ModelsSectionInjected>> & PropsRenderSlots<ModelsChildSlots>
 
 type ModelsSectionFace = InjectFace<ModelsSectionInjected>
 
@@ -133,20 +143,21 @@ function renderProviderEditor({ target, ...props }: ProviderEditorRenderProps): 
  * @returns the failure message, or undefined once the write and reload landed.
  */
 export async function removeProviderProfile(
-  api: Pick<IApiClient, 'settings' | 'credentials'>,
+  api: Pick<ModelsWire, 'settings' | 'credentials'>,
   controller: ModelsSettingsStore,
   target: { settingsNs: string; settingsPath: readonly string[]; credentialRef?: string },
 ): Promise<string | undefined> {
   try {
     if (target.credentialRef !== undefined) {
-      const credential = await api.credentials.unset({ ref: target.credentialRef })
-      if (!credential.result.ok) return credential.result.error.message
+      const credential = await api.credentials.unset(target.credentialRef)
+      if (!credential.ok) return credential.error.message
     }
-    const response = await api.settings.mutate({
-      ns: target.settingsNs,
-      ops: [{ op: 'unset', path: [...target.settingsPath] }],
-    })
-    if (!response.result.ok) return response.result.error.message
+    const response = await api.settings.mutate(
+      target.settingsNs,
+      [{ op: 'unset', path: [...target.settingsPath] }],
+      undefined,
+    )
+    if (!response.ok) return response.error.message
   } catch (error) {
     // The transport rejected rather than answering; the caller must be able
     // to retry the idempotent operation instead of the row silently staying.
@@ -169,6 +180,19 @@ export function needsSetup(row: ProviderRow, anyUsable: boolean): boolean {
   if (anyUsable) return false
   if (row.entry.settingsPath.length > 0) return false
   return row.credential?.configured !== true
+}
+
+/**
+ * The provider-card seat's credential fact: the reference this page would use
+ * for the row — the profile's `apiKeyEnv`, or the page's derived
+ * `<ROUTE>_API_KEY` while the profile names none — confirmed configured. The
+ * derived half is what keeps the seat consistent with the editor on the
+ * add-provider draft, whose dormant row names no reference yet.
+ */
+function keyConfiguredOf(row: ProviderRow): boolean {
+  return row.apiKeyEnv !== undefined
+    ? row.credential?.configured === true
+    : row.derivedCredential?.configured === true
 }
 
 function targetOf(row: ProviderRow): EditorTarget {
@@ -194,9 +218,7 @@ function targetOf(row: ProviderRow): EditorTarget {
     settingsNs: row.entry.settingsNs,
     settingsPath: row.entry.settingsPath,
     ...credentialRef === undefined ? {} : { credentialRef },
-    // Absent is not "shipped": an adapter that answers nothing leaves the
-    // route-level fields only a declared route owns off the card, exactly as
-    // it leaves the custom tag off the row.
+    // Only declared routes may expose route-owned fields.
     ...row.entry.declared === true ? { declared: true } : {},
     ...catalog === undefined ? {} : { catalog },
   }
@@ -249,15 +271,15 @@ export function duplicablePathOf(row: ProviderRow): readonly [string, string] | 
  * @returns the section, or null while the shell has not injected yet.
  */
 export function ModelsSection(props: ModelsSectionProps): ReactNode {
-  const { controller, useSnapshot, api, schema, t } = props
+  const { controller, useSnapshot, api, schema, t, renderSlot } = props
   if (
     controller === undefined || useSnapshot === undefined || api === undefined
     || schema === undefined || t === undefined
   ) return null
-  return <Loaded injected={{ controller, useSnapshot, api, schema, t }} />
+  return <Loaded injected={{ controller, useSnapshot, api, schema, t }} renderSlot={renderSlot} />
 }
 
-function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
+function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderSlot: ModelsRenderSlot }): ReactNode {
   const { controller, api, schema, t } = injected
   const state = injected.useSnapshot(snapshot => snapshot)
   const [dialog, setDialog] = useState<DialogState | undefined>(undefined)
@@ -385,14 +407,14 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
     setDuplicateFailure(undefined)
     setSavedTarget(undefined)
     setSavedDefault(undefined)
-    void api.settings.mutate({
-      ns: row.entry.settingsNs,
-      ops: [{ op: 'set', path: [path[0], id], value }],
-      expectedRevision: namespace.revision,
-    })
+    void api.settings.mutate(
+      row.entry.settingsNs,
+      [{ op: 'set', path: [path[0], id], value }],
+      namespace.revision,
+    )
       .then((response) => {
-        if (!response.result.ok) {
-          setDuplicateFailure(response.result.error.message)
+        if (!response.ok) {
+          setDuplicateFailure(response.error.message)
           return
         }
         const record = value as { displayName?: unknown }
@@ -503,6 +525,11 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                   readOnly: !state.writable,
                   onClose: (changed) => { closeSetup(changed, target) },
                 })}
+                {renderSlot(
+                  'settings.models.provider-card',
+                  { provider: row.entry, configured: row.configured, keyConfigured: keyConfiguredOf(row) },
+                  { entryKey: row.entry.settingsNs },
+                )}
               </li>
             )
           }
@@ -729,6 +756,11 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
                     : null}
                 </div>
               </div>
+              {renderSlot(
+                'settings.models.provider-card',
+                { provider: row.entry, configured: row.configured, keyConfigured: keyConfiguredOf(row) },
+                { entryKey: row.entry.settingsNs },
+              )}
               {open
                 ? (
                   <div className={styles['cardDetails']}>
@@ -958,6 +990,7 @@ function Loaded({ injected }: { injected: ModelsSectionFace }): ReactNode {
           </p>
         )
       }
+      {renderSlot('settings.models.footer', {})}
       <Modal
         open={deleteTarget !== undefined}
         onClose={closeDelete}

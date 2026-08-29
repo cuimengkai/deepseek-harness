@@ -207,27 +207,6 @@
   white-space: nowrap;
 }
 
-.description {
-  overflow: hidden;
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 12px;
-  line-height: 18px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* Kind tag: a caption-tone pill distinguishing the model's roles (text,
-   image, audio, embedding) at a glance; absent when the adapter declared none. */
-.kindTag {
-  align-self: flex-start;
-  padding: 0 6px;
-  border: 1px solid var(--dsw-alias-border-l3);
-  border-radius: 8px;
-  color: var(--dsw-alias-label-caption);
-  font-size: 11px;
-  line-height: 16px;
-}
-
 .check {
   display: grid;
   place-items: center;

@@ -1,24 +1,78 @@
+---
+description: "Read-only Cordis Loader inventory tab in Web Plugins settings for the dsh web client: searchable plugin catalog with enablement state and configuration."
+kind: "package-reference"
+---
+
 # @deepseek-ai/dsh-client-ui-settings-plugin-inventory
 
 English | [中文](README.zh.md)
 
-**Plugins** tab for Web Settings. The browser plugin registers one localized `settings.plugins.tab` contribution with id `all`; the Plugins section owns the navigation entry and tab chrome. It performs no Remote read during plugin activation. Selecting the tab for the first time mounts it and lazily reads `ctx.remote.pluginInventory.list()` — the Loader inventory — and `ctx.remote.pluginManager.listAvailable()` — the merged installable catalog — through [`api-remotes`](../../api/remotes/README.md).
+## Summary
 
-The tab renders both faces as one unified list grouped by category. Managed installs mount under Loader entry ids carrying the `dsh-managed-` ownership prefix; the client strips the `include:` getter prefix before comparing, so those rows fold into their catalog card instead of appearing twice. Per-source status lines at the top report each catalog source's id, kind, state (`Synced`, `Fetch failed`, `Using cache`, `Offline`), entry count, and fetch error, plus a `filtered` count when the host's list-time validation gate dropped entries — the console shows that filtering happened instead of silently hiding entries. A toolbar holds the search box, a category filter menu, and a refresh button that calls the `pluginManager/refreshCatalog` Remote to re-fetch every network source bypassing the cache. Search matches the module name, the bare entry id, the short name, the category, and the description; the filter menu lists each category with its row count plus `All categories (N)`.
+`dsh-client-ui-settings-plugin-inventory` contributes the read-only **Plugin list** tab to the Web Settings Plugins section. The tab lazily calls `ctx.remote.pluginInventory.list()` the first time it is selected and renders a searchable two-column catalog of compact disclosure cards: each collapsed card shows the short module name, an effective-enablement tag, and (for enabled entries) a colored root-fiber status dot; expanding a card reveals the Loader-tree entry id, effective configuration, and Cordis status. Loading, empty, no-match, and generic failure states stay local to the mounted component, and a failed read can be retried without exposing transport details.
 
-A store holds one snapshot per face and lives across tab remounts, so reselecting the tab hits the cached snapshot instead of re-reading both Remotes. Pushed Host invalidations converge it without polling: the store subscribes to the forwarded `plugin-inventory/changed` and `plugin-manager/catalog-changed` events, and each refetches only its own face while the tab is mounted; an event that arrives while unmounted marks that face's cached snapshot stale so the next mount refetches it. A `connection/reset` forces a full reload of both faces, because the cached snapshots belong to the previous Host process.
+## Table of Contents
 
-**Unified cards.** Every Loader entry and every catalog entry renders as the same disclosure card: a badge row (a harness-runtime badge for Loader rows, a source-kind badge for catalog rows), an optional category chip, the short module name as the title, a status tag (`Installed` / `Not installed`), a root-fiber status dot on enabled spine rows, and one action button. The Loader entry's `enabled` flag is exactly the installed state, so both faces route through the same `install(name)` and `uninstall(name)` remotes; a harness plugin uninstall persists a `disabled` override on the host and Install clears it again (mechanics in the [`plugin-manager`](../../host/plugin-manager/README.md) README). The host's list-time validation gate already dropped invalid and unproven catalog entries before they reach the wire, so a rendered market card is installable or browse-only; entries from offline sources that skipped the probe render a `Browse only` hint and no action. A network install shows a distinct `Installing…` pending state (static entries reuse the generic working state), and all actions are disabled while one runs. An installed network entry whose host-side integrity check found drift carries a tampered badge.
+- [Use this package](#use-this-package)
+- [Understand the implementation](#understand-the-implementation)
+- [Further Exploration](#further-exploration)
+- [Model Experience](#model-experience)
+- [Known Limitations and Deferred Work](#known-limitations-and-deferred-work)
+- [Dev Note](#dev-note)
 
-Expanding a card reveals a definition list. Loader cards show the entry id, status, Cordis status (enabled rows), category, description, and module, plus a harness note that the component can be reinstalled at any time; catalog cards show the entry name, stars and repository link when present, status, category, source, description, the exact install spec, the resolved version once installed, and a tampered detail when the ledger detects drift. A committed action re-reads both faces, so the catalog tags and the Loader inventory settle to the mounted reality.
+-----
 
-A network install with host-enforced confirmation opens a trust dialog before the request leaves the browser. It shows the module name, the exact install spec, the source kind, and the repository URL, states that the action installs and runs third-party plugin code with lifecycle scripts disabled by default, and requires an acknowledgement checkbox before Install enables. The dialog offers an "Allow lifecycle scripts (not recommended)" checkbox only when the snapshot advertises `allowInstallScripts`; when the deployment cannot confine (`installSandbox: unavailable`) it shows the sandbox notice and disables Install, since the host would refuse the request anyway. Confirming sends `install(name, { confirmed: true, allowScripts })`.
+<a id="use-this-package"></a>
+## Use this package
 
-The Host's `pluginManager` remotes wrap business refusals in a transport Result; the component unwraps the transport layer and localizes the business code (`invalid-name`, `already-installed`, `not-installed`, `not-managed`, `not-found`, `offline`, `in-use`, `confirmation-required`, `sandbox-unavailable`, `install-failed`, `remove-failed`) rather than surfacing a transport failure. `in-use` covers the runtime base — plugin-manager itself, the loader, and the API gateway — which cannot uninstall itself in-process. Unknown codes and transport failures fall back to a generic action failure. A catalog read failure shows an inline notice while the Loader rows stay available; a Loader read failure shows a retryable error. Loading, empty, and no-match states stay local to the mounted component. The registration uses `ctx.slots.inject()`, so it follows late tab declaration, redeclaration, locale changes, and teardown without importing the section owner.
+Open the Plugins section in Settings and select the **Plugin list** tab to inspect the Host's plugin inventory. The tab reads no Remote during plugin activation — selecting it for the first time mounts the component and lazily calls `ctx.remote.pluginInventory.list()` through `api-remotes`.
 
+### Reading a card
+
+Each collapsed card uses the short module name as its title and a small effective-enablement tag; enabled entries also show a colored root-fiber status dot. Expanding one card reveals its Loader-tree entry id, followed by the effective configuration and, for enabled entries, Cordis status; disabled entries omit the redundant unmounted runtime state. Search filters the catalog by name and entry id.
+
+### Retrying a failed read
+
+A failed read renders a generic failure state inside the tab; retrying re-runs the lazy `list()` call without exposing transport details.
+
+-----
+
+<a id="understand-the-implementation"></a>
+## Understand the implementation
+
+<details>
+<summary>Implementation internals — click to expand</summary>
+
+The tab is a read-only projection of a Host-owned snapshot; it performs no Remote read during plugin activation and takes the snapshot on first selection.
+
+### Registration
+
+The browser plugin registers one localized `settings.plugins.tab` contribution with id `all`; the Plugins section owns the navigation entry and tab chrome. Registration uses `ctx.slots.inject()`, so it follows late tab declaration, redeclaration, locale changes, and teardown without importing the section owner.
+
+### Rendering
+
+The entry id remains the React key, disclosure identity, detail value, and an additional search target; it is never classified by string shape.
+
+</details>
+
+-----
+
+<a id="further-exploration"></a>
+## Further Exploration
+
+These pages cover the settings section, the remote call, and the Host-side projection.
+
+- [ui-settings-plugins](../ui-settings-plugins/README.md) — the Plugins section this tab registers into.
+- [ui-settings](../ui-settings/README.md) — the domain base declaring `settings.plugins.tab`.
+- [api-remotes](../../api/remotes/README.md) — the Remote BFF surface behind `pluginInventory.list()`.
+- [plugin-inventory](../../host/plugin-inventory/README.md) — the Host-side read-only Loader projection this tab renders.
+
+-----
+
+<a id="model-experience"></a>
 ## Model Experience
 
-None, as this package only visualizes a Host-owned deployment snapshot in browser Settings and registers nothing model-facing.
+None, as the package is a browser-side inventory projection that registers nothing model-facing.
 
 #### KV Cache effect
 
@@ -26,8 +80,20 @@ None; this package neither assembles nor sends a provider request.
 
 ## Known Limitations and Deferred Work
 
-- **Pushed invalidations only refresh while the tab is mounted** — a forwarded Host event refetches its face only while the tab has a live subscriber; an event that arrives while unmounted marks the cached snapshot stale, and the next mount refetches it rather than serving an outdated view.
-- **Catalog mutations are manager-scoped** — Install and Uninstall act only on catalog entries and spine rows the Host plugin-manager owns; a user-authored home-patch row for the same name is left untouched and reported `not-managed`.
-- **Spine uninstall is a persistent disable, not a deletion** — patches cannot delete rows, so uninstalling a harness plugin writes a `disabled` override that a later Install clears; both directions are fully reversible and idempotent.
-- **Community installs execute third-party code in-process** — the host contains the install step (`--ignore-scripts` and the OS sandbox), records provenance and integrity in its ledger, and requires the explicit trust confirmation, but the installed plugin's own code still runs inside the Host process; true runtime isolation is a later architecture phase, and the confirmation dialog says exactly this.
-- **Offline sources stay browse-only** — a source that skipped the npm-installability probe keeps its entries visible but uninstallable, so an offline console still sees what its cache holds.
+<a id="known-limitations-and-deferred-work"></a>
+
+
+These limits define the freshness and reach of the inventory view; they are current package constraints.
+
+- **One snapshot per Settings mount or retry** — the tab does not subscribe to Loader changes or automatically refetch after reconnect; switching tabs preserves the current snapshot, while reopening Settings obtains a new one.
+- **Read-only Loader view** — local search does not add provenance, current-browser activation diagnosis, grouping by source, or plugin mutation controls.
+
+<a id="dev-note"></a>
+### Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>
