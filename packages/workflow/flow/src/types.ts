@@ -9,6 +9,7 @@
 
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ModelKind } from '@deepseek-ai/dsh-llm/types'
+import type { JsonValue } from '@deepseek-ai/dsh-session/types'
 import type { WorkflowStopReason } from '@deepseek-ai/dsh-workflow/types'
 
 /** Identifies one saved flow. Also the persisted file name (kebab-case). */
@@ -91,13 +92,13 @@ export interface FlowAgentComposition {
   /** Module specifier the composition row imports, e.g. `@deepseek-ai/dsh-tool-bash`. */
   readonly module: string
   /** Config passed to the plugin, carried verbatim. */
-  readonly config?: unknown
+  readonly config?: JsonValue
   /** Marks this row as a nested group, carried verbatim. */
   readonly group?: boolean | null
   /** Enablement, carried verbatim (`!!js` expressions as `{ __jsExpr }`). */
-  readonly disabled?: unknown
+  readonly disabled?: JsonValue
   /** Required-service override, carried verbatim so an overwrite never drops it. */
-  readonly inject?: unknown
+  readonly inject?: JsonValue
 }
 
 /** One subagent invocation. */

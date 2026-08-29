@@ -13,19 +13,21 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
-  PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
+  HostObservable, InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT } from './columns.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
+import type { PagesSnapshot } from './pages.ts'
 import css from './AppFrame.module.css'
 
-/** Full composed props: runtime share + child-slot render share + store share. */
+/** Full composed props: runtime share + child-slot render share + store share + pages inject face. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay' | 'page'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & PropsLocale<'common'>
+  & InjectFace<{ hooks: { pages: HostObservable<PagesSnapshot> } }>
 
 /** Center column grid item (session-body building block). */
 function CenterColumn(props: { children?: ReactNode }) {
@@ -91,12 +93,28 @@ function DragHandle(props: { side: 'sidebar' | 'details'; left: number; onStart:
 export function AppFrame({
   useStore,
   useSessions,
+  usePages,
   actions,
   renderSlot,
   SessionProvider,
   t,
 }: AppFrameProps) {
   const panels = useStore(s => s)
+  const activeId = usePages(s => s.activeId)
+  // The whole app grid goes inert while a page covers it (display: contents
+  // keeps the columns as direct frame grid items, and inert still applies to
+  // the subtree). React 18's JSX types do not know the `inert` attribute, so
+  // it is applied through the typed DOM property instead of as a JSX prop.
+  const appRegionRef = useRef<HTMLDivElement | null>(null)
+  useLayoutEffect(() => {
+    const el = appRegionRef.current
+    /* v8 ignore next -- the ref is always attached by effect time: the appRegion div renders unconditionally. */
+    if (el === null) return
+    // Toggle the `inert` attribute directly (the DOM focus/interaction
+    // exclusion signal): jsdom does not reflect the IDL property back to the
+    // attribute, and the attribute is what the browser actually honors.
+    el.toggleAttribute('inert', activeId !== undefined)
+  }, [activeId])
   const detailsSession = useSessions((s) => {
     const current = s.current
     return current !== undefined && s.byId[current]?.blank === false ? current : undefined
@@ -185,34 +203,47 @@ export function AppFrame({
         productTitle={productTitle}
         {...documentTitle === undefined ? {} : { title: documentTitle }}
       />
-      <div className={css.sidebarCol}>
-        {/* Render-site slot call with live concession output: a closed
-            sidebar keeps the mounted slot at the compact-rail width, and the
-            component sees its rendered state as owner params decided here
-            (collapsed follows the resolved rail, so a derived auto-collapse
-            renders the rail UI too). */}
-        {renderSlot('sidebar', {
-          collapsed: sidebarCollapsed,
-          width: cols.sidebar,
-        })}
+      {/* The whole app grid lives in one inert region while a page is active
+          (display: contents keeps the columns as direct frame grid items);
+          the page layer then owns focus and pointer. */}
+      <div ref={appRegionRef} className={css.appRegion}>
+        <div className={css.sidebarCol}>
+          {/* Render-site slot call with live concession output: a closed
+              sidebar keeps the mounted slot at the compact-rail width, and the
+              component sees its rendered state as owner params decided here
+              (collapsed follows the resolved rail, so a derived auto-collapse
+              renders the rail UI too). */}
+          {renderSlot('sidebar', {
+            collapsed: sidebarCollapsed,
+            width: cols.sidebar,
+          })}
+        </div>
+        <>
+          {/* Both column occupants stay at fixed tree positions from first
+              paint — no loading gate: a bare status line reads worse than
+              the shell's own pending rendering. The conversation
+              is session-maybe; SessionProvider withholds the strict details
+              entry while no session is current. */}
+          <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
+          <DetailsColumn>
+            <SessionProvider>{renderSlot('details', {})}</SessionProvider>
+          </DetailsColumn>
+        </>
+        <div className={css.overlayLayer} data-shell-overlay>
+          {renderSlot('shell.overlay', {})}
+        </div>
+        {/* The collapsed rail is fixed-width: no resize handle while closed. */}
+        {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
+        {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
       </div>
-      <>
-        {/* Both column occupants stay at fixed tree positions from first
-            paint — no loading gate: a bare status line reads worse than
-            the shell's own pending rendering. The conversation
-            is session-maybe; SessionProvider withholds the strict details
-            entry while no session is current. */}
-        <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
-        <DetailsColumn>
-          <SessionProvider>{renderSlot('details', {})}</SessionProvider>
-        </DetailsColumn>
-      </>
-      <div className={css.overlayLayer} data-shell-overlay>
-        {renderSlot('shell.overlay', {})}
-      </div>
-      {/* The collapsed rail is fixed-width: no resize handle while closed. */}
-      {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
-      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
+      {/* The active page covers the whole window above every column and the
+          overlay (an opaque, interactive layer — unlike the click-through
+          overlay). Only the matched page renders, by id. */}
+      {activeId !== undefined && (
+        <div className={css.pageLayer} data-page>
+          {renderSlot('page', {}, { only: activeId })}
+        </div>
+      )}
     </div>
   )
 }

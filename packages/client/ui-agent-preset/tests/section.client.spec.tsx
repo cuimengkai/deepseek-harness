@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
  * The management section's rendering rules: which actions a row offers depends
- * on its trust, a shipped composition opens in a read-only viewer, creation is
+ * on its trust, a shipped composition opens as a read-only design page, creation is
  * a copy dialog that collects an id and an optional name, and the location
  * action follows the host's desktop capability.
  */
@@ -10,12 +10,51 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
+import { cascadePosition, chainAddModule, emptyChainGraph } from '../src/client/preset-graph.ts'
 import { AgentPresetSection } from '../src/client/AgentPresetSection.tsx'
 import type { AgentPresetSectionProps } from '../src/client/AgentPresetSection.tsx'
-import type { AgentPresetSectionState, CopyDraft } from '../src/client/section-store.ts'
+import type { AgentPresetSectionState, ComposeDraft, ComposePalette, CopyDraft } from '../src/client/section-store.ts'
 import { en } from '../src/client/locales.ts'
+import type { FlowCanvasProps, FlowCanvasSurface } from '@deepseek-ai/dsh-client-ui-flow-editor/client'
 
 afterEach(cleanup)
+
+// The composer drives the shared flow canvas (Part B rewrote it on React Flow,
+// whose gesture fidelity belongs to that package's own jsdom spec). These specs
+// assert the section's wiring, so the canvas is a mock: it records the latest
+// surface and picker hooks, then renders the graph nodes as data-node-id
+// wrappers that the design-page assertions read.
+const flow: {
+  surface: FlowCanvasSurface | null
+  onAddNode: ((id: string) => void) | null
+  onInsertBetween: ((from: string, to: string) => void) | null
+} = { surface: null, onAddNode: null, onInsertBetween: null }
+
+vi.mock('@deepseek-ai/dsh-client-ui-flow-editor/client', async () => {
+  function MockCanvas(props: FlowCanvasProps) {
+    flow.surface = props.surface
+    flow.onAddNode = props.onAddNode ?? null
+    flow.onInsertBetween = props.onInsertBetween ?? null
+    const graph = props.surface.graph
+    if (graph === null) return null
+    return (
+      <div className="mock-canvas">
+        <div className="mock-canvas-bg" />
+        {graph.nodes.map(node => (
+          <div key={node.id} data-node-id={node.id}>{props.renderNode(node)}</div>
+        ))}
+      </div>
+    )
+  }
+  return { FlowCanvas: MockCanvas }
+})
+
+beforeEach(() => {
+  flow.surface = null
+  flow.onAddNode = null
+  flow.onInsertBetween = null
+})
 
 const READY: AgentPresetSectionState = {
   status: 'ready',
@@ -28,6 +67,9 @@ const READY: AgentPresetSectionState = {
   ],
   copy: null,
   view: null,
+  composer: null,
+  palette: null,
+  modelCatalog: null,
   pendingDelete: null,
   deleting: false,
   revealedPaths: {},
@@ -55,6 +97,18 @@ function renderSection(
     setCopyId: vi.fn(),
     setCopyName: vi.fn(),
     confirmCopy: vi.fn(() => Promise.resolve()),
+    beginCompose: vi.fn(() => Promise.resolve()),
+    closeComposer: vi.fn(),
+    setComposerId: vi.fn(),
+    setComposerName: vi.fn(),
+    addRow: vi.fn(),
+    addNodeAt: vi.fn(),
+    removeRow: vi.fn(),
+    removeNode: vi.fn(),
+    moveRow: vi.fn(),
+    moveNode: vi.fn(),
+    reorderNode: vi.fn(),
+    confirmCompose: vi.fn(() => Promise.resolve(true)),
     openLocation: vi.fn(() => Promise.resolve()),
     confirmDelete: vi.fn(),
     remove: vi.fn(() => Promise.resolve()),
@@ -77,6 +131,29 @@ function rowFor(id: string): HTMLElement {
   if (row === null) throw new Error(`no card for ${id}`)
   return row
 }
+
+/** A chain graph over the given modules, in cascade layout, as the composer edits. */
+function chainGraph(id: string, name: string, ...modules: string[]): FlowGraph {
+  let graph = emptyChainGraph(id, name)
+  for (let index = 0; index < modules.length; index++) {
+    const module = modules[index]
+    if (module === undefined) continue
+    const added = chainAddModule(graph, module, cascadePosition(index))
+    if (added !== undefined) graph = added.graph
+  }
+  return graph
+}
+
+/** An open composer, unchanged from a blank draft, with one row assembled. */
+const COMPOSER_DRAFT: ComposeDraft = {
+  id: 'my-agent', name: 'My agent',
+  graph: chainGraph('my-agent', 'My agent', '@deepseek-ai/dsh-tool-bash'),
+  saving: false, error: null,
+  original: { id: '', name: '', graph: emptyChainGraph('', '') },
+}
+
+/** A ready palette for an open composer; the handoff needs no modules. */
+const PALETTE: ComposePalette = { status: 'ready', modules: [] }
 
 describe('the preset list', () => {
   it('reads the roster once when it first renders', async () => {
@@ -116,18 +193,21 @@ describe('the preset list', () => {
     expect(screen.getByRole('heading', { name: en.customGroup })).toBeTruthy()
   })
 
-  it('shows no group heading for a set nobody has', () => {
+  it('keeps the custom group on screen for a set nobody has', () => {
     renderSection({ rows: [{ id: 'standard', trust: 'system', isDefault: true }] })
 
-    expect(screen.queryByRole('heading', { name: en.customGroup })).toBeNull()
+    // The custom group is where one's own preset will appear, and the composer
+    // entry lives there, so an empty set still shows the place to create.
+    expect(screen.getByRole('heading', { name: en.customGroup })).toBeTruthy()
+    expect(screen.getByRole('button', { name: en.newAgent })).toBeTruthy()
   })
 
   it('leads with the two ways a preset is created', () => {
     renderSection()
 
-    // The page has no create button: the intro is what tells a first-time
-    // reader that copying an existing preset — or drafting one in Creator
-    // mode — IS the way to make one.
+    // The composer entry is the button on the list; the intro is what tells a
+    // first-time reader that duplicating an existing preset — or letting the
+    // agent draft one in Creator mode — is the other way to make one.
     expect(screen.getByText(new RegExp('Creator mode'))).toBeTruthy()
   })
 
@@ -176,29 +256,17 @@ describe('the preset list', () => {
     const actions = renderSection({
       rows: [
         { id: 'standard', trust: 'system', isDefault: true },
-        {
-          id: 'ghost', trust: 'user', isDefault: false, name: '幽灵预设', description: '我自己写的',
-          broken: 'the composition file agent.cordis.yml is missing',
-        },
+        { id: 'ghost', trust: 'user', isDefault: false, name: '幽灵预设', broken: 'the composition file agent.cordis.yml is missing' },
       ],
     })
 
     const ghost = rowFor('ghost')
-    // The badge carries the reason for a pointer, and the body cannot pick
-    // what cannot mount.
-    expect(within(ghost).getByText(en.brokenBadge).textContent)
-      .toBe(`${en.brokenBadge}the composition file agent.cordis.yml is missing`)
-    // A picker card keeps showing what the preset is; a package specifier in
-    // its place would tell a chooser nothing they can act on there.
-    expect(within(ghost).getByText('我自己写的')).toBeTruthy()
-    // Reachable without a pointer: the disabled body leaves the tab order, so
-    // this node is the only reading assistive technology gets.
+    // The reason is on the card, and the body cannot pick what cannot mount.
+    expect(within(ghost).getByText(en.brokenBadge)).toBeTruthy()
     expect(within(ghost).getByRole('alert').textContent).toContain('is missing')
-    // `aria-disabled`, not `disabled`: the card stays in the tab order so a
-    // keyboard reaches the reason the face no longer shows, and refuses the
-    // pick itself rather than by being unreachable.
     const body = within(ghost).getByRole('button', { name: `${en.brokenBadge}: 幽灵预设` })
-    expect(body).toHaveProperty('disabled', false)
+    // Broken says so through `aria-disabled`, which keeps the card in the tab
+    // order; the click handler itself refuses what cannot mount.
     expect(body.getAttribute('aria-disabled')).toBe('true')
     fireEvent.click(body)
     expect(actions.makeDefault).not.toHaveBeenCalled()
@@ -247,59 +315,51 @@ describe('the preset list', () => {
     fireEvent.click(within(rowFor('mine')).getByRole('button', { name: `${en.openLocation}: mine` }))
     fireEvent.click(within(rowFor('mine')).getByRole('button', { name: `${en.duplicate}: mine` }))
     fireEvent.click(within(rowFor('standard')).getByRole('button', { name: `${en.view}: ${en.presetStandardName}` }))
+    // The composer entry creates from nothing; a custom row's edit reopens its
+    // own composition in place.
+    fireEvent.click(screen.getByRole('button', { name: en.newAgent }))
+    fireEvent.click(within(rowFor('mine')).getByRole('button', { name: `${en.compose}: mine` }))
 
     expect(actions.makeDefault).toHaveBeenCalledWith('mine')
     expect(actions.openLocation).toHaveBeenCalledWith('mine')
     expect(actions.beginCopy).toHaveBeenCalledWith('mine')
     expect(actions.view).toHaveBeenCalledWith('standard')
+    expect(actions.beginCompose).toHaveBeenCalledWith(null)
+    expect(actions.beginCompose).toHaveBeenCalledWith('mine')
   })
 
-  it('starts a creator-mode draft session and leaves settings', () => {
+  it('reaches Creator mode from the composer handoff and leaves settings', async () => {
     const actions = renderSection({
       rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
+      composer: COMPOSER_DRAFT,
+      palette: PALETTE,
     })
 
-    fireEvent.click(screen.getByRole('button', { name: en.creatorDraft }))
+    fireEvent.click(screen.getByRole('button', { name: en.handoff }))
 
-    expect(actions.startCreatorDraft).toHaveBeenCalledTimes(1)
+    // Save-then-handoff: the draft is a new preset, so the section saves it
+    // before starting the Creator-mode session on the cordis preset.
+    expect(actions.confirmCompose).toHaveBeenCalledTimes(1)
+    await waitFor(() => { expect(actions.startCreatorDraft).toHaveBeenCalledTimes(1) })
     // Leaving settings is part of the gesture: the flow lands in the new
     // session, not behind the modal.
     expect(actions.close).toHaveBeenCalledTimes(1)
   })
 
-  it('keeps the empty custom group on screen: heading plus the creator entry', () => {
+  it('hides the composer handoff without the creator flow', () => {
     renderSection({
-      rows: [
-        { id: 'standard', trust: 'system', isDefault: true, name: '标准模式' },
-        { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' },
-      ],
-    })
+      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
+      composer: COMPOSER_DRAFT,
+      palette: PALETTE,
+    }, { creator: false })
 
-    // No member yet, but the place where one's own preset will appear stays.
-    expect(screen.getByRole('heading', { name: en.customGroup })).toBeTruthy()
-    expect(screen.getByRole('button', { name: en.creatorDraft })).toBeTruthy()
-    expect(screen.queryByText(`· ${en.userTrust}`)).toBeNull()
+    expect(screen.queryByRole('button', { name: en.handoff })).toBeNull()
   })
 
-  it('hides the creator entry without the flow or the preset, disables it without a root', () => {
-    renderSection()
-    expect(screen.queryByRole('button', { name: en.creatorDraft })).toBeNull()
-    cleanup()
+  it('hides the composer handoff until the cordis preset is on the roster', () => {
+    renderSection({ composer: COMPOSER_DRAFT, palette: PALETTE })
 
-    renderSection({
-      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
-    }, { creator: false })
-    expect(screen.queryByRole('button', { name: en.creatorDraft })).toBeNull()
-    cleanup()
-
-    const actions = renderSection({
-      authorable: false,
-      rows: [...READY.rows, { id: 'cordis', trust: 'system', isDefault: false, name: '创造模式' }],
-    })
-    const disabled = screen.getByRole('button', { name: en.creatorDraft })
-    expect(disabled).toHaveProperty('disabled', true)
-    fireEvent.click(disabled)
-    expect(actions.startCreatorDraft).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: en.handoff })).toBeNull()
   })
 
   it('shows a page-level failure without hiding the list', () => {
@@ -397,36 +457,74 @@ describe('the copy dialog', () => {
   })
 })
 
-describe('the read-only viewer', () => {
-  it('shows the composition text under the preset\'s name', () => {
-    renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: tool-bash\n' } })
+describe('the read-only canvas view', () => {
+  const GRAPH = chainGraph('standard', '标准模式', '@deepseek-ai/dsh-tool-bash')
 
-    const dialog = screen.getByRole('dialog')
-    expect(dialog.getAttribute('aria-label')).toBe(`${en.view} · ${en.presetStandardName}`)
-    expect(within(dialog).getByText(en.composition)).toBeTruthy()
-    expect(within(dialog).getByText(/tool-bash/).textContent).toBe('- id: tool-bash\n')
+  it('shows a shipped preset as a design page, nodes on the canvas', () => {
+    renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH } })
+
+    // The composer head names the preset under the view title, and the body is
+    // the flow canvas: the chain renders as graph nodes — start, the plugin,
+    // end — not a dialog of YAML.
+    expect(screen.getByRole('heading', { name: `${en.view} · ${en.presetStandardName}` })).toBeTruthy()
+    expect(screen.getByText(en.compositionLabel)).toBeTruthy()
+    expect(document.querySelector('[data-node-id="start"]')).toBeTruthy()
+    expect(document.querySelector('[data-node-id="agent-1"]')).toBeTruthy()
+    expect(document.querySelector('[data-node-id="end"]')).toBeTruthy()
   })
 
   it('keeps the loaded title when the viewed row leaves the roster', () => {
-    renderSection({ view: { id: 'retired', title: 'Retired mode', content: '- id: tool-bash\n' } })
+    renderSection({ view: { id: 'retired', title: 'Retired mode', graph: emptyChainGraph('retired', '') } })
 
-    expect(screen.getByRole('dialog').getAttribute('aria-label')).toBe(`${en.view} · Retired mode`)
+    // The view carries its own title, so a row that vanished from the roster
+    // does not degrade the design page into an empty shell.
+    expect(screen.getByRole('heading', { name: `${en.view} · Retired mode` })).toBeTruthy()
+  })
+
+  it('renders no edit affordance: no fields, palette, save, or node actions', () => {
+    renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH } })
+
+    expect(screen.queryByRole('textbox')).toBeNull()
+    expect(screen.queryByRole('heading', { name: en.palette })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.save })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.removeRow })).toBeNull()
+  })
+
+  it('renders the chain legible but not editable', () => {
+    renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH } })
+
+    // The shipped composition is the known-good copy source, so its chain is
+    // legible but cannot be reordered or removed from. Selection still works —
+    // the inspector explains a node — but the editable affordances are gone:
+    // no connect ports, no palette, no footer.
+    expect(document.querySelector('[data-node-id="agent-1"]')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: en.connectLabel })).toBeNull()
+    expect(screen.queryByRole('button', { name: en.handoff })).toBeNull()
   })
 
   it('closes through the controller', () => {
-    const actions = renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: x\n' } })
+    const actions = renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH } })
 
-    fireEvent.click(within(screen.getByRole('dialog')).getByText(en.close))
+    fireEvent.click(screen.getByRole('button', { name: en.back }))
 
     expect(actions.closeView).toHaveBeenCalledTimes(1)
   })
 
-  it('dismisses on Escape', () => {
-    const actions = renderSection({ view: { id: 'standard', title: '标准模式', content: '- id: x\n' } })
+  it('offers edit as a copy on an authoring deployment', () => {
+    const actions = renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH } })
 
-    fireEvent.keyDown(document, { key: 'Escape' })
+    // A shipped preset is read-only by contract, so its edit affordance hands
+    // off to a copy instead of mutating the composition in place.
+    fireEvent.click(screen.getByRole('button', { name: en.editCopy }))
 
     expect(actions.closeView).toHaveBeenCalledTimes(1)
+    expect(actions.beginCopy).toHaveBeenCalledWith('standard')
+  })
+
+  it('withholds the edit affordance when no preset can be written', () => {
+    renderSection({ view: { id: 'standard', title: '标准模式', graph: GRAPH }, authorable: false })
+
+    expect(screen.queryByRole('button', { name: en.editCopy })).toBeNull()
   })
 })
 

@@ -89,6 +89,15 @@ async function bench() {
     },
   }
   const remote = new TestRemote(ctx, { settings })
+  // The composer palette reads `ctx.remote.pluginInventory.list()` — the
+  // generated namespace this double does not mount — so the fixture stands in
+  // for it on the instance, and the same service is provided for the inject
+  // gate the apply requires.
+  const pluginInventory = {
+    list: () => Promise.resolve({ ok: true as const, value: { entries: [] } }),
+  }
+  ;(remote as unknown as { pluginInventory: unknown }).pluginInventory = pluginInventory
+  ctx.provide('remote.pluginInventory', pluginInventory)
   // The roster and the switch are the AgentPresets Remote namespace; the
   // shared double carries no generated namespaces, so this spec stages its
   // own. Registered twice on purpose: the nested key satisfies the plugin's
@@ -177,7 +186,7 @@ function sessionsDouble(state: {
 describe('ui-agent-preset apply', () => {
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'settingsScope',
+      'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'remote.pluginInventory', 'settingsScope',
     ])
   })
 

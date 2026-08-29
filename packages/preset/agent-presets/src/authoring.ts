@@ -1,18 +1,20 @@
 /**
- * Copying, reading, and deleting locally authored presets.
+ * Copying, reading, replacing, and deleting locally authored presets.
  *
  * Authoring is confined to a `user` root: the shipped `.system` set is part of
  * the deployment, and letting a browser rewrite it would turn "reset to a known
  * preset" into something the same caller could have broken first.
  *
- * The authoring writes are a whole-directory copy of an existing preset and a
- * rows-based write. A copy's inputs are ids the host resolves against its
- * own roots plus an optional display name, so copying grants no capability the
- * copied preset did not already carry. `writeComposition` is the one sanctioned
- * exception to "no caller supplies composition text": the platform preset
- * assembler renders a validated tree and commits it through this primitive,
- * which owns id validation, occupancy refusal, mode tightening, and atomic
- * writes.
+ * The authoring writes are a whole-directory copy of an existing preset, a
+ * rows-based create, and an in-place replace. A copy's inputs are ids the host
+ * resolves against its own roots plus an optional display name, so copying
+ * grants no capability the copied preset did not already carry.
+ * `writeComposition` and `replaceComposition` are the one sanctioned exception
+ * to "no caller supplies composition text": the platform preset assembler
+ * renders a validated tree and commits it through these primitives, which own
+ * id validation, occupancy refusal, mode tightening, and atomic writes —
+ * alongside the companion `agent.flow.json` layout cache a graph-authored
+ * composition carries.
  * @module @deepseek-ai/dsh-agent-presets/authoring
  */
 
@@ -22,10 +24,16 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { expandHomePath } from '@deepseek-ai/dsh-home-paths'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
 import * as yaml from 'js-yaml'
 import { COMPOSITION_FILE } from './discovery.ts'
+import {
+  graphRowsMatch, PRESET_GRAPH_FILE, PRESET_GRAPH_FORMAT_VERSION, PRESET_GRAPH_MAX_BYTES,
+  type PresetGraphDocument,
+} from './conversion.ts'
 import { METADATA_FILE, renderPresetMetadata, type PresetMetadata } from './metadata.ts'
 import { PRESET_ID, type AgentPreset, type PresetRoot } from './preset.ts'
+import type { ComposeRow } from './index.ts'
 
 /** A preset id that cannot be used as a directory name under a root. */
 export class InvalidPresetIdError extends Error {
@@ -61,6 +69,26 @@ export class PresetNotWritableError extends Error {
     reason: string,
   ) {
     super(`agent-presets: preset "${presetId}" cannot be written: ${reason}`)
+  }
+}
+
+/**
+ * A composition named a module the deployment does not have installed.
+ * Raised by `compose` when the caller's resolvability proof fails: the
+ * composer may only assemble agents from plugins actually present, so a
+ * browser payload can never grant a capability the deployment does not carry.
+ */
+export class ComposeModuleError extends Error {
+  constructor(
+    /** The preset being composed. */
+    readonly presetId: string,
+    /** The module names the composition referenced that are not installed. */
+    readonly unresolved: readonly string[],
+  ) {
+    super(
+      `agent-presets: preset "${presetId}" references uninstalled modules: `
+      + unresolved.map(name => JSON.stringify(name)).join(', '),
+    )
   }
 }
 
@@ -189,6 +217,7 @@ export async function copyComposition(
  * @param id - the new preset's id, which becomes its directory name.
  * @param rows - the composition rows to persist.
  * @param meta - display metadata to publish beside the composition.
+ * @param graph - the preset composition graph to persist beside the rows.
  * @returns the absolute path of the preset directory.
  * @throws when the id is unusable or already taken, or the deployment
  * configures no writable root.
@@ -198,6 +227,7 @@ export async function writeComposition(
   id: string,
   rows: readonly EntryOptions[],
   meta?: PresetMetadata,
+  graph?: FlowGraph,
 ): Promise<string> {
   if (!PRESET_ID.test(id)) throw new InvalidPresetIdError(id)
   const dir = join(root, id)
@@ -209,6 +239,7 @@ export async function writeComposition(
       yaml.dump([...rows], { schema: entryListSchema, lineWidth: -1 }),
       { mode: 0o600, dirMode: 0o700 },
     )
+    if (graph !== undefined) await writePresetGraph(dir, graph)
     const rendered = renderPresetMetadata(meta ?? {})
     if (rendered !== undefined) {
       await writeFileAtomic(join(dir, METADATA_FILE), rendered, { mode: 0o600, dirMode: 0o700 })
@@ -221,6 +252,131 @@ export async function writeComposition(
     throw error
   }
   return dir
+}
+
+/**
+ * Replace one locally authored preset's composition and metadata in place.
+ *
+ * The overwrite half of the rows authoring boundary. `writeComposition`
+ * creates a preset and refuses an occupied id; this primitive re-renders an
+ * existing preset's files atomically, skipping the `occupied` refusal so an
+ * existing directory is updated rather than refused. Only the composition,
+ * companion graph, and display metadata are rewritten — the directory's other
+ * contents (skills, assets) are left alone, and a failed atomic write leaves
+ * the prior file intact rather than a half-preset. The caller (the service's
+ * `compose`) owns the trust and existence checks that decide overwrite vs
+ * create.
+ * @param root - the writable root's resolved path.
+ * @param id - the preset id, whose directory already exists.
+ * @param rows - the composition rows to persist.
+ * @param meta - display metadata to publish beside the composition.
+ * @param graph - the preset composition graph to persist beside the rows.
+ * @returns the absolute path of the preset directory.
+ * @throws when the id is unusable.
+ */
+export async function replaceComposition(
+  root: string,
+  id: string,
+  rows: readonly EntryOptions[],
+  meta?: PresetMetadata,
+  graph?: FlowGraph,
+): Promise<string> {
+  if (!PRESET_ID.test(id)) throw new InvalidPresetIdError(id)
+  const dir = join(root, id)
+  await mkdir(dir, { recursive: true, mode: 0o700 })
+  await writeFileAtomic(
+    join(dir, COMPOSITION_FILE),
+    yaml.dump([...rows], { schema: entryListSchema, lineWidth: -1 }),
+    { mode: 0o600, dirMode: 0o700 },
+  )
+  if (graph !== undefined) await writePresetGraph(dir, graph)
+  const rendered = renderPresetMetadata(meta ?? {})
+  const metadataPath = join(dir, METADATA_FILE)
+  if (rendered === undefined) {
+    await rm(metadataPath, { force: true })
+  } else {
+    await writeFileAtomic(metadataPath, rendered, { mode: 0o600, dirMode: 0o700 })
+  }
+  await tightenModes(dir)
+  return dir
+}
+
+/**
+ * Write one preset's companion graph document atomically, mode-matched to the
+ * composition. The size cap is enforced here, where the complete rendered
+ * document is known; a graph beyond it is refused rather than persisted.
+ */
+async function writePresetGraph(dir: string, graph: FlowGraph): Promise<void> {
+  const rendered = JSON.stringify(
+    { formatVersion: PRESET_GRAPH_FORMAT_VERSION, graph } satisfies PresetGraphDocument,
+    null, 2,
+  ) + '\n'
+  if (Buffer.byteLength(rendered, 'utf8') > PRESET_GRAPH_MAX_BYTES) {
+    throw new Error(
+      `agent-presets: preset graph exceeds the ${PRESET_GRAPH_MAX_BYTES}-byte cap; `
+      + 'trim nodes or edges and save again',
+    )
+  }
+  await writeFileAtomic(
+    join(dir, PRESET_GRAPH_FILE),
+    rendered,
+    { mode: 0o600, dirMode: 0o700 },
+  )
+}
+
+/**
+ * Read one preset's stored graph, or undefined when it must be regenerated.
+ *
+ * The companion `agent.flow.json` is a LAYOUT CACHE, not a second truth: the
+ * composition file is the mount source, so the stored graph serves only while
+ * it still projects exactly the rows parsed from that file (a hand edit or a
+ * legacy rows-composer write wins and the layout is rebuilt), and an absent,
+ * oversized, unparsable, or version-mismatched document is likewise
+ * regenerated. This is also the safety net for a partial dual-file write.
+ * @param preset - the resolved preset.
+ * @param rows - the composition rows parsed from the preset's composition file.
+ * @returns the stored graph, or undefined when it is stale or unreadable.
+ */
+export async function readCompositionGraph(
+  preset: AgentPreset,
+  rows: readonly ComposeRow[],
+): Promise<FlowGraph | undefined> {
+  const path = join(dirname(preset.path), PRESET_GRAPH_FILE)
+  let content: string
+  try {
+    content = await readFile(path, 'utf8')
+  } catch {
+    return undefined
+  }
+  if (Buffer.byteLength(content, 'utf8') > PRESET_GRAPH_MAX_BYTES) return undefined
+  // The parse boundary is the sanctioned cast point: the document was written
+  // by our own writer, and a shape mismatch is a stale-layout signal, not a
+  // failure the caller can act on.
+  const document = JSON.parse(content) as { formatVersion?: unknown; graph?: FlowGraph }
+  if (document.formatVersion !== PRESET_GRAPH_FORMAT_VERSION) return undefined
+  if (document.graph === undefined) return undefined
+  if (!graphRowsMatch(document.graph, rows)) return undefined
+  return document.graph
+}
+
+/**
+ * Parse a preset's composition text into its entry list.
+ *
+ * Read with the loader's own YAML dialect ({@link entryListSchema}, the one
+ * carrying `!!js`), so a composition that mounts parses here exactly as the
+ * Loader reads it — a `!!js` `disabled` row round-trips as the evaluable
+ * expression. The composer reads rows this way so the browser never parses
+ * YAML: the wire carries structured rows instead of text.
+ * @param content - the composition file's contents.
+ * @returns the parsed entry list.
+ * @throws when the composition is not a top-level list of plugin rows.
+ */
+export function parseComposition(content: string): EntryOptions[] {
+  const rows = yaml.load(content, { schema: entryListSchema })
+  if (!Array.isArray(rows)) {
+    throw new Error('agent-presets: the composition is not a top-level list of plugin rows')
+  }
+  return rows as EntryOptions[]
 }
 
 /**

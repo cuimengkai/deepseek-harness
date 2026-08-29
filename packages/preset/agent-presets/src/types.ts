@@ -1,5 +1,6 @@
 /** Client-safe payloads and event declarations owned by the agent-preset domain. */
-import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { FlowGraph } from '@deepseek-ai/dsh-flow/types'
+import type { JsonValue, SessionId } from '@deepseek-ai/dsh-session/types'
 import type { PresetTrust } from './preset.ts'
 
 export type { PresetTrust } from './preset.ts'
@@ -68,6 +69,46 @@ export interface AgentPresetDocument {
   readonly name?: string
   /** One sentence on what this preset is for. */
   readonly description?: string
+}
+
+/** One preset's composition graph beside the row it belongs to. */
+export interface AgentPresetGraph {
+  /** The preset the graph belongs to. */
+  readonly agentPreset: string
+  /** Trust of the root this preset was discovered under. */
+  readonly trust: PresetTrust
+  /** The composition graph, stored when current or regenerated from the rows. */
+  readonly graph: FlowGraph
+  /** Display name the preset published. */
+  readonly name?: string
+  /** One sentence on what this preset is for. */
+  readonly description?: string
+}
+
+/**
+ * One composition row the composer authors.
+ *
+ * The JSON-safe subset of a loader entry that may cross the wire: `config`,
+ * `disabled`, and `inject` pass through as structured values rather than being
+ * edited, so arbitrary plugin config and a platform-conditional `!!js`
+ * expression (`{ __jsExpr }`) round-trip unchanged. `group` is carried so a
+ * group row survives editing. `id` is required by the composer (every row it
+ * writes has one), but stays optional here because a shipped composition read
+ * back for editing may contain an id-less row.
+ */
+export interface ComposeRow {
+  /** Stable id inside the preset; unique across the rows of one preset. */
+  id?: string
+  /** Module specifier imported by the entry. */
+  name: string
+  /** Config passed to the plugin, carried verbatim. */
+  config?: JsonValue
+  /** Marks this row as a nested group, carried verbatim. */
+  group?: boolean | null
+  /** Enablement, carried verbatim (`!!js` expressions as `{ __jsExpr }`). */
+  disabled?: JsonValue
+  /** Required-service override, carried verbatim so an overwrite never drops it. */
+  inject?: JsonValue
 }
 
 declare module '@deepseek-ai/dsh-session-projection/types' {

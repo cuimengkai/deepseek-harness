@@ -24,6 +24,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the Workspace UI navigation service merge (ctx.uiWorkspace).
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
+import type { ModelKind } from '@deepseek-ai/dsh-llm/types'
 import { AgentPresetLabel } from './AgentPresetLabel.tsx'
 import type { AgentPresetLabelInjected } from './AgentPresetLabel.tsx'
 import { AgentPresetRow } from './AgentPresetRow.tsx'
@@ -33,7 +34,8 @@ import type { AgentPresetSeatInjected } from './AgentPresetSeat.tsx'
 import { AgentPresetSection } from './AgentPresetSection.tsx'
 import type { AgentPresetSectionInjected } from './AgentPresetSection.tsx'
 import { AgentPresetSeatController } from './seat-store.ts'
-import { AgentPresetSectionController } from './section-store.ts'
+import { AgentPresetSectionController, displayNameFor } from './section-store.ts'
+import type { ModuleSource, PaletteModule } from './section-store.ts'
 import { en, zh } from './locales.ts'
 import { AGENT_PRESET_SETTINGS_NS, AgentPresetSettingsController } from './settings-store.ts'
 
@@ -43,14 +45,15 @@ export type { AgentPresetSeatInjected, AgentPresetSeatProps } from './AgentPrese
 export type { AgentPresetSectionInjected, AgentPresetSectionProps } from './AgentPresetSection.tsx'
 export type { AgentPresetSeatState } from './seat-store.ts'
 export {
-  draftBlocker, type AgentPresetSectionState, type CopyDraft, type PresetRow, type PresetView,
+  displayNameFor, draftBlocker, type AgentPresetSectionState, type CopyDraft,
+  type ModuleSource, type PaletteModule, type PresetRow, type PresetView,
 } from './section-store.ts'
 export type { AgentPresetOption, AgentPresetSettingsState } from './settings-store.ts'
 export { AGENT_PRESET_SETTINGS_NS, writeDefaultPreset } from './settings-store.ts'
 
 /** Required services (cordis fiber inject). */
 export const inject = [
-  'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'settingsScope',
+  'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'remote.pluginInventory', 'settingsScope',
 ]
 
 /**
@@ -63,10 +66,35 @@ export function apply(ctx: ClientContext): void {
   // One roster, four surfaces. The chip is registered in a later scope, so it
   // subscribes here rather than being reached from this one.
   const rosterReaders = new Set<() => void>()
+  // The composer palette reads the deployment's installed plugins through the
+  // generated Remote; a host that mounts no inventory makes the call fail and
+  // the palette degrades to "unavailable" without touching an edit in flight.
+  const modules: ModuleSource = {
+    list: async () => {
+      const result = await ctx.remote.pluginInventory.list()
+      if (!result.ok) {
+        throw new Error(`pluginInventory.list failed: ${result.error.code}: ${result.error.message}`)
+      }
+      // The inventory is entry-ordered, and the same module can be shipped by
+      // more than one Loader entry; the palette is a set of installable
+      // plugins, and duplicate moduleNames would collide as React list keys.
+      const byName = new Map<string, PaletteModule>()
+      for (const entry of result.value.entries) {
+        if (byName.has(entry.moduleName)) continue
+        byName.set(entry.moduleName, {
+          moduleName: entry.moduleName,
+          displayName: displayNameFor(entry.moduleName),
+          ...entry.category === undefined ? {} : { category: entry.category },
+          ...entry.description === undefined ? {} : { description: entry.description },
+        })
+      }
+      return [...byName.values()]
+    },
+  }
   const section = new AgentPresetSectionController(ctx.remote, () => {
     void controller.load()
     for (const read of rosterReaders) read()
-  })
+  }, modules)
 
   ctx.effect(() => ctx.locale.register('settings.agentPreset', { zh, en }), 'ui-agent-preset: settings row dictionaries')
 
@@ -75,6 +103,25 @@ export function apply(ctx: ClientContext): void {
     load: () => controller.load(),
     select: (id: string) => controller.select(id),
   })
+
+  ctx.effect(() => {
+    // The configured model catalog can move while the composer is open: adapter
+    // topology commits and settings documents both feed it, and the picker
+    // re-reads so a provider or model that changed mid-edit shows up. The
+    // composer owns the section while open, so an overlay check is all the
+    // gate needed — no namespace filter, exactly like the model selection
+    // surface's own refresh.
+    const refresh = (): void => {
+      const state = section.store.getSnapshot()
+      if (state.composer === null && state.view === null) return
+      void section.loadModelCatalog()
+    }
+    const disposers = [
+      ctx.remote.$on('llm/adapters-updated', refresh),
+      ctx.remote.$on('settings/document-updated', refresh),
+    ]
+    return () => { for (const dispose of disposers) dispose() }
+  }, 'ui-agent-preset: model catalog refresh')
 
   ctx.effect(() => {
     // The roster is a live directory and the default is a settings field, so
@@ -186,6 +233,21 @@ export function apply(ctx: ClientContext): void {
     setCopyId: (id: string) => { section.setCopyId(id) },
     setCopyName: (name: string) => { section.setCopyName(name) },
     confirmCopy: () => section.confirmCopy(),
+    beginCompose: (id: string | null) => section.beginCompose(id),
+    closeComposer: () => { section.closeComposer() },
+    setComposerId: (id: string) => { section.setComposerId(id) },
+    setComposerName: (name: string) => { section.setComposerName(name) },
+    addRow: (moduleName: string) => section.addRow(moduleName),
+    addNodeAt: (moduleName: string, position: { x: number; y: number }) => section.addNodeAt(moduleName, position),
+    removeRow: (rowId: string) => { section.removeRow(rowId) },
+    removeNode: (nodeId: string) => { section.removeNode(nodeId) },
+    moveRow: (from: number, to: number) => { section.moveRow(from, to) },
+    moveNode: (nodeId: string, position: { x: number; y: number }) => { section.moveNode(nodeId, position) },
+    reorderNode: (fromNodeId: string, toNodeId: string) => { section.reorderNode(fromNodeId, toNodeId) },
+    updateAgentModelKind: (nodeId: string, kind: ModelKind, field: 'provider' | 'model', value: string) => {
+      section.updateAgentModelKind(nodeId, kind, field, value)
+    },
+    confirmCompose: () => section.confirmCompose(),
     openLocation: (id: string) => section.openLocation(id),
     ...creatorDraft === undefined ? {} : { startCreatorDraft: creatorDraft },
     confirmDelete: (id: string | null) => { section.confirmDelete(id) },

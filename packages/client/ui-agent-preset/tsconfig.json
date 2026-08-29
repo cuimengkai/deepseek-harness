@@ -42,6 +42,9 @@
       "path": "../ui-slots"
     },
     {
+      "path": "../ui-flow-editor"
+    },
+    {
       "path": "../../runtime-diagnostics/invariants"
     },
     {
@@ -49,6 +52,12 @@
     },
     {
       "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
+      "path": "../../llm/llm"
+    },
+    {
+      "path": "../../workflow/flow"
     },
     {
       "path": "../../preset/agent-presets"

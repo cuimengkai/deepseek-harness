@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包提供 Web GUI 的外壳布局：一个三栏 AppFrame，带可缩放的侧栏与详情面板；一条让步链，在空间不足时先收缩详情栏、随后自动关闭它；以及 `ctx.layout` 面板几何服务，供其他插件调用以打开或关闭详情栏。它还承载主题呈现器，把解析后的配色方案、别名 token、正文字号与 `theme-color` 元数据投影到 document。需要标准窗口外观时选择它；面板几何是瞬时的，重新加载即重置。
+本包提供 Web GUI 的外壳布局：一个三栏 AppFrame，带可缩放的侧栏与详情面板；一条让步链，在空间不足时先收缩详情栏、随后自动关闭它；以及 `ctx.layout` 面板几何服务，供其他插件调用以打开或关闭详情栏。它还承载主题呈现器，把解析后的配色方案、别名 token、正文字号与 `theme-color` 元数据投影到 document。需要标准窗口外观时选择它；面板几何是瞬时的，重新加载即重置。框架的第五个子槽位 `page` 是路由化的全视口表面：当某个页面 entry 的 `path` 是当前 URL 时，该 entry 覆盖整个窗口渲染，下方的应用网格转为 inert。
 
 ## 目录
 
@@ -39,7 +39,9 @@ kind: "package-reference"
 <details>
 <summary>实现细节——点击展开</summary>
 
-一次 `register()` 调用把 `AppFrame` 贡献进运行时的内建 `'root'` 槽位，并在同一刻声明四个子槽位（`sidebar`、`conversation`、`details`、`shell.overlay`）、安放布局 store（面板几何）并接好 `ctx.layout` 面板动作服务。瞬时布局 store 以默认宽度启动侧栏、保持详情栏关闭，从不读写 `localStorage`。AppFrame 始终挂载会话与详情两栏；已连接 Session 经 `SessionProvider` 渲染。它把所选 Session 标题投影到构建配置的产品标题或本地化 `common.brand.localBuild` 回退值之上，因此 locale revision 会随根 entry 一起更新文档元数据。主题呈现器是第二个 effect：从解析后的快照做纯 DOM 写入——初始状态经 getter 读取一次，此后仅事件驱动，不经过 React。它先应用调色板、字号与 token 变量，再把渲染出的背景测量为唯一的颜色依据。
+一次 `register()` 调用把 `AppFrame` 贡献进运行时的内建 `'root'` 槽位，并在同一刻声明五个子槽位（`sidebar`、`conversation`、`details`、`shell.overlay`、`page`）、安放布局 store（面板几何）并接好 `ctx.layout` 面板动作服务。瞬时布局 store 以默认宽度启动侧栏、保持详情栏关闭，从不读写 `localStorage`。AppFrame 始终挂载会话与详情两栏；已连接 Session 经 `SessionProvider` 渲染。它把所选 Session 标题投影到构建配置的产品标题或本地化 `common.brand.localBuild` 回退值之上，因此 locale revision 会随根 entry 一起更新文档元数据。主题呈现器是第二个 effect：从解析后的快照做纯 DOM 写入——初始状态经 getter 读取一次，此后仅事件驱动，不经过 React。它先应用调色板、字号与 token 变量，再把渲染出的背景测量为唯一的颜色依据。
+
+`page` 槽位是路由化的全视口表面：一个 entry 列表，其 `path` 选项（例如 `/settings/:section?`）使 entry 成为一条页面路由。当某个页面的 path 是当前 URL 时，框架在所有栏与 overlay 之上把该 entry 渲染到整个窗口，下方应用网格转为 `inert`——DOM 层的焦点/指针防护（包裹层使用 `display: contents`，栏仍是框架的直接 grid item，冻结应用靠的是 `inert` 而非盒子）。覆盖页下方应用按设计保持挂载，开合不丢会话或草稿状态；页面拥有自己的滚动容器。只有匹配的 entry 按 id 渲染，没有 path 的 entry 永不匹配——带 path 的新 id 在既有设置页旁注册新的全页表面。pages 投影搭乘框架的 inject face，把 `page` 台账与 `ctx.router` 位置和解进一个快照（按注册顺序排列的可路由 entry 加上匹配的页面 id），框架与任何页面消费方因此读到同一份 URL↔路由事实。
 
 </details>
 
@@ -76,6 +78,7 @@ kind: "package-reference"
 - **面板几何是瞬时状态**——重新加载会恢复侧栏默认值并保持详情栏关闭；在不同会话 id 之间切换同样会关闭详情栏并忘记拖动后的宽度，而未选中表面以零宽度渲染详情栏却不修改几何。
 - **让步链自动关闭通过推导零宽度实现，不触碰偏好宽度**——窗口变宽时面板自行恢复；消费方不得把 store 中的详情宽度当作渲染真值。
 - **挤压重排期间无滚动锚定**——布局变化可能移动读者的视口。
+- **同一时刻只有一个活动页面**——框架匹配第一条 path 命中的 `page` 路由并只按 id 渲染该 entry；堆叠或嵌套的页面表面不在范围内。
 
 <a id="dev-note"></a>
 ### 开发备注
