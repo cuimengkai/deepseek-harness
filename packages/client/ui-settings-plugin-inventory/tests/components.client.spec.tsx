@@ -31,6 +31,7 @@ const t = ((key: PluginInventoryLocaleKey, params?: Record<string, unknown>): st
 const kit = {
   useSessions: (() => { throw new Error('unused') }) as never,
   useWorkspaces: (() => { throw new Error('unused') }) as never,
+  useSessionPendingInteraction: (() => { throw new Error('unused') }) as never,
 }
 
 /** A committed install value for the given catalog name. */

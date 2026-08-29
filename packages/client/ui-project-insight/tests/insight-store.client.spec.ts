@@ -6,7 +6,7 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ProjectInsightDoc } from '@deepseek-ai/dsh-project-insight/src/schema.ts'
 import { POLL_INTERVAL_MS, ProjectInsightController } from '../src/client/insight-store.ts'
 
@@ -38,26 +38,26 @@ type ReadValue = {
 /** A wire whose read promises the test settles by hand, in order. */
 function readWire() {
   const pending: Array<{ resolve: (value: unknown) => void; reject: (error: unknown) => void }> = []
-  const calls: { cwd: string }[] = []
+  const calls: string[] = []
   const wire = {
     projectInsight: {
-      read: (payload: { cwd: string }) => {
-        calls.push(payload)
+      read: (cwd: string) => {
+        calls.push(cwd)
         return new Promise((resolve, reject) => pending.push({ resolve, reject }))
       },
     },
-  } as unknown as Pick<IApiClient, 'projectInsight'>
+  } as unknown as Pick<ClientRemote, 'projectInsight'>
   return {
     wire,
     calls,
     pendingCount: () => pending.length,
     answerOk(value: ReadValue): void {
       const slot = pending.shift()!
-      slot.resolve({ rpcId: 'r', result: { ok: true as const, value } })
+      slot.resolve({ ok: true as const, value })
     },
     answerErr(message: string): void {
       const slot = pending.shift()!
-      slot.resolve({ rpcId: 'r', result: { ok: false as const, error: { code: 'internal', message, details: {} } } })
+      slot.resolve({ ok: false as const, error: { code: 'internal', message } })
     },
     rejectLast(error: Error): void {
       const slot = pending.shift()!
@@ -93,7 +93,7 @@ describe('the project-insight read controller', () => {
     const controller = new ProjectInsightController(h.wire, () => '/proj')
     controller.load()
     await flush()
-    expect(h.calls).toEqual([{ cwd: '/proj' }])
+    expect(h.calls).toEqual(['/proj'])
     expect(controller.store.getSnapshot().status).toBe('loading')
 
     h.answerOk({ status: 'fresh', root: 'fake-root', doc: DOC })

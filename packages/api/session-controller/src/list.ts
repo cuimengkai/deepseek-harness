@@ -1,6 +1,7 @@
 /** Cold-safe Session list and search projection. */
 
 import { stat } from 'node:fs/promises'
+import type {} from '@deepseek-ai/dsh-session/context'
 import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-agent-presets'
 import type { ImageAttachmentLimits } from '@deepseek-ai/dsh-attachment'

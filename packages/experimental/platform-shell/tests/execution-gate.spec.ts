@@ -5,7 +5,7 @@ import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { PlatformShellService } from '../src/service.ts'
 import { registerCapabilityExecutionGate } from '../src/execution-gate.ts'
@@ -99,7 +99,7 @@ async function setup() {
     }
     return ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: CallId(`gate-call-${name}`),
+      callId: ToolCallId(`gate-call-${name}`),
       name,
       arguments: args,
       agent,

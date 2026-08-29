@@ -1,10 +1,12 @@
 /** Session Remote owner: cold reads, explicit Agent commands, and live control state. */
 
 import { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import z from '@deepseek-ai/schemastery'
 import { errorChain } from '@deepseek-ai/dsh-llm'
 import { canOpenNativePath, openNativePath } from '@deepseek-ai/dsh-native-command'
 import type { SessionEvent, SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
+import { SessionDeletionError } from '@deepseek-ai/dsh-session-deletion'
 import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { Remote, TypertRemoteFailure, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
@@ -13,6 +15,7 @@ import {
   type ApiSessionAgentResult,
 } from './agent.ts'
 import { SessionCommandController } from './commands.ts'
+import { SessionContextComposition } from './context-composition.ts'
 import { SessionControlController } from './control.ts'
 import { SessionHistoryController } from './history.ts'
 import { SessionFileReferences } from './file-references.ts'
@@ -29,6 +32,8 @@ import type {
   SessionControlFrame,
   SessionCreateRequest,
   SessionCreateValue,
+  SessionDeleteRequest,
+  SessionDeleteValue,
   SessionFollowFrame,
   SessionFollowRequest,
   SessionForkRequest,
@@ -55,6 +60,7 @@ export type * from './types.ts'
 export { ApiSessionNotFound } from './agent.ts'
 export { SessionFileReferences } from './file-references.ts'
 export { SessionSkillCatalog } from './skill-catalog.ts'
+export { SessionContextComposition } from './context-composition.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -132,6 +138,7 @@ export class SessionController extends TypertRemoteService {
       ?? (() => config.nativeOpen ?? (internals.openPath !== undefined || canOpenNativePath()))
     ctx.plugin(SessionFileReferences)
     ctx.plugin(SessionSkillCatalog)
+    ctx.plugin(SessionContextComposition)
 
     ctx.on('session/created', (session) => {
       ctx.emit('api-session/added', this.listState.summaryFor(session))
@@ -239,6 +246,42 @@ export class SessionController extends TypertRemoteService {
   @Remote('selectModel')
   selectModel(request: SessionSelectModelRequest): Promise<SessionSelectModelValue> {
     return this.commands.selectModel(request)
+  }
+
+  /**
+   * Physically delete a Session and its whole subagent descendant tree.
+   *
+   * Live scope members are disposed first; a member that stays live after
+   * disposal refuses the whole operation. The caller refreshes its Session
+   * list from the returned scope outcome.
+   * @param request - the root Session to delete.
+   * @returns every removed id plus the scope members that no longer existed.
+   * @throws TypertRemoteFailure with `session-live` when a scope member stays live,
+   *   or `internal` when the deletion service is not composed in this deployment.
+   */
+  @Remote('delete')
+  async deleteSession(request: SessionDeleteRequest): Promise<SessionDeleteValue> {
+    const deletion = this.ctx.get('sessionDeletion')
+    if (deletion === undefined) {
+      throw new TypertRemoteFailure({
+        code: 'internal',
+        message: 'session deletion is not composed in this deployment',
+        details: {},
+      })
+    }
+    try {
+      const result = await deletion.deleteSession(request.sessionId)
+      return { deleted: [...result.deleted], notFound: [...result.notFound] }
+    } catch (error: unknown) {
+      if (error instanceof SessionDeletionError) {
+        throw new TypertRemoteFailure({
+          code: 'session-live',
+          message: error.message,
+          details: { sessionId: request.sessionId, liveSessions: [...error.liveSessions] },
+        })
+      }
+      throw error
+    }
   }
 
   /**

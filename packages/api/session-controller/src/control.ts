@@ -1,6 +1,7 @@
 /** Live Session queue, jobs, and projection state with reconnect baselines. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import type { JobSnapshot } from '@deepseek-ai/dsh-jobs'
 import type {

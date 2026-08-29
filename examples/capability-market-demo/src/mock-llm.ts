@@ -13,7 +13,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  CallId,
+  ToolCallId,
   LlmAdapter,
   type GenerateOptions,
   type LlmResolvedModelInfo,
@@ -78,7 +78,7 @@ function userTurnCount(options: GenerateOptions): number {
  * result is still the last block. Both layouts resolve to the turn's first step.
  */
 function atTurnStart(last: ToolResultBlock | undefined, previousTurnFinal: string): boolean {
-  return last === undefined || last.toolCallId === CallId(previousTurnFinal)
+  return last === undefined || last.toolCallId === ToolCallId(previousTurnFinal)
 }
 
 class CapabilityMarketAdapter extends LlmAdapter {
@@ -90,8 +90,8 @@ class CapabilityMarketAdapter extends LlmAdapter {
   private * toolCall(callId: string, name: string, args: unknown): Generator<StreamChunk> {
     const serialized = JSON.stringify(args)
     yield { type: 'block-start', index: 0, blockType: 'tool-call' }
-    yield { type: 'tool-call-delta', index: 0, id: CallId(callId), name, argumentsDelta: serialized }
-    yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId(callId), name, arguments: serialized } }
+    yield { type: 'tool-call-delta', index: 0, id: ToolCallId(callId), name, argumentsDelta: serialized }
+    yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId(callId), name, arguments: serialized } }
     yield { type: 'usage', usage: { inputTokens: 12, outputTokens: 3 } }
     yield { type: 'finish', reason: { kind: 'tool-calls' } }
   }
@@ -119,7 +119,7 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      if (last.toolCallId === CallId('op-publish-analysis')) {
+      if (last.toolCallId === ToolCallId('op-publish-analysis')) {
         yield* this.toolCall('op-publish-reqmgt', 'publish_capability', {
           id: 'requirement-management', name: 'Requirement Management', roleId: 'product', execution: 'managed',
           version: '1.0.0', rate: 4, dependencies: [{ id: 'code-analysis', range: '>=1.0.0' }],
@@ -127,7 +127,7 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      if (last.toolCallId === CallId('op-publish-reqmgt')) {
+      if (last.toolCallId === ToolCallId('op-publish-reqmgt')) {
         yield* this.toolCall('op-publish-tcgen', 'publish_capability', {
           id: 'test-case-generation', name: 'Test Case Generation', roleId: 'qa', execution: 'managed',
           version: '1.0.0', rate: 2, dependencies: [{ id: 'code-analysis', range: '>=1.0.0' }],
@@ -135,7 +135,7 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      if (last.toolCallId === CallId('op-publish-tcgen')) {
+      if (last.toolCallId === ToolCallId('op-publish-tcgen')) {
         yield* this.toolCall('op-publish-tcexec', 'publish_capability', {
           id: 'test-execution', name: 'Test Execution', roleId: 'qa', execution: 'sandboxed',
           version: '1.0.0', rate: 6, dependencies: [{ id: 'test-case-generation', range: '>=1.0.0' }],
@@ -143,7 +143,7 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      if (last.toolCallId === CallId('op-publish-tcexec')) {
+      if (last.toolCallId === ToolCallId('op-publish-tcexec')) {
         // Deliberate catalog mistake: code-analysis is published at 1.0.0 but
         // code-refactor demands >=2.0.0, so the assembly refuses loudly.
         yield* this.toolCall('op-publish-refactor', 'publish_capability', {
@@ -153,14 +153,14 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      if (last.toolCallId === CallId('op-publish-refactor')) {
+      if (last.toolCallId === ToolCallId('op-publish-refactor')) {
         yield* this.toolCall('op-publish-recorder', 'publish_capability', {
           id: 'short-video-recorder', name: 'Short Video Recorder', roleId: 'product', execution: 'managed',
           version: '1.0.0', rate: 5, description: 'records a short video clip',
         })
         return
       }
-      if (last.toolCallId === CallId('op-publish-recorder')) {
+      if (last.toolCallId === ToolCallId('op-publish-recorder')) {
         yield* this.toolCall('op-publish-editor', 'publish_capability', {
           id: 'short-video-editor', name: 'Short Video Editor', roleId: 'product', execution: 'managed',
           version: '1.0.0', rate: 5, conflictsWith: ['short-video-recorder'],
@@ -168,14 +168,14 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      if (last.toolCallId === CallId('op-publish-editor')) {
+      if (last.toolCallId === ToolCallId('op-publish-editor')) {
         yield* this.toolCall('op-publish-publisher', 'publish_capability', {
           id: 'short-video-publisher', name: 'Short Video Publisher', roleId: 'product', execution: 'managed',
           version: '1.0.0', rate: 5, description: 'publishes a finished short video',
         })
         return
       }
-      if (last.toolCallId === CallId('op-publish-publisher')) {
+      if (last.toolCallId === ToolCallId('op-publish-publisher')) {
         yield* this.toolCall('op-publish-wb-pe', 'publish_scenario', {
           id: 'product-engineering', name: 'Product Engineering', workbenchId: 'product-engineering',
           roleId: 'product', preset: 'product-engineering',
@@ -183,7 +183,7 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      if (last.toolCallId === CallId('op-publish-wb-pe')) {
+      if (last.toolCallId === ToolCallId('op-publish-wb-pe')) {
         yield* this.toolCall('op-publish-wb-sv', 'publish_scenario', {
           id: 'short-video-creation', name: 'Short Video Creation', workbenchId: 'short-video-creation',
           roleId: 'product', preset: 'short-video-creation',
@@ -213,7 +213,7 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      if (last?.toolCallId === CallId('op-gate-enable')) {
+      if (last?.toolCallId === ToolCallId('op-gate-enable')) {
         yield* this.toolCall('op-gate-hold', 'set_capability_gate', {
           capabilityId: 'test-execution', enabled: true, rollout: 0,
         })
@@ -241,15 +241,15 @@ class CapabilityMarketAdapter extends LlmAdapter {
       yield* this.toolCall('op-balance-1', 'account_balance', { workspaceId: first })
       return
     }
-    if (last?.toolCallId === CallId('op-balance-1')) {
+    if (last?.toolCallId === ToolCallId('op-balance-1')) {
       yield* this.toolCall('op-balance-2', 'account_balance', { workspaceId: second })
       return
     }
-    if (last?.toolCallId === CallId('op-balance-2')) {
+    if (last?.toolCallId === ToolCallId('op-balance-2')) {
       yield* this.toolCall('op-settle-1', 'settle_account', { workspaceId: first, period })
       return
     }
-    if (last?.toolCallId === CallId('op-settle-1')) {
+    if (last?.toolCallId === ToolCallId('op-settle-1')) {
       yield* this.toolCall('op-settle-2', 'settle_account', { workspaceId: second, period })
       return
     }
@@ -269,7 +269,7 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      if (last.toolCallId === CallId('p-transitive')) {
+      if (last.toolCallId === ToolCallId('p-transitive')) {
         yield* this.toolCall('p-version-bomb', 'assemble_capabilities', {
           workspaceId: ws, scenarioId: 'product-engineering', selected: ['code-refactor'],
         })
@@ -286,25 +286,25 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      if (last?.toolCallId === CallId('p-version-fixed')) {
+      if (last?.toolCallId === ToolCallId('p-version-fixed')) {
         yield* this.toolCall('p-consume-reqmgt', 'consume_capability', {
           workspaceId: ws, capabilityId: 'requirement-management', qty: 2,
         })
         return
       }
-      if (last?.toolCallId === CallId('p-consume-reqmgt')) {
+      if (last?.toolCallId === ToolCallId('p-consume-reqmgt')) {
         yield* this.toolCall('p-consume-tcexec', 'consume_capability', {
           workspaceId: ws, capabilityId: 'test-execution', qty: 15,
         })
         return
       }
-      if (last?.toolCallId === CallId('p-consume-tcexec')) {
+      if (last?.toolCallId === ToolCallId('p-consume-tcexec')) {
         yield* this.toolCall('p-consume-overdraft', 'consume_capability', {
           workspaceId: ws, capabilityId: 'code-analysis', qty: 1,
         })
         return
       }
-      if (last?.toolCallId === CallId('p-consume-overdraft')) {
+      if (last?.toolCallId === ToolCallId('p-consume-overdraft')) {
         // code-analysis is still enabled at this point in the drive, so the
         // runtime gate admits analyze_code — the first runtime-gate proof.
         yield* this.toolCall('p-analyze-open', 'analyze_code', {
@@ -323,7 +323,7 @@ class CapabilityMarketAdapter extends LlmAdapter {
         })
         return
       }
-      if (last?.toolCallId === CallId('p-dep-disabled')) {
+      if (last?.toolCallId === ToolCallId('p-dep-disabled')) {
         // The operator disabled code-analysis between turns, so the runtime
         // gate now refuses the same analyze_code call at invocation time — the
         // runtime block, not an assembly-time absence.
@@ -366,19 +366,19 @@ class CapabilityMarketAdapter extends LlmAdapter {
       yield* this.toolCall('v-list', 'list_scenarios', {})
       return
     }
-    if (last.toolCallId === CallId('v-list')) {
+    if (last.toolCallId === ToolCallId('v-list')) {
       yield* this.toolCall('v-conflict', 'assemble_capabilities', {
         workspaceId: ws, scenarioId: 'short-video-creation', selected: ['short-video-recorder', 'short-video-editor'],
       })
       return
     }
-    if (last.toolCallId === CallId('v-conflict')) {
+    if (last.toolCallId === ToolCallId('v-conflict')) {
       yield* this.toolCall('v-assemble', 'assemble_capabilities', {
         workspaceId: ws, scenarioId: 'short-video-creation', selected: ['short-video-recorder', 'short-video-publisher'],
       })
       return
     }
-    if (last.toolCallId === CallId('v-assemble')) {
+    if (last.toolCallId === ToolCallId('v-assemble')) {
       yield* this.toolCall('v-consume', 'consume_capability', {
         workspaceId: ws, capabilityId: 'short-video-recorder', qty: 1,
       })

@@ -9,7 +9,7 @@
  * previous session's document.
  */
 
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ProjectInsightDoc } from '@deepseek-ai/dsh-project-insight/src/schema.ts'
 
@@ -51,7 +51,7 @@ export class ProjectInsightController {
    * session row may not exist yet when the view first mounts).
    */
   constructor(
-    private readonly api: Pick<IApiClient, 'projectInsight'>,
+    private readonly api: Pick<ClientRemote, 'projectInsight'>,
     private readonly cwd: () => string | undefined,
   ) {}
 
@@ -91,19 +91,18 @@ export class ProjectInsightController {
   private async read(cwd: string, generation: number): Promise<void> {
     let response
     try {
-      response = await this.api.projectInsight.read({ cwd })
+      response = await this.api.projectInsight.read(cwd)
     } catch (error) {
       if (generation !== this.generation) return
       this.set({ status: 'error', error: messageOf(error) })
       return
     }
     if (generation !== this.generation) return
-    const result = response.result
-    if (!result.ok) {
-      this.set({ status: 'error', error: result.error.message })
+    if (!response.ok) {
+      this.set({ status: 'error', error: response.error.message })
       return
     }
-    const { status, doc } = result.value
+    const { status, doc } = response.value
     if (status === 'fresh' && doc !== undefined) {
       this.set({ status: 'ready', error: null, doc })
       return

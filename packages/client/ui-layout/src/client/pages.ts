@@ -4,8 +4,8 @@
  * inputs (slot ledger + router location) so the frame and any page consumer
  * read the same URL↔route truth.
  */
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { HostObservable } from '@deepseek-ai/dsh-client-ui-slots'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { PageRouteEntry } from '@deepseek-ai/dsh-client-ui-router/client'
 // Type-only: pulls ctx.router into the type program (the client Context merge
 // lives in the router package's declare module).

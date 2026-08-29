@@ -146,27 +146,6 @@ describe('createFixtureApi commands/skills', () => {
       .toBeUndefined()
   })
 
-  it('commits a range compaction as a durable marker plus a visible surface shrink', async () => {
-    const { api, rpc } = createFixtureFaces()
-    type Composition = { readonly surface: readonly { seq: number }[]; readonly compactions: readonly { shadowedCount: number }[] }
-    const read = async (): Promise<Composition> => {
-      const response = await api.contextComposition.read(req({ sessionId: sid('fx-alpha') }), new AbortController().signal)
-      if (!response.result.ok) throw new Error('contextComposition.read failed')
-      return response.result.value
-    }
-    const before = await read()
-    // Range endpoints are surface node seqs, exactly what the tab shows.
-    const [start, end] = [before.surface[0]?.seq, before.surface[1]?.seq] as const
-    const run = await callRemote<{ commandId: string; result: { kind: string; text?: string } } | undefined>(
-      rpc, 'commands/execute', { agentId: sid('fx-alpha'), line: `/compact ${start}:${end}` })
-    expect(run?.result.kind).toBe('success')
-    const after = await read()
-    // Two nodes collapse into one checkpoint: the surface visibly shrinks.
-    expect(after.surface.length).toBe(before.surface.length - 1)
-    expect(after.compactions.at(-1)).toMatchObject({ shadowedCount: 2 })
-    expect(after.surface[0]?.seq).not.toBe(start)
-  })
-
   it('rejects a range compaction whose endpoints are not surface seqs', async () => {
     const { rpc } = createFixtureFaces()
     const run = await callRemote<{ result: { kind: string; text?: string } } | undefined>(

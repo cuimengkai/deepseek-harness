@@ -481,16 +481,17 @@ describe('the new-session chip controller', () => {
     // import just created.
     let current: { id: string; blank: boolean; agentPreset?: string } | undefined
       = { id: 's1', blank: false, agentPreset: 'standard' }
-    const api = {
+    const remote = {
       agentPresets: {
-        list: () => Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { presets: ROSTER } } }),
-        select: (payload: { agentPreset: string }) => {
-          writes.push({ ns: 'select', patch: payload.agentPreset })
-          return Promise.resolve({ rpcId: 'r', result: { ok: true as const, value: { agentPreset: payload.agentPreset } } })
+        list: () => Promise.resolve({ ok: true as const, value: { presets: ROSTER, authorable: true } }),
+        select: (sessionId: string, agentPreset: string) => {
+          void sessionId
+          writes.push({ ns: 'select', ops: agentPreset })
+          return Promise.resolve({ ok: true as const, value: agentPreset })
         },
       },
-    } as unknown as IApiClient
-    const controller = new AgentPresetSeatController(api, () => current as SeatSessionSummary | undefined)
+    } as unknown as Pick<ClientRemote, 'agentPresets'>
+    const controller = new AgentPresetSeatController(remote, () => current as SeatSession | undefined)
     await controller.load()
 
     // Picked while the running session is current: the import flow's opening.
@@ -502,7 +503,7 @@ describe('the new-session chip controller', () => {
     current = { id: 's2', blank: true, agentPreset: 'standard' }
     await controller.apply()
 
-    expect(writes).toEqual([{ ns: 'select', patch: 'minimal' }])
+    expect(writes).toEqual([{ ns: 'select', ops: 'minimal' }])
     expect(controller.store.getSnapshot().current).toBe('minimal')
   })
 

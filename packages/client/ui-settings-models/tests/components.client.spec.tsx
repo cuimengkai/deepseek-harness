@@ -128,7 +128,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
       schema: JSON.parse(JSON.stringify(Schema.object({
         provider: Schema.string(),
         model: Schema.string(),
-      }).toJSON())) as unknown,
+      }).toJSON())) as JsonValue,
       value: { provider: 'openai', model: 'gpt-4o' },
       user: {},
       applies: 'live',
@@ -320,6 +320,7 @@ describe('ModelsSection', () => {
     const { renderSlot } = await mountSection()
     renderSlot.mockClear()
     fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.click(await screen.findByRole('button', { name: 'anthropic' }))
     expect(cardSeatCalls(renderSlot)).toContainEqual(['anthropic', false, false, 'llm-pi-ai'])
   })
 
@@ -334,6 +335,7 @@ describe('ModelsSection', () => {
     const { renderSlot } = await mountFace(scripted)
     renderSlot.mockClear()
     fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.click(await screen.findByRole('button', { name: 'anthropic' }))
     // The dormant row names no reference yet; the seat still reports the
     // derived ANTHROPIC_API_KEY the editor itself displays as configured.
     expect(cardSeatCalls(renderSlot)).toContainEqual(['anthropic', false, true, 'llm-pi-ai'])
@@ -342,6 +344,7 @@ describe('ModelsSection', () => {
   it('skips the draft seat when a refresh drops the dormant row', async () => {
     const { renderSlot, face, controller } = await mountSection()
     fireEvent.click(screen.getByRole('button', { name: en.add }))
+    fireEvent.click(await screen.findByRole('button', { name: 'anthropic' }))
     const directory = [
       { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
       { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: true },

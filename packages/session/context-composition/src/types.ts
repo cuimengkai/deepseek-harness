@@ -8,6 +8,25 @@
  * @module @deepseek-ai/dsh-context-composition/types
  */
 
+// Marks this file a module so the declarations below AUGMENT the projection
+// table instead of declaring an ambient module.
+export {}
+
+declare module '@deepseek-ai/dsh-session-projection/types' {
+  interface SessionProjectionStateMap {
+    contextRevision: number
+  }
+  interface SessionProjectionMap {
+    /**
+     * Number of committed events in the session's durable log — the revision
+     * the browser context view re-reads the composition at. Every committed
+     * event moves it, so the view cannot miss an envelope, surface, or
+     * compaction change.
+     */
+    contextRevision: number
+  }
+}
+
 /** One tool-schema row of the envelope's tool catalog. */
 export interface ContextToolRow {
   /** Tool name as the model sees it. */

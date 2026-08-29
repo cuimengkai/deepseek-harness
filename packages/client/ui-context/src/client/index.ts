@@ -5,11 +5,12 @@
  * /compact <start>:<end> through the commands Remote.
  */
 
-import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: pulls the SlotRegistry service merge (ctx.slots).
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: the 'conversation.view' SlotMap row (declared by the slot's
 // owning package) must be in the program for the register call to type.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -26,7 +27,6 @@ export const inject = ['slots', 'remote', 'remote.commands', 'locale']
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
-  const { api } = ctx.get('connection') as ConnectionHandle
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-context: dictionaries')
   // Registration-time text (the view tab label) reads through the bound
   // translate as a thunk, so it follows the active locale without
@@ -42,7 +42,7 @@ export function apply(ctx: Context): void {
       // One controller per (tab x session) occurrence — the renderer caches
       // this face per (entry x session), so the closure stays identity-stable
       // and the component's unmount dispose stops the read cycle cleanly.
-      const controller = new ContextCompositionController(api, sessionId)
+      const controller = new ContextCompositionController(ctx.remote, sessionId)
       return {
         hooks: { contextComposition: controller.store },
         load: () => { controller.load() },

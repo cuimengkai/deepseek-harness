@@ -45,6 +45,9 @@
       "path": "../../interaction/commands"
     },
     {
+      "path": "../../compaction/compaction"
+    },
+    {
       "path": "../../llm/llm"
     },
     {

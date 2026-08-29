@@ -5,7 +5,7 @@ import ToolRuntime, { type ToolExecutionResult } from '@deepseek-ai/dsh-tools'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import { CallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import { PlatformShellService } from '../src/service.ts'
 import { registerPlatformShellTools, type ResolveBaseRows } from '../src/tools.ts'
 import { periodOf } from '../src/capability-market.ts'
@@ -65,7 +65,7 @@ async function setup(options: { resolveBaseRows?: ResolveBaseRows } = {}) {
     }
     return ctx.tools.execute({
       signal: new AbortController().signal,
-      callId: CallId('tools-spec-call'),
+      callId: ToolCallId('tools-spec-call'),
       name,
       arguments: args,
       agent,
@@ -252,7 +252,7 @@ describe('platform-shell tools', () => {
     try {
       const result = await ctx.tools.execute({
         signal: new AbortController().signal,
-        callId: CallId('tools-spec-call'),
+        callId: ToolCallId('tools-spec-call'),
         name: 'register_asset',
         arguments: { workspaceId: 'ws-1', kind: 'requirement', content: 'R1', roleId: 'product' },
       })

@@ -19,7 +19,7 @@ import css from './SettingsTrigger.module.css'
  * @returns the settings trigger element tree.
  */
 export function SettingsTrigger({
-  wide, useSessions, useOnboardingSteps, useSettingsRoute,
+  wide, useOnboardingSteps, useSettingsRoute, useSessions,
   openSettings, openSection, renderSlot,
 }: SettingsTriggerComponentProps) {
   const [completedOnboarding, setCompletedOnboarding] = useState<ReadonlySet<string>>(() => new Set())

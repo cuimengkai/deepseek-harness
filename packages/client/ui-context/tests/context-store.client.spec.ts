@@ -6,7 +6,8 @@
  */
 
 import { describe, expect, it } from 'vitest'
-import type { IApiClient, SessionId } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { ContextComposition } from '@deepseek-ai/dsh-context-composition/types'
 import { ContextCompositionController } from '../src/client/context-store.ts'
 
@@ -35,22 +36,22 @@ function readWire() {
   const calls: { sessionId: SessionId }[] = []
   const wire = {
     contextComposition: {
-      read: (payload: { sessionId: SessionId }) => {
-        calls.push(payload)
+      read: (request: { sessionId: SessionId }) => {
+        calls.push(request)
         return new Promise((resolve, reject) => pending.push({ resolve, reject }))
       },
     },
-  } as unknown as Pick<IApiClient, 'contextComposition'>
+  } as unknown as Pick<ClientRemote, 'contextComposition'>
   return {
     wire,
     calls,
     answerOk: (value: ContextComposition): void => {
       const slot = pending.shift()!
-      slot.resolve({ rpcId: 'r', result: { ok: true as const, value } })
+      slot.resolve({ ok: true as const, value })
     },
     answerErr: (message: string): void => {
       const slot = pending.shift()!
-      slot.resolve({ rpcId: 'r', result: { ok: false as const, error: { code: 'internal', message, details: {} } } })
+      slot.resolve({ ok: false as const, error: { code: 'internal', message } })
     },
     rejectLast: (error: Error): void => {
       const slot = pending.shift()!
@@ -128,7 +129,7 @@ describe('the context-composition read controller', () => {
     subject.load()
     answerErr('session is not live')
     await flush()
-    expect(state()).toEqual({ status: 'error', error: 'session is not live', composition: null })
+    expect(state()).toEqual({ status: 'error', error: 'session is not live (internal)', composition: null })
   })
 
   it('surfaces a transport rejection as an error', async () => {

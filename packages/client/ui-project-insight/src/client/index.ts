@@ -8,11 +8,12 @@
  * tab's embedded prompts collection, so it owns no dedicated tab.
  */
 
-import type { ConnectionHandle } from '@deepseek-ai/dsh-api-remotes/client'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: pulls the SlotRegistry service merge (ctx.slots).
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: the 'conversation.view' SlotMap row (declared by the slot's
 // owning package) must be in the program for the register calls to type.
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -34,8 +35,8 @@ const TABS: readonly {
   { id: 'develop-agent-tech', order: 60, labelKey: 'view.agentTech', variant: 'agentTech' },
 ]
 
-/** Required services: the conversation slot, session rows, and the locale service. */
-export const inject = ['slots', 'locale', 'connection', 'sessions']
+/** Required services: the conversation slot, session rows, the Remote face, and the locale service. */
+export const inject = ['slots', 'locale', 'remote', 'sessions']
 
 /**
  * Client plugin body: register the five insight tabs. Each registration rides
@@ -43,7 +44,6 @@ export const inject = ['slots', 'locale', 'connection', 'sessions']
  * @param ctx - client root context.
  */
 export function apply(ctx: Context): void {
-  const { api } = ctx.get('connection') as ConnectionHandle
   const sessions = ctx.sessions
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'ui-project-insight: dictionaries')
   // Registration-time text (the tab labels) reads through the bound translate
@@ -64,7 +64,7 @@ export function apply(ctx: Context): void {
         // this face per (entry x session), so the closures stay identity-stable
         // and the component's unmount dispose stops the read/poll cycle cleanly.
         const controller = new ProjectInsightController(
-          api,
+          ctx.remote,
           () => sessions.list.getSnapshot().byId[sessionId]?.cwd,
         )
         return {

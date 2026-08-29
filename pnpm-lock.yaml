@@ -728,6 +728,9 @@ importers:
       '@deepseek-ai/dsh-message-feedback':
         specifier: workspace:^
         version: link:../../feedback/message-feedback
+      '@deepseek-ai/dsh-project-insight':
+        specifier: workspace:^
+        version: link:../../insight/project-insight
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
@@ -783,6 +786,9 @@ importers:
       '@deepseek-ai/dsh-client-store':
         specifier: workspace:^
         version: link:../../client/store
+      '@deepseek-ai/dsh-context-composition':
+        specifier: workspace:^
+        version: link:../../session/context-composition
       '@deepseek-ai/dsh-file-reference':
         specifier: workspace:^
         version: link:../../context/file-reference
@@ -807,6 +813,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-session-deletion':
+        specifier: workspace:^
+        version: link:../../session/session-deletion
       '@deepseek-ai/dsh-session-persistence':
         specifier: workspace:^
         version: link:../../session/session-persistence
@@ -1703,6 +1712,9 @@ importers:
       '@deepseek-ai/dsh-commands':
         specifier: workspace:^
         version: link:../../interaction/commands
+      '@deepseek-ai/dsh-compaction':
+        specifier: workspace:^
+        version: link:../../compaction/compaction
       '@deepseek-ai/dsh-credentials':
         specifier: workspace:^
         version: link:../../credentials/credentials
@@ -2180,9 +2192,6 @@ importers:
       '@deepseek-ai/dsh-api-remotes':
         specifier: workspace:^
         version: link:../../api/remotes
-      '@deepseek-ai/dsh-client-connection':
-        specifier: workspace:^
-        version: link:../connection
       '@deepseek-ai/dsh-client-locale':
         specifier: workspace:^
         version: link:../locale
@@ -2198,6 +2207,9 @@ importers:
       '@deepseek-ai/dsh-client-ui-primitives':
         specifier: workspace:^
         version: link:../ui-primitives
+      '@deepseek-ai/dsh-client-ui-renderer':
+        specifier: workspace:^
+        version: link:../ui-renderer
       '@deepseek-ai/dsh-client-ui-slots':
         specifier: workspace:^
         version: link:../ui-slots
@@ -6320,6 +6332,9 @@ importers:
       '@deepseek-ai/dsh-tools':
         specifier: workspace:^
         version: link:../../core/tools
+      '@deepseek-ai/dsh-typert-protocol':
+        specifier: workspace:^
+        version: link:../../typert/protocol
 
   packages/interaction/commands:
     dependencies:
@@ -7561,9 +7576,15 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-session-projection':
+        specifier: workspace:^
+        version: link:../session-projection
       '@deepseek-ai/dsh-token-meter':
         specifier: workspace:^
         version: link:../../llm/token-meter
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
 
   packages/session/session-checkpoint-policy:
     devDependencies:

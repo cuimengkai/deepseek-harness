@@ -13,6 +13,7 @@
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { CodeBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -77,22 +78,16 @@ function firstLine(text: string): string {
 }
 
 /**
- * Renders the context tab: read the composition on mount and on every surface
- * revision, and present the summary header, tree, and detail pane.
+ * Renders the context tab: read the composition on mount and on every
+ * durable-log revision, and present the summary header, tree, and detail pane.
  * @param props - composed conversation-view + inject + locale share.
  */
-export function ContextView({ useSession, useContextComposition, load, dispose, compactRange, t }: ContextViewProps) {
+export function ContextView({ useProjection, useContextComposition, load, dispose, compactRange, t }: ContextViewProps) {
   const state = useContextComposition(snapshot => snapshot)
-  // The conversation's last event seq (+1 while a partial streams) is the
-  // revision marker: a new message, tool call, or compaction moves it and the
-  // read refreshes. The selector returns a primitive so re-renders only fire
-  // on real movement.
-  const revision = useSession((snapshot) => {
-    const last = snapshot.nodes.length > 0
-      ? snapshot.nodes[snapshot.nodes.length - 1]?.seq ?? 0
-      : 0
-    return last + (snapshot.partial !== null ? 1 : 0)
-  })
+  // The committed-event count is the revision marker: a new message, tool
+  // call, or compaction moves it and the read refreshes. The projection row
+  // is a number, so re-renders only fire on real movement.
+  const revision = useProjection('contextRevision') ?? 0
   useEffect(() => {
     load()
   }, [load, revision])
@@ -457,6 +452,10 @@ function ContextDetail({
 }: { composition: ContextComposition; selection: Selection; t: ContextTranslate }) {
   const { envelope, surface, compactions } = composition
   const bodyRef = useRef<HTMLDivElement>(null)
+  const markdownLabels = useMemo<MarkdownLabels>(() => ({
+    code: { copyLabel: t('label.copy'), copiedLabel: t('label.copied') },
+    footnotes: t('markdown.footnotes'),
+  }), [t])
   // A row switch re-renders the pane's content; reset the scroll so a new
   // selection always opens at its top instead of the previous row's offset.
   useLayoutEffect(() => {
@@ -474,7 +473,7 @@ function ContextDetail({
         <DetailPane header={<DetailHeader title={t('label.systemTitle')} facts={facts} />} bodyRef={bodyRef}>
           {envelope.system === null
             ? <p className={css.muted}>{t('label.noPreview')}</p>
-            : <div className={css.prose}><MarkdownText text={envelope.system} /></div>}
+            : <div className={css.prose}><MarkdownText text={envelope.system} labels={markdownLabels} /></div>}
         </DetailPane>
       )
     }
@@ -521,7 +520,7 @@ function ContextDetail({
           <div className={css.prose}>
             {row.preview === null
               ? <p className={css.muted}>{t('label.noPreview')}</p>
-              : <MarkdownText text={row.preview} />}
+              : <MarkdownText text={row.preview} labels={markdownLabels} />}
           </div>
         </DetailPane>
       )

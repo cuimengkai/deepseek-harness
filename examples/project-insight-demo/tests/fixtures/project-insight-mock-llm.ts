@@ -1,6 +1,6 @@
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  CallId,
+  ToolCallId,
   LlmAdapter,
   ReasoningEffortId,
   type GenerateOptions,
@@ -33,8 +33,8 @@ class ProjectInsightMockAdapter extends LlmAdapter {
     if (toolResult === undefined) {
       const args = '{}'
       yield { type: 'block-start', index: 0, blockType: 'tool-call' }
-      yield { type: 'tool-call-delta', index: 0, id: CallId('project-insight-call'), name: 'scan_project', argumentsDelta: args }
-      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId('project-insight-call'), name: 'scan_project', arguments: args } }
+      yield { type: 'tool-call-delta', index: 0, id: ToolCallId('project-insight-call'), name: 'scan_project', argumentsDelta: args }
+      yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId('project-insight-call'), name: 'scan_project', arguments: args } }
       yield { type: 'usage', usage: { inputTokens: 11, outputTokens: 3, cacheReadTokens: 2 } }
       yield { type: 'finish', reason: { kind: 'tool-calls' } }
       return

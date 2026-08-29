@@ -1,6 +1,7 @@
 /** Agent activation, composition, and model-selection policy owned by API Session. */
 
 import { mkdir } from 'node:fs/promises'
+import type {} from '@deepseek-ai/dsh-session/context'
 import type { Context } from '@deepseek-ai/cordis'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import type {

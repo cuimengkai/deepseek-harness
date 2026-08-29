@@ -34,11 +34,12 @@ function mount({
   )
   const openSettings = vi.fn()
   const openSection = vi.fn()
-  // The unused framework shares exist because they are part of the owner face;
-  // SettingsTrigger reads only useSessions from them.
+  // The pending-interaction share exists because the global standard face
+  // requires it; SettingsTrigger never reads it.
   const unusedHook = (() => { throw new Error('unused by SettingsTrigger') }) as never
   const props: SettingsTriggerComponentProps = {
     useSessions: ((select: (state: unknown) => unknown) => select(sessions)) as never,
+    useSessionPendingInteraction: unusedHook,
     useWorkspaces: unusedHook,
     wide,
     useOnboardingSteps: select => select(steps),

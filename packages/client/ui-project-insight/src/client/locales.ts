@@ -39,6 +39,7 @@ export type ProjectInsightKey =
   | 'label.closeDetail'
   | 'label.copy'
   | 'label.copied'
+  | 'markdown.footnotes'
   | 'subtab.inventory'
   | 'subtab.skills'
   | 'subtab.mcp'
@@ -87,6 +88,7 @@ export const zh: Record<ProjectInsightKey, string> = {
   'label.closeDetail': '关闭',
   'label.copy': '复制',
   'label.copied': '复制成功',
+  'markdown.footnotes': '脚注',
   'subtab.inventory': '清单',
   'subtab.skills': '技能',
   'subtab.mcp': 'MCP',
@@ -129,6 +131,7 @@ export const en: Record<ProjectInsightKey, string> = {
   'label.closeDetail': 'Close',
   'label.copy': 'Copy',
   'label.copied': 'Copied',
+  'markdown.footnotes': 'Footnotes',
   'subtab.inventory': 'Inventory',
   'subtab.skills': 'Skills',
   'subtab.mcp': 'MCP',

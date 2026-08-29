@@ -8,6 +8,8 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import { boot, loadEnv, resolveConfigPath } from '@deepseek-ai/dsh-app-boot'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+// Type-only: registers the `ctx.agentPresets` Context member the demo reads.
+import type {} from '@deepseek-ai/dsh-agent-presets'
 import { entryListSchema } from '@deepseek-ai/cordis-plugin-include'
 import { isJsExpr, type EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
 import * as yaml from 'js-yaml'
@@ -575,7 +577,7 @@ async function main() {
     const text = renderedText(event.data.message)
     const match = /settlement (settlement-\d+) closed (\d{4}-\d{2}) at (\d+) credits \((\w+)\)/.exec(text)
     return match === null ? [] : [{
-      id: match[1] as string, period: match[2] as string, amount: Number(match[3]), status: match[4] as string,
+      id: match[1], period: match[2], amount: Number(match[3]), status: match[4],
     }]
   })
 

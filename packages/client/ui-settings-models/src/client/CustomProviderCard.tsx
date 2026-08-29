@@ -397,7 +397,7 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
                   ...keyValue.length === 0 ? {} : { apiKey: keyValue },
                 }}
                 probeBlocked={manageBlocked}
-                api={api}
+                api={api.llm}
                 models={models}
                 t={t}
                 onAdopt={(candidates) => { setModels(adoptIntoMapping(models, candidates)) }}

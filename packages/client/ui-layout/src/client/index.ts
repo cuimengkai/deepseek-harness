@@ -14,6 +14,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type { PanelActions } from './service.ts'
 import { AppFrame } from './AppFrame.tsx'
+import { createPagesSource } from './pages.ts'
 import { createLayoutStore } from './stores.ts'
 import { LayoutController } from './service.ts'
 import { ThemePresenter } from './theme-presenter.ts'
@@ -84,6 +85,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      * `id` is added beside the shipped entries instead of replacing them.
      */
     'shell.overlay': { kind: 'list'; scope: 'root' }
+    /**
+     * Frame-wide full-viewport routable pages: a list of entries whose `path`
+     * option (e.g. `/settings/:section?`) makes the entry a page route. While
+     * a page's path is the current URL the frame renders it over the whole
+     * window and makes the app grid below it inert; entries without a path can
+     * never match. This is the extension point for future full-page surfaces:
+     * register a fresh `id` beside the shipped settings page instead of
+     * replacing it.
+     */
+    'page': { kind: 'list'; scope: 'root' }
   }
 }
 
@@ -118,6 +129,7 @@ export const inject = ['slots', 'theme', 'locale']
  */
 export function apply(ctx: ClientContext): void {
   const layout = new LayoutController()
+  const pages = createPagesSource(ctx)
   ctx.effect(() => {
     const disposeService = ctx.reflect.provide('layout', layout)
     const disposeRegistration = ctx.slots.register({
@@ -128,15 +140,17 @@ export function apply(ctx: ClientContext): void {
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
         'shell.overlay': { kind: 'list', scope: 'root' },
+        'page': { kind: 'list', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per
       // entry and delivers useStore/actions to AppFrame as standard props.
       store: createLayoutStore,
       // The hook's only side effect connects the root store to ctx.layout;
-      // conversation business actions belong to their registrants.
+      // the pages source rides the frame's inject face so the frame reads
+      // the same URL↔route truth as every page consumer.
       inject: (actions: PanelActions) => {
         layout.attachPanels(actions)
-        return {}
+        return { hooks: { pages } }
       },
     }, AppFrame)
     return () => {

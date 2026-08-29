@@ -14,8 +14,7 @@ import type {
   PluginManagerUninstallRequest,
   PluginManagerUninstallResult,
 } from '@deepseek-ai/dsh-api-remotes/client'
-import type { SnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
 /** One face of the tab: the Loader inventory or the installable catalog. */
 export type PluginInventoryFaceState<T> =

@@ -686,7 +686,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                   <ManageTestDialog
                     probe={probe}
                     probeBlocked={keyFailure}
-                    api={api}
+                    api={api.llm}
                     models={models}
                     t={t}
                     onAdopt={(candidates) => {

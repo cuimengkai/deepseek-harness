@@ -42,6 +42,7 @@ async function harness(presets?: readonly string[]) {
     ctx.provide('agentPresets', roster(presets) as never)
   }
 
+  const disposers = new Map<SessionId, () => Promise<void>>()
   const factory: AgentFactory = {
     async createAgent(_ownerCtx, options) {
       const session = ctx.sessions.create(
@@ -53,10 +54,19 @@ async function harness(presets?: readonly string[]) {
       ;(agent as { ctx?: Context }).ctx = agentCtx
       await options.setup?.(agentCtx)
       const unregister = ctx.agents.register(agent)
-      return { agent, dispose: () => { unregister(); return Promise.resolve() } }
+      const dispose = () => { unregister(); return Promise.resolve() }
+      disposers.set(session.id, dispose)
+      return { agent, dispose }
     },
     async resume() {
       throw new Error('test harness has no persisted sessions')
+    },
+    async disposeAgent(id) {
+      const dispose = disposers.get(id)
+      if (dispose === undefined) return false
+      await dispose()
+      disposers.delete(id)
+      return true
     },
   }
   ctx.agents.setFactory(factory)

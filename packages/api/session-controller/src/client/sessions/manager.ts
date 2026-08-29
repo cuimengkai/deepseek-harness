@@ -9,6 +9,7 @@ import type {
   SessionControlBaseline,
   SessionControlFrame,
   SessionQueuedItem,
+  SessionDeleteValue,
   SessionError,
   SessionSummary,
   SessionJob as JobView,
@@ -617,6 +618,34 @@ export class SessionManager {
           parentSessionId: opts.sessionId,
           ...(source?.cwd !== undefined ? { cwd: source.cwd } : {}),
         } })
+      }
+      return result
+    } catch (error) {
+      return transportResult(error)
+    }
+  }
+
+  /**
+   * Physically delete a session through the host (including its subagent tree).
+   * On success each removed id drops its local live binding and completion
+   * notifications, the list mutation lands, and a selection on the deleted tree
+   * clears so the layout falls back to the no-session view.
+   * @param sessionId - the root session to delete.
+   * @returns the host's scope outcome, or a transport error.
+   */
+  async delete(sessionId: SessionId): Promise<ClientResult<SessionDeleteValue>> {
+    try {
+      const result = toSessionResult(await this.remote.session.delete({ sessionId }))
+      if (result.ok) {
+        const removed = new Set(result.value.deleted)
+        for (const id of removed) {
+          this.sessions.delete(id)
+          this.completedNotifications.delete(id)
+          this.recordMutation({ kind: 'remove', sessionId: id })
+        }
+        if (this.selected !== undefined && removed.has(this.selected)) {
+          this.selected = undefined
+        }
       }
       return result
     } catch (error) {

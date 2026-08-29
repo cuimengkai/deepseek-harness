@@ -30,6 +30,7 @@ import {
   Button, IconCheckOutline16, IconChevronDownOutline14, IconCopyOutline16, IconEditOutline16,
   IconPlusOutline16, IconTrashOutline16, Menu, Modal,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { JsonValue } from '@deepseek-ai/dsh-api-remotes/client'
 import type { MenuEntry } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls this package's SlotMap merge (the two Models child slots).
@@ -402,7 +403,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
     for (let n = 2; taken.has(id); n += 1) id = `${row.entry.provider}-copy-${n}`
     // The profile comes from a mirror snapshot; clone it so the write carries
     // a plain value no other render path aliases.
-    const value = JSON.parse(JSON.stringify(row.profile)) as unknown
+    const value = JSON.parse(JSON.stringify(row.profile)) as JsonValue
     setDuplicating(row.entry.provider)
     setDuplicateFailure(undefined)
     setSavedTarget(undefined)
@@ -483,6 +484,11 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   // renders inside the same dialog rather than opening a second one.
   const pickTarget = dialog !== undefined && dialog.kind === 'pick' ? dialog.target : undefined
   const pickNamespace = pickTarget === undefined ? undefined : state.namespaces.get(pickTarget.settingsNs)
+  // The picked cell's directory row, so the draft carries the same
+  // provider-card seat the page's configured rows carry.
+  const pickRow = pickTarget === undefined
+    ? undefined
+    : state.rows.find(row => row.entry.provider === pickTarget.provider)
 
   return (
     <div className={styles['section']}>
@@ -938,6 +944,13 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                     footerSlot={pickFooterSlot ?? undefined}
                     onClose={(changed) => { closeEditor(changed, pickTarget) }}
                   />
+                  {pickRow === undefined
+                    ? null
+                    : renderSlot(
+                      'settings.models.provider-card',
+                      { provider: pickRow.entry, configured: pickRow.configured, keyConfigured: keyConfiguredOf(pickRow) },
+                      { entryKey: pickRow.entry.settingsNs },
+                    )}
                 </div>
               )
               : null}

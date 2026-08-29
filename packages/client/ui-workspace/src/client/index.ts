@@ -121,6 +121,7 @@ export function apply(ctx: Context): void {
       await workspaces.insertBefore(workspaceId, beforeWorkspaceId)
     },
     archiveSession: async (sessionId) => { await uiWorkspace.archiveSession(sessionId) },
+    deleteSession: async (sessionId) => { await sessions.delete(sessionId) },
     insertSessionBefore: async (workspaceId, sessionId, beforeSessionId) => {
       await workspaces.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
     },

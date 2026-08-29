@@ -46,6 +46,9 @@
       "path": "../../host/plugin-manager"
     },
     {
+      "path": "../../insight/project-insight"
+    },
+    {
       "path": "../../interaction/commands"
     },
     {

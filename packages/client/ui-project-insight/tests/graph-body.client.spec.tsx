@@ -15,7 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { ModuleTopologySection, ProjectInsightDoc } from '@deepseek-ai/dsh-project-insight/src/schema.ts'
 import { InsightTab, type InsightSectionKey, type InsightTabProps } from '../src/client/InsightTab.tsx'
 import type { TopologyGraphProps } from '../src/client/TopologyGraph.tsx'

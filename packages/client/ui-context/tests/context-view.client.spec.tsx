@@ -8,9 +8,10 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { createSnapshotStore } from '@deepseek-ai/dsh-client-runtime/client'
+import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
-import type { ConversationSnapshot, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { ConversationSnapshot } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { ContextComposition } from '@deepseek-ai/dsh-context-composition/types'
 import { ContextView, type ContextViewProps } from '../src/client/ContextView.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -61,6 +62,7 @@ function setup(
   const props = {
     sessionId: SID,
     useSession: bindSnapshotSelector(sessionStore),
+    useProjection: () => 0,
     useContextComposition: bindSnapshotSelector(compositionStore),
     load,
     dispose,
@@ -158,6 +160,7 @@ describe('ContextView range selection', () => {
     view.rerender(<ContextView {...({
       sessionId: SID,
       useSession: bindSnapshotSelector(createSnapshotStore(SESSION)),
+      useProjection: () => 0,
       useContextComposition: bindSnapshotSelector(createSnapshotStore({
         status: 'ready',
         composition: {

@@ -232,6 +232,11 @@ export class FakeApiClient {
         ),
         rename: payload => this.remoteResult('session.rename', payload, this.onRename(payload)),
         fork: payload => this.remoteResult('session.fork', payload, this.onFork(payload)),
+        delete: payload => this.remoteResult(
+          'session.delete',
+          payload,
+          Promise.resolve(ok({ deleted: [payload.sessionId], notFound: [] })),
+        ),
         prompt: payload => this.remoteResult('session.prompt', payload, this.onPrompt(payload)),
         attachment: payload => this.remoteResult('session.attachment', payload, this.onAttachment(payload)),
         updateQueue: payload => this.remoteResult('session.updateQueue', payload, this.onUpdateQueue(payload)),

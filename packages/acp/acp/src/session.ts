@@ -1,6 +1,7 @@
 /** One standard ACP session's Agent, configuration, prompt, update, and teardown lifecycle. */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import {
   RequestError,
   type McpServer,

@@ -12,7 +12,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  CallId,
+  ToolCallId,
   LlmAdapter,
   type GenerateOptions,
   type LlmResolvedModelInfo,
@@ -44,8 +44,8 @@ class PlatformShellAdapter extends LlmAdapter {
   private * toolCall(callId: string, name: string, args: unknown): Generator<StreamChunk> {
     const serialized = JSON.stringify(args)
     yield { type: 'block-start', index: 0, blockType: 'tool-call' }
-    yield { type: 'tool-call-delta', index: 0, id: CallId(callId), name, argumentsDelta: serialized }
-    yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId(callId), name, arguments: serialized } }
+    yield { type: 'tool-call-delta', index: 0, id: ToolCallId(callId), name, argumentsDelta: serialized }
+    yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId(callId), name, arguments: serialized } }
     yield { type: 'usage', usage: { inputTokens: 12, outputTokens: 3 } }
     yield { type: 'finish', reason: { kind: 'tool-calls' } }
   }
@@ -75,18 +75,18 @@ class PlatformShellAdapter extends LlmAdapter {
           })
           return
         }
-        if (last.toolCallId === CallId('alice-register')) {
+        if (last.toolCallId === ToolCallId('alice-register')) {
           yield* this.toolCall('alice-submit', 'submit_ticket', {
             workspaceId: workspaceIdFrom(task),
             subjectAssetId: 'requirement-1',
           })
           return
         }
-        if (last.toolCallId === CallId('alice-submit')) {
+        if (last.toolCallId === ToolCallId('alice-submit')) {
           yield* this.toolCall('alice-review', 'approve_ticket', { ticketId: ticketIdFrom(last), to: 'review' })
           return
         }
-        if (last.toolCallId === CallId('alice-review')) {
+        if (last.toolCallId === ToolCallId('alice-review')) {
           yield* this.toolCall('alice-approve', 'approve_ticket', {
             ticketId: ticketIdFrom(last),
             to: 'approved',
@@ -103,7 +103,7 @@ class PlatformShellAdapter extends LlmAdapter {
           yield* this.toolCall('dev-read', 'get_asset', { assetId: 'requirement-1' })
           return
         }
-        if (last.toolCallId === CallId('dev-read')) {
+        if (last.toolCallId === ToolCallId('dev-read')) {
           yield* this.toolCall('dev-register', 'register_asset', {
             workspaceId: workspaceIdFrom(task),
             kind: 'code',
@@ -112,7 +112,7 @@ class PlatformShellAdapter extends LlmAdapter {
           })
           return
         }
-        if (last.toolCallId === CallId('dev-register')) {
+        if (last.toolCallId === ToolCallId('dev-register')) {
           yield* this.toolCall('dev-link', 'link_asset', { assetId: 'code-2', parentId: 'requirement-1' })
           return
         }
@@ -124,7 +124,7 @@ class PlatformShellAdapter extends LlmAdapter {
           yield* this.toolCall('qa-read', 'get_asset', { assetId: 'code-2' })
           return
         }
-        if (last.toolCallId === CallId('qa-read')) {
+        if (last.toolCallId === ToolCallId('qa-read')) {
           yield* this.toolCall('qa-register', 'register_asset', {
             workspaceId: workspaceIdFrom(task),
             kind: 'test-case',
@@ -133,11 +133,11 @@ class PlatformShellAdapter extends LlmAdapter {
           })
           return
         }
-        if (last.toolCallId === CallId('qa-register')) {
+        if (last.toolCallId === ToolCallId('qa-register')) {
           yield* this.toolCall('qa-link', 'link_asset', { assetId: 'test-case-3', parentId: 'code-2' })
           return
         }
-        if (last.toolCallId === CallId('qa-link')) {
+        if (last.toolCallId === ToolCallId('qa-link')) {
           yield* this.toolCall('qa-ancestors', 'asset_ancestors', { assetId: 'test-case-3' })
           return
         }
@@ -149,7 +149,7 @@ class PlatformShellAdapter extends LlmAdapter {
           yield* this.toolCall('admin-list', 'list_tickets', { workspaceId: workspaceIdFrom(task) })
           return
         }
-        if (last.toolCallId === CallId('admin-list')) {
+        if (last.toolCallId === ToolCallId('admin-list')) {
           yield* this.toolCall('admin-release', 'approve_ticket', { ticketId: ticketIdFrom(last), to: 'released' })
           return
         }
@@ -161,7 +161,7 @@ class PlatformShellAdapter extends LlmAdapter {
           yield* this.toolCall('mallory-read', 'get_asset', { assetId: 'requirement-1' })
           return
         }
-        if (last.toolCallId === CallId('mallory-read')) {
+        if (last.toolCallId === ToolCallId('mallory-read')) {
           yield* this.textReply(last.isError
             ? `Read denied: not a member of the workspace (${resultText(last)})`
             : 'Unexpectedly read the asset — the denial did not fire')

@@ -39,6 +39,16 @@ export type SettingsTriggerInjected = {
     onboardingSteps: HostObservable<readonly SettingsOnboardingStep[]>
     /** Whether the current URL is on the settings route (suppresses the onboarding overlays behind the covering page). */
     settingsRoute: HostObservable<boolean>
+    /**
+     * The useSessions standard feed (list rows + current selection), read as
+     * the empty-Hero fact: onboarding mounts only while no concrete session
+     * is selected.
+     */
+    sessions: HostObservable<{
+      phase: 'pending' | 'ready' | 'loading' | 'error'
+      current: string | undefined
+      byId: Readonly<Record<string, { blank?: boolean }>>
+    }>
   }
   /** Open the settings page (navigates to `/settings` when not already there). */
   openSettings: () => void

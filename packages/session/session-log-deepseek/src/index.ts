@@ -6,6 +6,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { SessionId, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'

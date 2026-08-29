@@ -149,8 +149,12 @@ export class AgentPresetSeatController {
     }
     if (session === undefined) return
     // A started session's history was produced under its own composition; the
-    // host refuses the swap, so the stage is no longer meaningful.
-    if (!session.blank || presetOf(session) === staged) {
+    // host refuses the swap. The stage still names the session the next
+    // connect is about to create (a develop pick that precedes an import), so
+    // it stays pending instead of settling as unservable.
+    if (!session.blank) return
+    // The session already runs the staged preset: the stage is consumed.
+    if (presetOf(session) === staged) {
       this.staged = undefined
       return
     }

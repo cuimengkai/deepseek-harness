@@ -10,6 +10,7 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session/context'
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import { realpath } from 'node:fs/promises'

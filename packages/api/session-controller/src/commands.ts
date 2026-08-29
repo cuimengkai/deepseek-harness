@@ -1,6 +1,7 @@
 /** Session commands whose activation policy is explicit at each Remote method. */
 
 import { randomUUID } from 'node:crypto'
+import type {} from '@deepseek-ai/dsh-session/context'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
 import { PresetMountError, UnknownPresetError } from '@deepseek-ai/dsh-agent-presets'

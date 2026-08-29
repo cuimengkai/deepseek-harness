@@ -614,6 +614,7 @@ export function PluginInventorySettingsTab({
           open
           onClose={closeConfirmation}
           title={t('confirmTitle')}
+          closeLabel={t('close')}
           className={css.confirmation ?? ''}
           contentClassName={css.confirmationContent ?? ''}
           footer={(

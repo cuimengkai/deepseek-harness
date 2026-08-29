@@ -12,6 +12,18 @@ import { GeneralSection } from '../src/client/GeneralSection.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from '../src/client/SettingsDocumentAction.tsx'
 
+/**
+ * The sessions feed the shell trigger's onboarding coordinator reads. The
+ * copy seats this spec asserts never consult it, so one stable empty feed
+ * serves every bench.
+ */
+const EMPTY_SESSIONS = {
+  list: {
+    getSnapshot: () => ({ phase: 'ready', ids: [], byId: {}, current: undefined }),
+    subscribe: () => () => {},
+  },
+}
+
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
 // FALLBACK_LOCALE (en); bench stages zh explicitly on the locale instead.
@@ -45,6 +57,18 @@ async function bench(isLoopback = true) {
   ctx.provide('connection', {
     isLoopback,
   } as never)
+  // The trigger's onboarding coordinator reads the sessions feed; the router
+  // drives openSettings/openSection. Neither drives this spec's copy seats.
+  ctx.provide('sessions', EMPTY_SESSIONS as never)
+  ctx.provide('router', {
+    getVersion: () => 0,
+    getSnapshot: () => ({ pathname: '/' }),
+    matchParams: () => undefined,
+    navigate: () => {},
+    back: () => {},
+    match: () => undefined,
+    subscribe: () => () => {},
+  } as never)
   new TestRemote(ctx, {
     settings: { describe: settingsDescribe, openSettingsDocument: settingsOpenDocument },
   })
@@ -76,7 +100,7 @@ function generalEntry(slots: SlotRegistry) {
 
 describe('ui-settings-general apply', () => {
   it('declares the services it uses', () => {
-    expect(inject).toEqual(['slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope'])
+    expect(inject).toEqual(['slots', 'locale', 'connection', 'settingsScope', 'router'])
   })
 
   it('fills all five seats for declarations before or after apply', async () => {

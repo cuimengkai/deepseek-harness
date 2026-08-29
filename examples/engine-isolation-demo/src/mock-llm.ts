@@ -13,7 +13,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import {
-  CallId,
+  ToolCallId,
   LlmAdapter,
   type GenerateOptions,
   type LlmResolvedModelInfo,
@@ -34,8 +34,8 @@ class EngineDemoAdapter extends LlmAdapter {
   private * toolCall(callId: string, name: string, args: unknown): Generator<StreamChunk> {
     const serialized = JSON.stringify(args)
     yield { type: 'block-start', index: 0, blockType: 'tool-call' }
-    yield { type: 'tool-call-delta', index: 0, id: CallId(callId), name, argumentsDelta: serialized }
-    yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: CallId(callId), name, arguments: serialized } }
+    yield { type: 'tool-call-delta', index: 0, id: ToolCallId(callId), name, argumentsDelta: serialized }
+    yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: ToolCallId(callId), name, arguments: serialized } }
     yield { type: 'usage', usage: { inputTokens: 12, outputTokens: 3 } }
     yield { type: 'finish', reason: { kind: 'tool-calls' } }
   }
@@ -65,7 +65,7 @@ class EngineDemoAdapter extends LlmAdapter {
         })
         return
       }
-      if (last.toolCallId === CallId(`${session}-register`)) {
+      if (last.toolCallId === ToolCallId(`${session}-register`)) {
         yield* this.textReply(`Registered ${content} as the ${session} workspace's requirement asset.`)
         return
       }

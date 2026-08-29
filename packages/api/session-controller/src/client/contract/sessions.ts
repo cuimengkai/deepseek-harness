@@ -96,6 +96,13 @@ export interface ISessions {
    */
   fork(opts: { sessionId: SessionId; atSeq?: number; increaseTitle?: boolean }): Promise<SessionId>
   /**
+   * Physically delete a session and its whole subagent tree through the host;
+   * the removed sessions leave the local list and any selection on them clears.
+   * @param sessionId - the root session to delete.
+   * @throws when the host refuses (e.g. a live member) or the RPC fails.
+   */
+  delete(sessionId: SessionId): Promise<void>
+  /**
    * Resolve an Agent-scoped context view (use-and-discard).
    * @param id - session id.
    * @returns scoped ctx, or undefined for a session neither listed nor already scoped.

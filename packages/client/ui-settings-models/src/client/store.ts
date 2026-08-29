@@ -365,7 +365,7 @@ export class ModelsSettingsStore {
   }> {
     if (refs.length === 0) return { credentials: {}, error: null }
     try {
-      const response = await this.api.credentials.describe(refs)
+      const response = await this.api.credentials.describe([...refs])
       // Credential state is an enrichment for the Models page: neither a
       // business rejection nor a transport failure fails the load. The
       // onboarding projection below retains the failure distinction.

@@ -12,7 +12,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { CodeBlock, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { CodeBlock, MarkdownText, type MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InjectFace, PropsLocale, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -58,6 +58,14 @@ type SectionTranslate = TranslateNS<typeof NS>
 
 /** The shared documents pool keyed by root-relative path. */
 type ContentByPath = ReadonlyMap<string, FileContentRow>
+
+/** Localized chrome for a Markdown document rendered from a committed row. */
+function markdownLabelsOf(t: SectionTranslate): MarkdownLabels {
+  return {
+    code: { copyLabel: t('label.copy'), copiedLabel: t('label.copied') },
+    footnotes: t('markdown.footnotes'),
+  }
+}
 
 /** One row of a dependency full list: a path and its rendered imports. */
 interface ListRow {
@@ -605,7 +613,7 @@ function fileContentNode(
   const row = contentByPath.get(path)
   if (row === undefined) return null
   return isMarkdownPath(path)
-    ? <MarkdownText text={row.content} />
+    ? <MarkdownText text={row.content} labels={markdownLabelsOf(t)} />
     : (
       <CodeBlock
         code={row.content}
@@ -640,7 +648,7 @@ function MarkdownViewer({
         return (
           <>
             <p className={css.markdownPath}>{row.path}</p>
-            <MarkdownText text={row.content} />
+            <MarkdownText text={row.content} labels={markdownLabelsOf(t)} />
           </>
         )
       }}

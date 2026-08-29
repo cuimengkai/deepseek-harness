@@ -1,15 +1,19 @@
+// @vitest-environment jsdom
 /** Settings shell registration: slot declaration injection, the ledger projections, and HMR recovery. */
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, vi } from 'vitest'
 import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
+import { RouterService } from '@deepseek-ai/dsh-client-ui-router/client'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '../src/client/index.ts'
-import type { SettingsRootInjected } from '../src/client/shell-contract.ts'
-import { SettingsRoot } from '../src/client/SettingsRoot.tsx'
+import type { SettingsPageInjected, SettingsTriggerInjected } from '../src/client/shell-contract.ts'
+import { SettingsTrigger } from '../src/client/SettingsTrigger.tsx'
+import { SettingsPage } from '../src/client/SettingsPage.tsx'
 
 async function bench() {
   const ctx = new Context()
   await ctx.plugin(SlotRegistry).await()
+  await ctx.plugin(RouterService).await()
   // Copy machinery the shell only reads a revision from; the real locale
   // plugin would drag its own settings-row dependencies into this bench.
   ctx.provide('locale', {
@@ -26,23 +30,41 @@ async function bench() {
   }
   ctx.provide('remote', { $on: () => () => {}, settings } as never)
   ctx.provide('remote.settings', settings as never)
+  // The sessions feed the trigger's onboarding coordinator reads.
+  ctx.provide('sessions', {
+    list: {
+      getSnapshot: () => ({ phase: 'ready', ids: [], byId: {}, current: undefined }),
+      subscribe: () => () => {},
+    },
+  } as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry }
 }
 
 function declare(slots: SlotRegistry): () => void {
   return slots.register(
-    { name: 'root', children: { 'sidebar.settings': { kind: 'single', scope: 'root' } } } as never,
+    {
+      name: 'root',
+      children: {
+        'sidebar.settings': { kind: 'single', scope: 'root' },
+        'page': { kind: 'list', scope: 'root' },
+      },
+    } as never,
     () => null,
   )
 }
 
-function injectedOf(slots: SlotRegistry): SettingsRootInjected {
+function triggerInjectedOf(slots: SlotRegistry): SettingsTriggerInjected {
   const entry = slots.entries('sidebar.settings')[0]!
-  return (entry.inject as () => SettingsRootInjected)()
+  return (entry.inject as () => SettingsTriggerInjected)()
 }
 
-/** The shell's child declarations (chrome, actions, sections, and onboarding overlays). */
+function pageInjectedOf(slots: SlotRegistry): SettingsPageInjected {
+  const entry = slots.entries('page').find(e => e.options.id === 'settings')!
+  return (entry.inject as () => SettingsPageInjected)()
+}
+
+/** The two occupants' child declarations (trigger chrome and page chrome/sections). */
 const CHILD_SPECS = {
   'settings.trigger': { kind: 'single', scope: 'root' },
   'settings.header': { kind: 'single', scope: 'root' },
@@ -52,18 +74,21 @@ const CHILD_SPECS = {
   'settings.onboarding': { kind: 'list', scope: 'root' },
 } as const
 
-describe('ui-settings apply', () => {
-  it('declares only the slot registry (a pure composition face, no locale)', () => {
+describe('ui-settings-general apply', () => {
+  it('declares the slots, router, and sessions faces it needs', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'connection', 'remote', 'remote.settings', 'settingsScope',
+      'slots', 'locale', 'connection', 'settingsScope', 'router',
     ])
   })
 
-  it('registers the shell and declares every child slot, before or after the declaration', async () => {
+  it('registers the trigger and the routed page, before or after the declaration', async () => {
     const before = await bench()
     declare(before.slots)
     await before.ctx.plugin({ inject: [...inject], apply }).await()
-    expect(before.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsRoot)
+    expect(before.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsTrigger)
+    const page = before.slots.entries('page').find(e => e.options.id === 'settings')!
+    expect(page.component).toBe(SettingsPage)
+    expect(page.options.path).toBe('/settings/:section?')
     for (const name of Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>) {
       expect(before.slots.spec(name)).toEqual(CHILD_SPECS[name])
     }
@@ -73,7 +98,7 @@ describe('ui-settings apply', () => {
     expect(after.slots.entries('sidebar.settings')).toHaveLength(0)
     declare(after.slots)
     await Promise.resolve()
-    expect(after.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsRoot)
+    expect(after.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsTrigger)
     // The self-inflicted ledger notifications hit the duplicate guard.
     expect(after.slots.entries('sidebar.settings')).toHaveLength(1)
   })
@@ -82,7 +107,7 @@ describe('ui-settings apply', () => {
     const b = await bench()
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
-    const { sections } = injectedOf(b.slots).hooks
+    const { sections } = pageInjectedOf(b.slots).hooks
     // This package registers the General section itself; every other section
     // arrives from a feature registrant.
     const GENERAL = { id: 'general', order: 0, label: 'general.nav' }
@@ -111,7 +136,7 @@ describe('ui-settings apply', () => {
     const b = await bench()
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
-    const { onboardingSteps } = injectedOf(b.slots).hooks
+    const { onboardingSteps } = triggerInjectedOf(b.slots).hooks
     b.slots.register({ name: 'settings.onboarding', id: 'credential', order: 0 } as never, () => null)
     b.slots.register({ name: 'settings.onboarding', id: 'welcome', order: -100 } as never, () => null)
     b.slots.register({ name: 'settings.onboarding', id: 'default-order' } as never, () => null)
@@ -142,19 +167,20 @@ describe('ui-settings apply', () => {
     expect(b.slots.spec('settings.trigger')).toBeUndefined()
     declare(b.slots)
     await Promise.resolve()
-    expect(b.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsRoot)
+    expect(b.slots.entries('sidebar.settings')[0]!.component).toBe(SettingsTrigger)
     for (const name of Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>) {
       expect(b.slots.spec(name)).toEqual(CHILD_SPECS[name])
     }
   })
 
-  it('unregisters the shell and collapses every child slot on teardown', async () => {
+  it('unregisters the occupants and collapses every child slot on teardown', async () => {
     const b = await bench()
     declare(b.slots)
     const fiber = b.ctx.plugin({ inject: [...inject], apply })
     await fiber.await()
     await fiber.dispose()
     expect(b.slots.entries('sidebar.settings')).toHaveLength(0)
+    expect(b.slots.entries('page').filter(e => e.options.id === 'settings')).toHaveLength(0)
     for (const name of Object.keys(CHILD_SPECS) as Array<keyof typeof CHILD_SPECS>) {
       expect(b.slots.spec(name)).toBeUndefined()
     }

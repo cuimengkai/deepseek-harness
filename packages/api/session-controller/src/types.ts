@@ -230,6 +230,11 @@ export interface SkillListRequest {
   readonly sessionId: SessionId
 }
 
+/** Session-addressed request for the live context-composition read. */
+export interface ContextCompositionReadRequest {
+  readonly sessionId: SessionId
+}
+
 /** One skill available to the Session's human-facing composer. */
 export interface SkillEntry {
   /** Kebab-case identifier referenced as `/name`. */
@@ -280,6 +285,19 @@ export interface SessionCreateRequest {
 export interface SessionCreateValue {
   readonly sessionId: SessionId
   readonly agentPreset?: string
+}
+
+/** Session deletion request: the root of the subagent tree to remove. */
+export interface SessionDeleteRequest {
+  readonly sessionId: SessionId
+}
+
+/** Session deletion response value. */
+export interface SessionDeleteValue {
+  /** Every session removed by the cascade, including the requested root. */
+  readonly deleted: readonly SessionId[]
+  /** Scope members that no longer existed when the cascade reached them. */
+  readonly notFound: readonly SessionId[]
 }
 
 /** Session model-selection request. */

@@ -208,7 +208,7 @@ describe('network install through a real Loader composition', () => {
     ]))))
     // The gateway's package.json is the app manifest whose dependency closure
     // (including the cordis peer) is symlinked into the profiles fallback.
-    healProfilesModuleFallback(fileURLToPath(new URL('../package.json', import.meta.url)), root)
+    await healProfilesModuleFallback({ installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)), home: root })
 
     const ctx = await boot(NAME, join(profileDir, 'cordis.yml'), [], routeModules(new Map([
       ['@deepseek-ai/dsh-host-plugin-manager', PluginManagerGateway],
@@ -293,7 +293,7 @@ describe('network install under the sandbox through a real Loader composition', 
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([
       { name: NET_NAME, ref: INSTALL_REF, installable: true },
     ]))))
-    healProfilesModuleFallback(fileURLToPath(new URL('../package.json', import.meta.url)), root)
+    await healProfilesModuleFallback({ installAnchor: fileURLToPath(new URL('../package.json', import.meta.url)), home: root })
 
     const ctx = await boot(NAME, join(profileDir, 'cordis.yml'), [], routeModules(new Map<string, unknown>([
       ['@deepseek-ai/dsh-sandbox-local', LocalSandboxProvider],

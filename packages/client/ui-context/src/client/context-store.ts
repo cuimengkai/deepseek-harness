@@ -6,7 +6,7 @@
  * session switch never flashes a previous session's composition.
  */
 
-import type { IApiClient } from '@deepseek-ai/dsh-api-remotes/client'
+import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { createSnapshotStore, type SnapshotStore } from '@deepseek-ai/dsh-client-store'
 
@@ -46,7 +46,7 @@ export class ContextCompositionController {
    * @param sessionId - the live session whose context this tab renders.
    */
   constructor(
-    private readonly api: Pick<IApiClient, 'contextComposition'>,
+    private readonly api: Pick<ClientRemote, 'contextComposition'>,
     private readonly sessionId: SessionId,
   ) {}
 
@@ -86,12 +86,11 @@ export class ContextCompositionController {
       return
     }
     if (generation !== this.generation) return
-    const result = response.result
-    if (!result.ok) {
-      this.set({ status: 'error', error: result.error.message })
+    if (!response.ok) {
+      this.set({ status: 'error', error: `${response.error.message} (${response.error.code})` })
       return
     }
-    const composition = result.value
+    const composition = response.value
     const status = composition.envelope === null && composition.surface.length === 0
       ? 'empty'
       : 'ready'

@@ -37,9 +37,11 @@ import { settingsNamespace, type SettingsScope, type default as SettingsService 
 import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { discoverPresets, SHIPPED_PRESET_ROOT, USER_PRESET_DIR } from './discovery.ts'
 import {
-  copyComposition, deleteComposition, readComposition,
+  copyComposition, deleteComposition, readComposition, writableRoot, writeComposition,
   InvalidPresetIdError, PresetExistsError, PresetNotWritableError,
 } from './authoring.ts'
+import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+import { type PresetMetadata } from './metadata.ts'
 import { mountPreset, serviceForAgent, standingMountFor } from './mount.ts'
 import {
   PresetLockedError, PresetMountError, UnknownPresetError,
@@ -133,9 +135,9 @@ export {
 } from './mount.ts'
 export {
   copyComposition, deleteComposition, InvalidPresetIdError, PresetExistsError,
-  PresetNotWritableError, readComposition, writableRoot,
+  PresetNotWritableError, readComposition, writableRoot, writeComposition,
 } from './authoring.ts'
-export { agentPresetProjectionDefinition } from './session.ts'
+export { agentPresetProjectionDefinition, resolveSessionPreset, type PresetBearingSession } from './session.ts'
 export { PresetLockedError, PresetMountError, UnknownPresetError } from './preset.ts'
 export type { AgentPreset, Config, PresetRoot, PresetTrust } from './preset.ts'
 
@@ -520,11 +522,11 @@ export class AgentPresets extends TypertRemoteService {
   /**
    * Create a locally authored preset by copying an existing one whole.
    *
-   * Copy is the only authoring write. Composition text never crosses this
-   * seam: the source is named by id and its directory is copied as it stands,
-   * so the copy is exactly as loadable as its source and authoring grants no
-   * capability the roster did not already carry. The copy is NOT mounted to
-   * validate — a source that mounts today yields a copy that mounts today.
+   * A copy's composition text never crosses this seam: the source is named by
+   * id and its directory is copied as it stands, so the copy is exactly as
+   * loadable as its source and authoring grants no capability the roster did
+   * not already carry. The copy is NOT mounted to validate — a source that
+   * mounts today yields a copy that mounts today.
    * @param from - the preset the copy starts from; shipped presets are the
    * primary source, so any trust is accepted.
    * @param id - the new preset's id, which becomes its directory name.
@@ -544,6 +546,30 @@ export class AgentPresets extends TypertRemoteService {
     // A settled mount under this id can only be stale (its preset was deleted
     // from disk outside `remove`); the new preset must not inherit it. Every
     // session already joined keeps the generation it runs on regardless.
+    this.standing.delete(id)
+  }
+
+  /**
+   * Create one locally authored preset from composition rows.
+   *
+   * The one sanctioned exception to "no caller supplies composition text":
+   * the platform preset assembler renders a validated tree and commits it
+   * through this write. The write is NOT mounted to validate; loader-level
+   * checks (`inactiveRows` / `leakedServices`) run at mount.
+   * @param id - the new preset's id, which becomes its directory name.
+   * @param rows - the composition rows to persist.
+   * @param meta - display metadata to publish beside the composition.
+   * @throws when the id is unusable or already taken, or the deployment
+   * configures no writable root.
+   */
+  async write(id: string, rows: readonly EntryOptions[], meta?: PresetMetadata): Promise<void> {
+    // The roster check refuses ids any root supplies, mirroring `copy`.
+    if ((await this.list()).some(preset => preset.id === id)) {
+      throw new PresetExistsError(id)
+    }
+    await writeComposition(writableRoot(this.resolvedRoots), id, rows, meta)
+    // A settled mount under this id can only be stale; the fresh preset must
+    // not inherit it. Every session already joined keeps its generation.
     this.standing.delete(id)
   }
 

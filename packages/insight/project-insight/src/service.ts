@@ -16,17 +16,20 @@
  */
 
 import { basename } from 'node:path'
-import { Context, Service } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { resolveSessionPreset } from '@deepseek-ai/dsh-agent-presets'
 import type { Session, SessionId } from '@deepseek-ai/dsh-session'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { MAX_FINGERPRINT_FILES } from './schema.ts'
 import { PROJECT_INSIGHT_META_REL, ProjectInsightVersionError, readDocument, writeDocument } from './fingerprint.ts'
 import { findProjectRoot } from './paths.ts'
 import { scanProject, type ScanSummary } from './scanner.ts'
 import { errorMessage } from './error.ts'
 import type { ProjectInsightDoc } from './schema.ts'
-import type {} from './types.ts'
+import type { ProjectInsightReadResult } from './types.ts'
+
+export type { ProjectInsightReadResult, ProjectInsightReadStatus } from './types.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -40,20 +43,6 @@ export interface ProjectInsightConfig {
   readonly autoScanPresets: string[]
   /** Milliseconds a session's scan waits after its last trigger before running. */
   readonly scanDebounceMs: number
-}
-
-/** Whether a stored document exists and matches the current tree. */
-export type ProjectInsightReadStatus = 'none' | 'fresh' | 'stale' | 'error'
-
-/** The result of {@link ProjectInsight.read}. */
-export interface ProjectInsightReadResult {
-  readonly status: ProjectInsightReadStatus
-  /** Project root basename — identity only, never a host path. */
-  readonly root: string
-  /** The stored document, when one exists and parses. */
-  readonly doc?: ProjectInsightDoc
-  /** Human-readable failure text when `status` is `'error'`. */
-  readonly error?: string
 }
 
 /** The outcome of one scan attempt. */
@@ -77,7 +66,7 @@ export interface ProjectInsightScanResult {
  * single-flight per root; a session arriving while its root is being scanned
  * joins the waiting set and is notified at the commit point.
  */
-export class ProjectInsight extends Service {
+export class ProjectInsight extends TypertRemoteService {
   /** Runtime schema for the auto-scan trigger and debounce. */
   static Config = z.object({
     autoScanPresets: z.array(z.string()).default(['develop']),
@@ -149,6 +138,21 @@ export class ProjectInsight extends Service {
       }
       return { status: 'error', root: basename(root), error: errorMessage(error) }
     }
+  }
+
+  /**
+   * Remote adapter for the browser insight tabs' document read.
+   *
+   * The result carries only the project root's basename — identity, never a
+   * Host path — and the stored document exactly as the read produced it, so
+   * the conversation-reconnaissance posture of the old privileged RPC holds.
+   * @param cwd - absolute working directory to resolve the project root from.
+   * @param signal - caller cancellation supplied by the Remote carrier.
+   * @returns the document state and, when present, the parsed document.
+   */
+  @Remote('read')
+  readRemote(cwd: string, signal: AbortSignal): Promise<ProjectInsightReadResult> {
+    return this.read(cwd, signal)
   }
 
   /**

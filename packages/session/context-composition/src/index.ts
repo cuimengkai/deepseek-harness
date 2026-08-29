@@ -19,8 +19,11 @@ import {
 } from '@deepseek-ai/dsh-token-meter/estimate'
 // Type-only: the `compaction/*` session-event vocabulary this fold reads.
 import type {} from '@deepseek-ai/dsh-compaction/types'
+// Type-only: pulls the session-projection Context merge (ctx.sessionProjections).
+import type {} from '@deepseek-ai/dsh-session-projection'
 import { canonicalHeader, deriveEventMessage, isSurfaceEvent } from '@deepseek-ai/dsh-session'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
+import { contextRevisionProjection } from './projection.ts'
 import type {
   ContextCompactionEntry, ContextComposition, ContextEnvelope,
   ContextSurfaceRow, ContextToolRow,
@@ -146,6 +149,13 @@ function envelopeOf(events: readonly SessionEvent[]): ContextEnvelope | null {
 export class ContextCompositionService extends Service {
   constructor(ctx: Context) {
     super(ctx, 'contextComposition')
+    // The revision marker rides the projection registry when it is mounted;
+    // a composition without session-projection (bare service tests) simply
+    // serves reads without the change feed.
+    ctx.inject(['sessionProjections'], (scope) => {
+      scope.effect(() => scope.sessionProjections.register(contextRevisionProjection),
+        'context-composition: contextRevision projection')
+    })
   }
 
   /**
