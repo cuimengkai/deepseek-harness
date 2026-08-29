@@ -7,8 +7,10 @@
  *
  * The scanner is keyless and deterministic: same bounded tree → byte-identical
  * document. The service auto-scans when a session's resolved agent preset is a
- * member of `config.autoScanPresets` (default `['develop']`), and persists into
- * the scanned project's own `.dsh/` so a second open loads without re-scanning.
+ * member of `config.autoScanPresets` (default `['develop']`) — and when a read
+ * observes an absent or stale document, so a session restored after a host
+ * restart still converges on a fresh document — and persists into the scanned
+ * project's own `.dsh/` so a second open loads without re-scanning.
  * @module @deepseek-ai/dsh-project-insight
  */
 
