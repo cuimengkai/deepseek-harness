@@ -35,7 +35,7 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('./snapshots/agent-preset-composer', 
 const COMPOSER_OPEN_EXPECTED = join(SNAPSHOT_DIR, 'composer-open.expected.md')
 const COMPOSER_ROWS_EXPECTED = join(SNAPSHOT_DIR, 'composer-rows.expected.md')
 /** The shipped roster, beside the composition that names it. */
-const SHIPPED_PRESETS = fileURLToPath(new URL('../../cli/config/agent-presets', import.meta.url))
+const SHIPPED_PRESETS = fileURLToPath(new URL('../../../packages/preset/agent-presets/presets', import.meta.url))
 const OVERLAY = fileURLToPath(new URL('./agent-preset-authoring.overlay.yml', import.meta.url))
 const MODE = webSnapshotMode()
 
