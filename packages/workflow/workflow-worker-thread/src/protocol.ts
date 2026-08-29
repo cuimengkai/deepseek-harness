@@ -7,8 +7,14 @@
  * @module @deepseek-ai/dsh-workflow-worker-thread/protocol
  */
 
-import type { WorkflowAgentEndInfo, WorkflowAgentInfo, WorkflowResult } from '@deepseek-ai/dsh-workflow'
-import type { ChildResult, ChildStartRequest } from './types.ts'
+import type {
+  WorkflowAgentEndInfo,
+  WorkflowAgentInfo,
+  WorkflowNodeEndInfo,
+  WorkflowNodeInfo,
+  WorkflowResult,
+} from '@deepseek-ai/dsh-workflow'
+import type { ChildResult, ChildStartRequest, CodeExecuteOutcome, CodeExecuteRequest, HttpFetchOutcome, HttpFetchRequest } from './types.ts'
 
 /** Message tags the worker sends the host (the wire values are the tag strings). */
 export enum WorkerToHostType {
@@ -22,10 +28,18 @@ export enum WorkerToHostType {
   AgentStart = 'agent-start',
   /** Observer lifecycle: one `agent()` call settled. */
   AgentEnd = 'agent-end',
+  /** Observer lifecycle: one non-agent processing-node call started (e.g. `http()`). */
+  NodeStart = 'node-start',
+  /** Observer lifecycle: one non-agent processing-node call settled. */
+  NodeEnd = 'node-end',
   /** Child RPC: start a child on the host (answered by ChildStarted or ChildStartError). */
   ChildStart = 'child-start',
   /** Child RPC: dispose a started child (answered by ChildDisposed). */
   ChildDispose = 'child-dispose',
+  /** HTTP RPC: retrieve one URL on the host through `ctx.web.fetch` (answered by HttpFetched or HttpFetchError). */
+  HttpFetch = 'http-fetch',
+  /** Code RPC: run one program on the host through `ctx.codeRuntime.run` (answered by CodeExecuted or CodeExecuteError). */
+  CodeExecute = 'code-execute',
   /** The run's single terminal result. */
   Result = 'result',
 }
@@ -42,10 +56,18 @@ export interface WorkerToHostPayloads {
   [WorkerToHostType.AgentStart]: { info: WorkflowAgentInfo }
   /** The call identity plus its outcome. */
   [WorkerToHostType.AgentEnd]: { info: WorkflowAgentEndInfo }
+  /** The call's sequence number and owning flow node id. */
+  [WorkerToHostType.NodeStart]: { node: WorkflowNodeInfo }
+  /** The call identity plus its outcome. */
+  [WorkerToHostType.NodeEnd]: { node: WorkflowNodeEndInfo }
   /** The RPC correlation id and the prompt plus validated options. */
   [WorkerToHostType.ChildStart]: { callId: number; request: ChildStartRequest }
   /** The RPC correlation id of the child to dispose. */
   [WorkerToHostType.ChildDispose]: { callId: number }
+  /** The RPC correlation id and the URL to retrieve. */
+  [WorkerToHostType.HttpFetch]: { callId: number; request: HttpFetchRequest }
+  /** The RPC correlation id and the program to run. */
+  [WorkerToHostType.CodeExecute]: { callId: number; request: CodeExecuteRequest }
   /** The run's terminal outcome. */
   [WorkerToHostType.Result]: { result: WorkflowResult }
 }
@@ -66,6 +88,14 @@ export enum HostToWorkerType {
   ChildFailed = 'child-failed',
   /** Child RPC reply: a requested disposal completed. */
   ChildDisposed = 'child-disposed',
+  /** HTTP RPC reply: the fetch completed (a non-2xx response is still a fulfilled fetch). */
+  HttpFetched = 'http-fetched',
+  /** HTTP RPC reply: the fetch could not be retrieved (rendered). */
+  HttpFetchError = 'http-fetch-error',
+  /** Code RPC reply: the program ran (a failed {@link CodeRunResult} is still a fulfilled run). */
+  CodeExecuted = 'code-executed',
+  /** Code RPC reply: the host has no usable code runtime (rendered). */
+  CodeExecuteError = 'code-execute-error',
 }
 
 /** The payload each host→worker tag carries. */
@@ -84,6 +114,14 @@ export interface HostToWorkerPayloads {
   [HostToWorkerType.ChildFailed]: { callId: number; rendered: string }
   /** The RPC correlation id of the completed disposal. */
   [HostToWorkerType.ChildDisposed]: { callId: number }
+  /** The RPC correlation id and the fetch outcome. */
+  [HostToWorkerType.HttpFetched]: { callId: number; outcome: HttpFetchOutcome }
+  /** The RPC correlation id and the rendered fetch failure. */
+  [HostToWorkerType.HttpFetchError]: { callId: number; rendered: string }
+  /** The RPC correlation id and the run outcome. */
+  [HostToWorkerType.CodeExecuted]: { callId: number; outcome: CodeExecuteOutcome }
+  /** The RPC correlation id and the rendered execution failure. */
+  [HostToWorkerType.CodeExecuteError]: { callId: number; rendered: string }
 }
 
 /**

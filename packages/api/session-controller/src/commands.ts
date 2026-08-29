@@ -5,6 +5,9 @@ import type {} from '@deepseek-ai/dsh-session/context'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent, ModelSelection as AgentModelSelection } from '@deepseek-ai/dsh-agent'
 import { PresetMountError, UnknownPresetError } from '@deepseek-ai/dsh-agent-presets'
+import { ModeInvalidError, UnknownModeError } from '@deepseek-ai/dsh-agent-modes'
+// Type-only: resolves ctx.get('agentModes') when the roster is composed.
+import type {} from '@deepseek-ai/dsh-agent-modes'
 import { AttachmentError, admitEncodedImages } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import {
@@ -85,13 +88,39 @@ export class SessionCommandController {
       }
     }
     const cwd = workspace?.path ?? request.cwd ?? this.defaultCwd
+    let presetId = request.agentPreset
+    let modeId = request.agentMode
+    if (modeId !== undefined) {
+      const modes = this.ctx.get('agentModes')
+      if (modes === undefined) {
+        reject('agent-mode-invalid', 'agent modes are not configured in this deployment', {
+          agentMode: modeId,
+          reason: 'agentModes service is absent',
+        })
+      }
+      try {
+        const bind = await modes.resolveBind(modeId)
+        if (presetId !== undefined && presetId !== bind.preset) {
+          reject(
+            'bad-request',
+            `session.create agentPreset "${presetId}" does not match mode "${modeId}" bound preset "${bind.preset}"`,
+            {},
+          )
+        }
+        presetId = bind.preset
+        modeId = bind.modeId
+      } catch (error) {
+        this.rejectCreation(sessionId, error)
+      }
+    }
     let adopted: Agent
     try {
       adopted = await this.agents.ensureSession(
         sessionId,
         cwd,
         request.sessionId !== undefined,
-        request.agentPreset,
+        presetId,
+        modeId,
       )
     } catch (error) {
       this.rejectCreation(sessionId, error)
@@ -108,7 +137,12 @@ export class SessionCommandController {
       }
     }
     const agentPreset = this.agents.presetForSession(adopted.session)
-    return { sessionId, ...(agentPreset === undefined ? {} : { agentPreset }) }
+    const agentMode = adopted.session.header.agentMode
+    return {
+      sessionId,
+      ...(agentPreset === undefined ? {} : { agentPreset }),
+      ...(agentMode === undefined ? {} : { agentMode }),
+    }
   }
 
   /**
@@ -466,6 +500,18 @@ export class SessionCommandController {
     if (error instanceof PresetMountError) {
       reject('agent-preset-invalid', error.message, {
         agentPreset: error.presetId,
+        reason: error.reason,
+      })
+    }
+    if (error instanceof UnknownModeError) {
+      reject('agent-mode-not-found', error.message, {
+        agentMode: error.modeId,
+        available: [...error.available],
+      })
+    }
+    if (error instanceof ModeInvalidError) {
+      reject('agent-mode-invalid', error.message, {
+        agentMode: error.modeId,
         reason: error.reason,
       })
     }

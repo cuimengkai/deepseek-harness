@@ -455,7 +455,14 @@ export class ReactLoopAgent implements Agent {
     // effort owned by that exact model. Later steps re-resolve marked defaults.
     const persistedHeader = session.requestHeader()
     const persistedConfig = persistedHeader?.config
-    const route = { provider: this.options.provider ?? '', model: this.options.model ?? '' }
+    // The loop's single request channel is always kind `text`; a `text` entry
+    // in `modelKinds` overrides the base provider/model field-wise (either
+    // side may be absent, inheriting the base's same-named field).
+    const textKind = this.options.modelKinds?.text
+    const route = {
+      provider: textKind?.provider ?? this.options.provider ?? '',
+      model: textKind?.model ?? this.options.model ?? '',
+    }
     const persistedReasoningEffort = persistedConfig?.provider === route.provider
       && persistedConfig.model === route.model
       && persistedHeader?.adapterDefaults?.reasoningEffort !== true

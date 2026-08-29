@@ -5,6 +5,8 @@ import { WorkflowRunId } from '@deepseek-ai/dsh-workflow'
 import type {
   WorkflowAgentEndInfo,
   WorkflowAgentInfo,
+  WorkflowNodeEndInfo,
+  WorkflowNodeInfo,
   WorkflowResultInfo,
   WorkflowRunInfo,
 } from '@deepseek-ai/dsh-workflow'
@@ -43,6 +45,18 @@ const result = (overrides: Partial<WorkflowResultInfo> = {}): WorkflowResultInfo
   ...overrides,
 })
 
+const node = (overrides: Partial<WorkflowNodeInfo> = {}): WorkflowNodeInfo => ({
+  seq: 1,
+  phase: 'http-1',
+  ...overrides,
+})
+
+const nodeEnd = (overrides: Partial<WorkflowNodeEndInfo> = {}): WorkflowNodeEndInfo => ({
+  ...node(),
+  outcome: 'completed',
+  ...overrides,
+})
+
 describe('workflow invariants', () => {
   it('accepts a complete workflow and child lifecycle', async () => {
     const ctx = await setup()
@@ -52,6 +66,8 @@ describe('workflow invariants', () => {
     ctx.emit('workflow/log', run, 'working')
     ctx.emit('workflow/agent-start', run, agent())
     ctx.emit('workflow/agent-end', run, agentEnd())
+    ctx.emit('workflow/node-start', run, node())
+    ctx.emit('workflow/node-end', run, nodeEnd())
     ctx.emit('workflow/end', run, result())
     ctx.emit('tools/change')
   })
@@ -82,11 +98,31 @@ describe('workflow invariants', () => {
       .toThrow(/unknown outcome/)
   })
 
+  it('rejects malformed and unpaired processing-node lifecycles', async () => {
+    const ctx = await setup()
+    const run = info()
+    ctx.emit('workflow/start', run)
+    expect(() => { ctx.emit('workflow/node-start', run, node({ seq: 0 })) }).toThrow(/seq must be positive/)
+    expect(() => { ctx.emit('workflow/node-start', run, node({ phase: '' })) }).toThrow(/phase must be non-empty/)
+    ctx.emit('workflow/node-start', run, node())
+    expect(() => { ctx.emit('workflow/node-start', run, node()) }).toThrow(/repeated seq/)
+    expect(() => { ctx.emit('workflow/node-end', run, nodeEnd({ seq: 2 })) }).toThrow(/no matching start/)
+    expect(() => { ctx.emit('workflow/node-end', run, nodeEnd({ phase: 'other' })) })
+      .toThrow(/identity diverges/)
+    expect(() => { ctx.emit('workflow/node-end', run, nodeEnd({ outcome: 'unknown' as never })) })
+      .toThrow(/unknown outcome/)
+  })
+
   it('rejects inconsistent terminal results', async () => {
     const active = await setup()
     active.emit('workflow/start', info())
     active.emit('workflow/agent-start', info(), agent())
     expect(() => { active.emit('workflow/end', info(), result()) }).toThrow(/without workflow\/agent-end/)
+
+    const activeNode = await setup()
+    activeNode.emit('workflow/start', info())
+    activeNode.emit('workflow/node-start', info(), node())
+    expect(() => { activeNode.emit('workflow/end', info(), result()) }).toThrow(/without workflow\/node-end/)
 
     const count = await setup()
     count.emit('workflow/start', info())

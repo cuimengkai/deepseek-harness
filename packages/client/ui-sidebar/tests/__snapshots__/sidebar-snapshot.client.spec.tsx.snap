@@ -47,7 +47,7 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
       </button>
     </div>
     <button
-      aria-label="New session"
+      aria-label="New task"
       class="newSession"
       type="button"
     >
@@ -60,6 +60,138 @@ exports[`sidebar shell snapshots > renders the collapsed rail after the crossfad
         xmlns="http://www.w3.org/2000/svg"
       />
     </button>
+    <nav
+      aria-label="Primary navigation"
+      class="nav navRail"
+      data-sidebar-nav=""
+    >
+      <button
+        aria-current="page"
+        aria-label="Assistant"
+        class="item active"
+        data-nav="assistant"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="4d654e17"
+            fill="none"
+            height="18"
+            viewBox="0 0 16 16"
+            width="18"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+      </button>
+      <button
+        aria-label="Projects"
+        class="item"
+        data-nav="projects"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="7d0b657c"
+            fill="none"
+            height="18"
+            viewBox="0 0 16 16"
+            width="18"
+          />
+        </span>
+      </button>
+      <button
+        aria-label="Experts · skills"
+        class="item"
+        data-nav="expert"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="56ac24c5"
+            fill="none"
+            height="18"
+            viewBox="0 0 16 16"
+            width="18"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+      </button>
+      <button
+        aria-label="Automation"
+        class="item"
+        data-nav="automation"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="60f7d665"
+            fill="none"
+            height="18"
+            viewBox="0 0 16 16"
+            width="18"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+      </button>
+      <button
+        aria-label="Connectors"
+        class="item"
+        data-nav="connectors"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="bfb112fc"
+            fill="none"
+            height="18"
+            viewBox="0 0 16 16"
+            width="18"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+      </button>
+      <span
+        class="root"
+      >
+        <button
+          aria-expanded="false"
+          aria-haspopup="menu"
+          aria-label="More"
+          class="item"
+          data-nav="more"
+          type="button"
+        >
+          <span
+            aria-hidden="true"
+            class="icon"
+          >
+            <svg
+              data-content="97beeac2"
+              fill="none"
+              height="18"
+              viewBox="0 0 16 16"
+              width="18"
+              xmlns="http://www.w3.org/2000/svg"
+            />
+          </span>
+        </button>
+      </span>
+    </nav>
     <div
       class="regionArea"
     >
@@ -105,7 +237,7 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
       class="logoRow"
     >
       <button
-        aria-label="New session"
+        aria-label="New task"
         class="brand wide"
         type="button"
       >
@@ -172,7 +304,7 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
       </button>
     </div>
     <button
-      aria-label="New session"
+      aria-label="New task"
       class="newSession"
       type="button"
     >
@@ -187,9 +319,171 @@ exports[`sidebar shell snapshots > renders the expanded column (wordmark, capsul
       <span
         class="newSessionLabel wide"
       >
-        New Session
+        New task
       </span>
     </button>
+    <nav
+      aria-label="Primary navigation"
+      class="nav"
+      data-sidebar-nav=""
+    >
+      <button
+        aria-current="page"
+        aria-label="Assistant"
+        class="item active"
+        data-nav="assistant"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="4d654e17"
+            fill="none"
+            height="16"
+            viewBox="0 0 16 16"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+        <span
+          class="label"
+        >
+          Assistant
+        </span>
+      </button>
+      <button
+        aria-label="Projects"
+        class="item"
+        data-nav="projects"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="7d0b657c"
+            fill="none"
+            height="16"
+            viewBox="0 0 16 16"
+            width="16"
+          />
+        </span>
+        <span
+          class="label"
+        >
+          Projects
+        </span>
+      </button>
+      <button
+        aria-label="Experts · skills"
+        class="item"
+        data-nav="expert"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="56ac24c5"
+            fill="none"
+            height="16"
+            viewBox="0 0 16 16"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+        <span
+          class="label"
+        >
+          Experts · skills
+        </span>
+      </button>
+      <button
+        aria-label="Automation"
+        class="item"
+        data-nav="automation"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="60f7d665"
+            fill="none"
+            height="16"
+            viewBox="0 0 16 16"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+        <span
+          class="label"
+        >
+          Automation
+        </span>
+      </button>
+      <button
+        aria-label="Connectors"
+        class="item"
+        data-nav="connectors"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="bfb112fc"
+            fill="none"
+            height="16"
+            viewBox="0 0 16 16"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+        <span
+          class="label"
+        >
+          Connectors
+        </span>
+      </button>
+      <span
+        class="root"
+      >
+        <button
+          aria-expanded="false"
+          aria-haspopup="menu"
+          aria-label="More"
+          class="item"
+          data-nav="more"
+          type="button"
+        >
+          <span
+            aria-hidden="true"
+            class="icon"
+          >
+            <svg
+              data-content="97beeac2"
+              fill="none"
+              height="16"
+              viewBox="0 0 16 16"
+              width="16"
+              xmlns="http://www.w3.org/2000/svg"
+            />
+          </span>
+          <span
+            class="label"
+          >
+            More
+          </span>
+        </button>
+      </span>
+    </nav>
     <div
       class="regionArea"
     >
@@ -235,7 +529,7 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       class="logoRow"
     >
       <button
-        aria-label="新建会话"
+        aria-label="新建任务"
         class="brand wide"
         type="button"
       >
@@ -302,7 +596,7 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       </button>
     </div>
     <button
-      aria-label="新建会话"
+      aria-label="新建任务"
       class="newSession"
       type="button"
     >
@@ -317,9 +611,171 @@ exports[`sidebar shell snapshots > renders the expanded column in the default lo
       <span
         class="newSessionLabel wide"
       >
-        新会话
+        新建任务
       </span>
     </button>
+    <nav
+      aria-label="主导航"
+      class="nav"
+      data-sidebar-nav=""
+    >
+      <button
+        aria-current="page"
+        aria-label="助理"
+        class="item active"
+        data-nav="assistant"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="4d654e17"
+            fill="none"
+            height="16"
+            viewBox="0 0 16 16"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+        <span
+          class="label"
+        >
+          助理
+        </span>
+      </button>
+      <button
+        aria-label="项目"
+        class="item"
+        data-nav="projects"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="7d0b657c"
+            fill="none"
+            height="16"
+            viewBox="0 0 16 16"
+            width="16"
+          />
+        </span>
+        <span
+          class="label"
+        >
+          项目
+        </span>
+      </button>
+      <button
+        aria-label="专家·技能"
+        class="item"
+        data-nav="expert"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="56ac24c5"
+            fill="none"
+            height="16"
+            viewBox="0 0 16 16"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+        <span
+          class="label"
+        >
+          专家·技能
+        </span>
+      </button>
+      <button
+        aria-label="自动化"
+        class="item"
+        data-nav="automation"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="60f7d665"
+            fill="none"
+            height="16"
+            viewBox="0 0 16 16"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+        <span
+          class="label"
+        >
+          自动化
+        </span>
+      </button>
+      <button
+        aria-label="连接器"
+        class="item"
+        data-nav="connectors"
+        type="button"
+      >
+        <span
+          aria-hidden="true"
+          class="icon"
+        >
+          <svg
+            data-content="bfb112fc"
+            fill="none"
+            height="16"
+            viewBox="0 0 16 16"
+            width="16"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+        </span>
+        <span
+          class="label"
+        >
+          连接器
+        </span>
+      </button>
+      <span
+        class="root"
+      >
+        <button
+          aria-expanded="false"
+          aria-haspopup="menu"
+          aria-label="更多"
+          class="item"
+          data-nav="more"
+          type="button"
+        >
+          <span
+            aria-hidden="true"
+            class="icon"
+          >
+            <svg
+              data-content="97beeac2"
+              fill="none"
+              height="16"
+              viewBox="0 0 16 16"
+              width="16"
+              xmlns="http://www.w3.org/2000/svg"
+            />
+          </span>
+          <span
+            class="label"
+          >
+            更多
+          </span>
+        </button>
+      </span>
+    </nav>
     <div
       class="regionArea"
     >

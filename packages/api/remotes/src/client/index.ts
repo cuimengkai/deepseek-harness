@@ -2,6 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import agentPresetsRemote from '@deepseek-ai/dsh-agent-presets/remote'
+import agentModesRemote from '@deepseek-ai/dsh-agent-modes/remote'
 import commandsRemote from '@deepseek-ai/dsh-commands/remote'
 import settingsControllerRemote from '@deepseek-ai/dsh-api-settings-controller/remote'
 import goalsRemote from '@deepseek-ai/dsh-goal/remote'
@@ -15,6 +16,9 @@ import projectInsightRemote from '@deepseek-ai/dsh-project-insight/remote'
 import subagentsRemote from '@deepseek-ai/dsh-subagent/remote'
 import sessionRemote from '@deepseek-ai/dsh-api-session-controller/remote'
 import workspaceRemote from '@deepseek-ai/dsh-api-workspace-controller/remote'
+import connectorsRemote from '@deepseek-ai/dsh-connector-registry/remote'
+import projectBundlesRemote from '@deepseek-ai/dsh-project-bundle/remote'
+import automationRemote from '@deepseek-ai/dsh-automation/remote'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
 
 export type { ClientRemote } from '@deepseek-ai/dsh-api-gateway/client'
@@ -31,6 +35,7 @@ export type {
   PluginManagerUninstallResult,
 } from '@deepseek-ai/dsh-host-plugin-manager/types'
 export type {} from '@deepseek-ai/dsh-agent-presets/remote'
+export type {} from '@deepseek-ai/dsh-agent-modes/remote'
 export type {} from '@deepseek-ai/dsh-commands/remote'
 export type {} from '@deepseek-ai/dsh-api-settings-controller/remote'
 export type {} from '@deepseek-ai/dsh-goal/remote'
@@ -47,6 +52,12 @@ export type {} from '@deepseek-ai/dsh-api-session-controller/remote'
 export type * from '@deepseek-ai/dsh-api-session-controller/types'
 export type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
 export type * from '@deepseek-ai/dsh-api-workspace-controller/types'
+export type {} from '@deepseek-ai/dsh-connector-registry/remote'
+export type {} from '@deepseek-ai/dsh-connector-registry/types'
+export type {} from '@deepseek-ai/dsh-project-bundle/remote'
+export type {} from '@deepseek-ai/dsh-project-bundle/types'
+export type {} from '@deepseek-ai/dsh-automation/remote'
+export type {} from '@deepseek-ai/dsh-automation/types'
 export type { SessionJob as JobView } from '@deepseek-ai/dsh-api-session-controller/types'
 // The forwarded-event allowlist's selection seat: without it in the consumer's
 // compilation face `TypertRemoteEvent` is `never` and every `$on` call fails.
@@ -59,6 +70,7 @@ export type {} from '@deepseek-ai/dsh-cordis-host-runner/types'
 export type {} from '@deepseek-ai/dsh-credentials/types'
 export type {} from '@deepseek-ai/dsh-llm/types'
 export type {} from '@deepseek-ai/dsh-agent-presets/types'
+export type {} from '@deepseek-ai/dsh-agent-modes/types'
 export type {} from '@deepseek-ai/dsh-settings/types'
 export type {} from '@deepseek-ai/dsh-user-approval/types'
 export type {} from '@deepseek-ai/dsh-user-questions/types'
@@ -140,6 +152,7 @@ export type { SessionReferenceMentionCandidate } from '@deepseek-ai/dsh-session-
 export type ClientFailure =
   | import('@deepseek-ai/dsh-client-connection/client').RpcError
   | import('@deepseek-ai/dsh-agent-presets/types').AgentPresetError
+  | import('@deepseek-ai/dsh-agent-modes/types').AgentModeError
   | import('@deepseek-ai/dsh-api-session-controller/types').SessionError
   | import('@deepseek-ai/dsh-api-settings-controller/types').CredentialError
   | import('@deepseek-ai/dsh-api-settings-controller/types').SettingsError
@@ -171,9 +184,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposers: Array<() => Promise<void>> = []
   try {
     for (const contribution of [
-      agentPresetsRemote, commandsRemote, settingsControllerRemote, goalsRemote, llmRemote, dynamicRemote,
+      agentPresetsRemote, agentModesRemote, commandsRemote, settingsControllerRemote, goalsRemote, llmRemote, dynamicRemote,
       pluginInventoryRemote, pluginManagerRemote, messageFeedbackRemote, sessionReferencesRemote,
       projectInsightRemote, subagentsRemote, sessionRemote, workspaceRemote,
+      connectorsRemote, projectBundlesRemote, automationRemote,
     ]) {
       disposers.push(await ctx.remote.$mount(contribution))
     }

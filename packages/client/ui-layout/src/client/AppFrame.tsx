@@ -27,7 +27,11 @@ export type AppFrameProps =
   & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay' | 'page'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & PropsLocale<'common'>
-  & InjectFace<{ hooks: { pages: HostObservable<PagesSnapshot> } }>
+  & InjectFace<{
+    hooks: { pages: HostObservable<PagesSnapshot> }
+    /** Mirror panel widths into ctx.layout for cross-plugin open-state readers. */
+    syncPanels: (state: { readonly details: number }) => void
+  }>
 
 /** Center column grid item (session-body building block). */
 function CenterColumn(props: { children?: ReactNode }) {
@@ -97,9 +101,11 @@ export function AppFrame({
   actions,
   renderSlot,
   SessionProvider,
+  syncPanels,
   t,
 }: AppFrameProps) {
   const panels = useStore(s => s)
+  useEffect(() => { syncPanels(panels) }, [syncPanels, panels])
   const activeId = usePages(s => s.activeId)
   // The whole app grid goes inert while a page covers it (display: contents
   // keeps the columns as direct frame grid items, and inert still applies to
@@ -116,8 +122,9 @@ export function AppFrame({
     el.toggleAttribute('inert', activeId !== undefined)
   }, [activeId])
   const detailsSession = useSessions((s) => {
-    const current = s.current
-    return current !== undefined && s.byId[current]?.blank === false ? current : undefined
+    // Any current session (including blank hero) may own the Results column;
+    // blank exclusion used to hide the rail until the first message.
+    return s.current
   })
   const documentTitle = useSessions((s) => {
     const current = s.current

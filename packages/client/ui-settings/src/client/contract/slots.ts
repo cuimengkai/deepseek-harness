@@ -66,6 +66,16 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'settings.plugins.tab': { kind: 'list'; scope: 'root'; owner: SettingsPluginsTabOwnerProps }
     /**
+     * One page inside the Agent settings section (capability presets vs
+     * orchestration modes). The section owner renders localized entry labels
+     * as tabs and mounts each contribution inside its tab panel. Options:
+     * `id` (tab key), `order` (tab order), and `label` (registrant-localized
+     * tab text). Declared at runtime by the feature that owns the Agent
+     * section; the type lives here so preset and mode plugins collaborate
+     * without depending on one another.
+     */
+    'settings.agent.tab': { kind: 'list'; scope: 'root'; owner: SettingsAgentTabOwnerProps }
+    /**
      * Root-scoped onboarding steps contributed by settings features. The
      * shell mounts one ordered step at a time; the active registrant either
      * completes itself or keeps ownership until the user completes its sole
@@ -105,6 +115,15 @@ export interface SettingsGeneralItemOwnerProps {
 export interface SettingsPluginsTabOwnerProps {
   /** Marker field: tab owner props are intentionally empty. */
   children?: never
+}
+
+/**
+ * Owner share of an Agent tab. The hub forwards the shell's `close` so a
+ * tab panel can leave settings (e.g. Creator handoff starts a session).
+ */
+export interface SettingsAgentTabOwnerProps {
+  /** Leave the settings page entirely (navigate to the root `/`). */
+  close: () => void
 }
 
 /** Owner share of the trigger content seat: the sidebar column state. */

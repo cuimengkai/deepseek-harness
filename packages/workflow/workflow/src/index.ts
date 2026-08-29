@@ -9,6 +9,8 @@ import { HarnessError } from '@deepseek-ai/dsh-llm'
 import type {
   WorkflowAgentEndInfo,
   WorkflowAgentInfo,
+  WorkflowNodeEndInfo,
+  WorkflowNodeInfo,
   WorkflowResultInfo,
   WorkflowRunInfo,
 } from './types.ts'
@@ -20,6 +22,9 @@ export type {
   WorkflowAgentInfo,
   WorkflowAgentOutcome,
   WorkflowMeta,
+  WorkflowNodeEndInfo,
+  WorkflowNodeInfo,
+  WorkflowNodeOutcome,
   WorkflowPhase,
   WorkflowResult,
   WorkflowResultInfo,
@@ -78,6 +83,27 @@ declare module '@deepseek-ai/cordis' {
      */
     'workflow/agent-end'(info: WorkflowRunInfo, agent: WorkflowAgentEndInfo): void
     /**
+     * One non-agent processing-node call started (e.g. an `http()` call).
+     * Paired with {@link Events['workflow/node-end']} by `node.seq`. A call
+     * that never receives a settlement from the host emits neither event in
+     * this pair.
+     * @param info - the run's identity snapshot.
+     * @param node - the call's sequence number and owning flow node id.
+     * @mode emit
+     */
+    'workflow/node-start'(info: WorkflowRunInfo, node: WorkflowNodeInfo): void
+    /**
+     * One non-agent processing-node call settled. Paired with
+     * {@link Events['workflow/node-start']} by `node.seq`, exactly once per
+     * started call on every stop path — on an engine termination path (a
+     * worker killed past its grace) the end is engine-synthesized with
+     * outcome `'cancelled'`.
+     * @param info - the run's identity snapshot.
+     * @param node - the call identity plus its outcome.
+     * @mode emit
+     */
+    'workflow/node-end'(info: WorkflowRunInfo, node: WorkflowNodeEndInfo): void
+    /**
      * A workflow run settled (any stop reason). Fired when
      * {@link WorkflowRun.result} resolves. Paired with
      * {@link Events['workflow/start']}.
@@ -97,13 +123,16 @@ export type WorkflowEventName =
   | 'workflow/log'
   | 'workflow/agent-start'
   | 'workflow/agent-end'
+  | 'workflow/node-start'
+  | 'workflow/node-end'
   | 'workflow/end'
 
 /**
  * Machine-routable fatal workflow failures: parse/meta/argument/schema errors,
- * resource caps, subagent infrastructure failures, unserializable boundary
- * values, and cancellation. An ordinary child failure resolves its item to
- * `null` and is not one of these fatal codes.
+ * resource caps, subagent, `ctx.web.fetch`, and `ctx.codeRuntime.run`
+ * infrastructure failures, unserializable boundary values, and cancellation.
+ * An ordinary child failure resolves its item to `null` and is not one of
+ * these fatal codes.
  */
 export type WorkflowErrorCode =
   | 'SCRIPT_PARSE'
@@ -115,6 +144,8 @@ export type WorkflowErrorCode =
   | 'ITEM_CAP'
   | 'AGENT_START'
   | 'AGENT_RESULT'
+  | 'HTTP_FETCH'
+  | 'CODE_EXECUTE'
   | 'RESULT_UNSERIALIZABLE'
   | 'CANCELLED'
 

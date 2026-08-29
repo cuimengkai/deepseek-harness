@@ -23,6 +23,12 @@ import type {
   ChildPort,
   ChildResult,
   ChildStartRequest,
+  CodeExecuteOutcome,
+  CodeExecuteRequest,
+  CodePort,
+  HttpFetchOutcome,
+  HttpFetchRequest,
+  HttpPort,
   WorkerInit,
 } from './types.ts'
 
@@ -119,6 +125,92 @@ class ChildRpcBridge implements ChildPort {
   }
 }
 
+function resolvePending<T>(
+  pending: Map<number, PromiseWithResolvers<T>>,
+  callId: number,
+  value: T,
+): void {
+  const entry = pending.get(callId)
+  pending.delete(callId)
+  entry?.resolve(value)
+}
+
+function rejectPending<T>(
+  pending: Map<number, PromiseWithResolvers<T>>,
+  callId: number,
+  rendered: string,
+): void {
+  const entry = pending.get(callId)
+  pending.delete(callId)
+  entry?.reject(new Error(rendered))
+}
+
+/**
+ * The worker-side HTTP-RPC bridge ({@link HttpPort}): allocates callIds, posts
+ * the fetch RPC, and owns the per-call pending resolver the session's message
+ * handler settles via {@link onHttpFetched}/{@link onHttpFetchError}. Simpler
+ * than {@link ChildRpcBridge}: one request is one round trip, with no
+ * published-handle lifecycle to track afterward.
+ */
+class HttpRpcBridge implements HttpPort {
+  private nextCallId = 0
+  private readonly pending = new Map<number, PromiseWithResolvers<HttpFetchOutcome>>()
+
+  constructor(private readonly post: Post) {}
+
+  fetch(request: HttpFetchRequest): Promise<HttpFetchOutcome> {
+    this.nextCallId += 1
+    const callId = this.nextCallId
+    const entry = Promise.withResolvers<HttpFetchOutcome>()
+    this.pending.set(callId, entry)
+    this.post(WorkerToHostType.HttpFetch, { callId, request })
+    return entry.promise
+  }
+
+  /** The host's fetch fulfilled. */
+  onHttpFetched(callId: number, outcome: HttpFetchOutcome): void {
+    resolvePending(this.pending, callId, outcome)
+  }
+
+  /** The host's fetch failed (provider fault, admission refusal, or cancellation). */
+  onHttpFetchError(callId: number, rendered: string): void {
+    rejectPending(this.pending, callId, rendered)
+  }
+}
+
+/**
+ * The worker-side code-execution RPC bridge ({@link CodePort}): allocates
+ * callIds, posts the execute RPC, and owns the per-call pending resolver the
+ * session's message handler settles via {@link onCodeExecuted}/
+ * {@link onCodeExecuteError}. Same shape as {@link HttpRpcBridge}: one call is
+ * one round trip.
+ */
+class CodeRpcBridge implements CodePort {
+  private nextCallId = 0
+  private readonly pending = new Map<number, PromiseWithResolvers<CodeExecuteOutcome>>()
+
+  constructor(private readonly post: Post) {}
+
+  execute(request: CodeExecuteRequest): Promise<CodeExecuteOutcome> {
+    this.nextCallId += 1
+    const callId = this.nextCallId
+    const entry = Promise.withResolvers<CodeExecuteOutcome>()
+    this.pending.set(callId, entry)
+    this.post(WorkerToHostType.CodeExecute, { callId, request })
+    return entry.promise
+  }
+
+  /** The host's run fulfilled (a failed {@link CodeExecuteOutcome} is still a fulfilled run). */
+  onCodeExecuted(callId: number, outcome: CodeExecuteOutcome): void {
+    resolvePending(this.pending, callId, outcome)
+  }
+
+  /** The host has no usable code runtime, or the run request itself was refused. */
+  onCodeExecuteError(callId: number, rendered: string): void {
+    rejectPending(this.pending, callId, rendered)
+  }
+}
+
 /**
  * Narrow the nullable `parentPort` the bootstrap reads from
  * `node:worker_threads`.
@@ -145,17 +237,21 @@ export async function runWorkerSession(port: MessagePort, init: WorkerInit): Pro
     port.postMessage({ type, ...payload })
   }
   const children = new ChildRpcBridge(post)
+  const http = new HttpRpcBridge(post)
+  const code = new CodeRpcBridge(post)
 
   const observer: ExecutionObserver = {
     phase: (title) => { post(WorkerToHostType.Phase, { title }) },
     log: (message) => { post(WorkerToHostType.Log, { message }) },
     agentStart: (info) => { post(WorkerToHostType.AgentStart, { info }) },
     agentEnd: (info) => { post(WorkerToHostType.AgentEnd, { info }) },
+    nodeStart: (node) => { post(WorkerToHostType.NodeStart, { node }) },
+    nodeEnd: (node) => { post(WorkerToHostType.NodeEnd, { node }) },
   }
 
   let execution: WorkflowExecution
   try {
-    execution = new WorkflowExecution(init.meta, init.body, init.args, init.limits, observer, children)
+    execution = new WorkflowExecution(init.meta, init.body, init.args, init.limits, observer, children, http, code)
   } catch (error: unknown) {
     post(WorkerToHostType.Result, { result: { value: null, stopReason: 'error', error: renderThrown(error), agentsStarted: 0 } })
     return
@@ -187,6 +283,18 @@ export async function runWorkerSession(port: MessagePort, init: WorkerInit): Pro
         break
       case HostToWorkerType.ChildDisposed:
         children.onChildDisposed(message.callId)
+        break
+      case HostToWorkerType.HttpFetched:
+        http.onHttpFetched(message.callId, message.outcome)
+        break
+      case HostToWorkerType.HttpFetchError:
+        http.onHttpFetchError(message.callId, message.rendered)
+        break
+      case HostToWorkerType.CodeExecuted:
+        code.onCodeExecuted(message.callId, message.outcome)
+        break
+      case HostToWorkerType.CodeExecuteError:
+        code.onCodeExecuteError(message.callId, message.rendered)
         break
       /* v8 ignore next 2 -- closed engine-owned union; the arm only makes adding a message type a compile error */
       default:

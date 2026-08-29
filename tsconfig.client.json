@@ -85,6 +85,7 @@
     { "path": "./packages/client/ui-goal" },
     { "path": "./packages/client/ui-message-feedback" },
     { "path": "./packages/client/ui-model-selection" },
+    { "path": "./packages/client/ui-agent-mode" },
     { "path": "./packages/client/ui-agent-preset" },
     { "path": "./packages/client/ui-flow-editor" },
     { "path": "./packages/client/ui-permission-presets" },

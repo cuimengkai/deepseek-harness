@@ -31,7 +31,7 @@ export interface AcpConfig {
 
 Depends on: `Stream` (`@agentclientprotocol/sdk`)
 
-Source: [`packages/acp/acp/src/index.ts:74`](../packages/acp/acp/src/index.ts)
+Source: [`packages/acp/acp/src/index.ts:75`](../packages/acp/acp/src/index.ts)
 
 <a id="deepseek-aidsh-agent-default-model"></a>
 
@@ -110,6 +110,50 @@ export interface Config {
 Depends on: [`AgentOptions`](subsystems/core.md) · [`SessionId`](subsystems/core.md)
 
 Source: [`packages/core/agent-loop/src/index.ts:284`](../packages/core/agent-loop/src/index.ts)
+
+<a id="deepseek-aidsh-agent-modes"></a>
+
+## `@deepseek-ai/dsh-agent-modes`
+
+```ts config-catalog
+/** Plugin config: which mode is the default, and where modes live. */
+export interface Config {
+  /**
+   * Mode id resolved when a caller names none and wants a mode. Optional —
+   * sessions that omit both `agentMode` and a default stay on the preset path.
+   */
+  default?: string
+  /** Scanned roots in precedence order; an earlier root wins a duplicate id. */
+  roots: ModeRoot[]
+  /**
+   * Prepend this package's bundled shipped modes as a `system` root.
+   * Defaults on so the learning sample (`hello-orchestration`) is visible;
+   * set false to hide shipped samples.
+   */
+  includeShippedRoot: boolean
+  /**
+   * Append the harness home's `USER_MODE_DIR` as a `user` root.
+   */
+  includeUserRoot: boolean
+}
+
+/** One directory scanned for mode subdirectories. */
+export interface ModeRoot {
+  /** Directory holding one subdirectory per mode; a leading `~` expands. */
+  path: string
+  /** Trust recorded on every mode discovered under this root. */
+  trust: ModeTrust
+}
+
+/**
+ * Where a mode directory came from. A `system` mode ships with the
+ * deployment; a `user` mode was authored locally and carries the same trust
+ * as shell access (it names a preset and runs arbitrary flow graphs).
+ */
+export type ModeTrust = 'system' | 'user'
+```
+
+Source: [`packages/preset/agent-modes/src/mode.ts:50`](../packages/preset/agent-modes/src/mode.ts)
 
 <a id="deepseek-aidsh-agent-presets"></a>
 
@@ -306,7 +350,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/api/session-controller/src/index.ts:67`](../packages/api/session-controller/src/index.ts)
+Source: [`packages/api/session-controller/src/index.ts:73`](../packages/api/session-controller/src/index.ts)
 
 <a id="deepseek-aidsh-api-settings-controller"></a>
 
@@ -356,6 +400,22 @@ export interface Config {
 ```
 
 Source: [`packages/attachment/attachment-local/src/index.ts:55`](../packages/attachment/attachment-local/src/index.ts)
+
+<a id="deepseek-aidsh-automation"></a>
+
+## `@deepseek-ai/dsh-automation`
+
+```ts config-catalog
+/** Deployment-tunable store root and timer period. */
+export interface Config {
+  /** Directory that holds `<id>.json` rule documents. */
+  readonly root: string
+  /** How often the in-process timer re-evaluates due rules. */
+  readonly tickMs: number
+}
+```
+
+Source: [`packages/automation/automation/src/index.ts:35`](../packages/automation/automation/src/index.ts)
 
 <a id="deepseek-aidsh-bash-local"></a>
 
@@ -549,6 +609,26 @@ export interface ToolResultPruneConfig {
 ```
 
 Source: [`packages/compaction/compaction-tool-result-pruner/src/types.ts:4`](../packages/compaction/compaction-tool-result-pruner/src/types.ts)
+
+<a id="deepseek-aidsh-connector-registry"></a>
+
+## `@deepseek-ai/dsh-connector-registry`
+
+```ts config-catalog
+/** Deployment-tunable registry root and whether enabled cards mount mcp-client. */
+export interface Config {
+  /** Directory that holds `<id>.json` documents. */
+  readonly root: string
+  /**
+   * When true, each enabled card mounts a `dsh-mcp-client` instance. A
+   * persist-only composition (tests, a Host that does not expose tools)
+   * sets this false.
+   */
+  readonly mountClients: boolean
+}
+```
+
+Source: [`packages/mcp/connector-registry/src/index.ts:50`](../packages/mcp/connector-registry/src/index.ts)
 
 <a id="deepseek-aidsh-cordis-host-runner"></a>
 
@@ -891,14 +971,22 @@ Source: [`packages/host/directory-picker-browse/src/index.ts:181`](../packages/h
 Requires: `webServer` · `connection`
 
 ```ts config-catalog
-/** Plugin config: the dist anchor. */
+/** Plugin config: the dist anchor and optional History API index path prefixes. */
 export interface Config {
   /** Absolute path of index.html inside the dist root. */
   distIndex: string
+  /**
+   * Absolute pathname prefixes that receive the authenticated index shell when
+   * no file exists under the dist root. Each entry matches itself and every
+   * subpath (`/settings` covers `/settings` and `/settings/models`). Compose
+   * one prefix per client History API route that must survive refresh or deep
+   * link; unknown paths stay empty 404.
+   */
+  indexPaths?: readonly string[]
 }
 ```
 
-Source: [`packages/host/frontend-static/src/index.ts:30`](../packages/host/frontend-static/src/index.ts)
+Source: [`packages/host/frontend-static/src/index.ts:31`](../packages/host/frontend-static/src/index.ts)
 
 <a id="deepseek-aidsh-host-plugin-manager"></a>
 
@@ -1725,6 +1813,20 @@ export interface Config {
 
 Source: [`packages/llm/plugin-package-inventory-deepseek/src/index.ts:30`](../packages/llm/plugin-package-inventory-deepseek/src/index.ts)
 
+<a id="deepseek-aidsh-project-bundle"></a>
+
+## `@deepseek-ai/dsh-project-bundle`
+
+```ts config-catalog
+/** Deployment-tunable store root. */
+export interface Config {
+  /** Directory that holds `<id>.json` bundle documents. */
+  readonly root: string
+}
+```
+
+Source: [`packages/preset/project-bundle/src/index.ts:33`](../packages/preset/project-bundle/src/index.ts)
+
 <a id="deepseek-aidsh-pwsh-local"></a>
 
 ## `@deepseek-ai/dsh-pwsh-local`
@@ -1927,7 +2029,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/session/session-log-deepseek/src/index.ts:22`](../packages/session/session-log-deepseek/src/index.ts)
+Source: [`packages/session/session-log-deepseek/src/index.ts:23`](../packages/session/session-log-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-session-log-export"></a>
 
@@ -3478,7 +3580,7 @@ Source: [`packages/webhook/webhook-github/src/index.ts:17`](../packages/webhook/
 
 ## `@deepseek-ai/dsh-workflow-worker-thread`
 
-Requires: `subagents`
+Requires: `subagents` · `web` · `codeRuntime`
 
 ```ts config-catalog
 /** Plugin config (all optional — `static Config` supplies the defaults). */
@@ -3515,6 +3617,7 @@ These load from a `cordis.yml` entry with no `config:` block; they declare no co
 - `@deepseek-ai/dsh-authorization` — requires `credentials` ([`packages/credentials/authorization/src/index.ts`](../packages/credentials/authorization/src/index.ts))
 - `@deepseek-ai/dsh-client-locale` ([`packages/client/locale/src/index.ts`](../packages/client/locale/src/index.ts))
 - `@deepseek-ai/dsh-client-modules` — requires `webServer` · `loader` ([`packages/client/modules/src/index.ts`](../packages/client/modules/src/index.ts))
+- `@deepseek-ai/dsh-client-ui-agent-mode` ([`packages/client/ui-agent-mode/src/index.ts`](../packages/client/ui-agent-mode/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-agent-preset` ([`packages/client/ui-agent-preset/src/index.ts`](../packages/client/ui-agent-preset/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-approval` ([`packages/client/ui-approval/src/index.ts`](../packages/client/ui-approval/src/index.ts))
 - `@deepseek-ai/dsh-client-ui-attachment` ([`packages/client/ui-attachment/src/index.ts`](../packages/client/ui-attachment/src/index.ts))

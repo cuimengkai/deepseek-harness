@@ -197,6 +197,8 @@ export interface SessionErrorDetailsMap {
   }
   'agent-preset-not-found': { readonly agentPreset: string; readonly available: readonly string[] }
   'agent-preset-invalid': { readonly agentPreset: string; readonly reason: string }
+  'agent-mode-not-found': { readonly agentMode: string; readonly available: readonly string[] }
+  'agent-mode-invalid': { readonly agentMode: string; readonly reason: string }
   'agent-busy': { readonly reason: string }
   'attachment-error': { readonly reason: string }
   'queue-item-not-found': { readonly itemId: MessageId }
@@ -279,12 +281,15 @@ export interface SessionCreateRequest {
   readonly cwd?: string
   readonly sessionId?: SessionId
   readonly agentPreset?: string
+  /** Product mode to bind; resolves to a preset and stamps the session header. */
+  readonly agentMode?: string
 }
 
 /** Session creation response value. */
 export interface SessionCreateValue {
   readonly sessionId: SessionId
   readonly agentPreset?: string
+  readonly agentMode?: string
 }
 
 /** Session deletion request: the root of the subagent tree to remove. */

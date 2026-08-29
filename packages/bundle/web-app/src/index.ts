@@ -239,7 +239,12 @@ export function apply(ctx: Context, config: Config): void {
   const handoffBrowser = config.openBrowser && !launchedThroughSsh(ctx)
   // Release dependent rows only after bind-dependent trust has been sampled once.
   ctx.provide(WEB_RUNTIME_SERVICE, runtime)
-  ctx.plugin(FrontendStatic, { distIndex: internals.resolveDistIndex() })
+  // `/settings` matches the client History route `/settings/:section?` so a
+  // refresh or deep link serves the shell instead of an empty 404.
+  ctx.plugin(FrontendStatic, {
+    distIndex: internals.resolveDistIndex(),
+    indexPaths: ['/settings'],
+  })
   if (config.surfaceContext) {
     ctx.inject(['systemPrompt'], (promptCtx) => {
       addHarnessSourceSection(promptCtx, SOURCE_ROOT)

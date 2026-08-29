@@ -33,7 +33,7 @@ function mount({
   rows = [
     { id: 'general', order: 0, label: 'General' },
     { id: 'models', order: 10, label: 'Models' },
-    { id: 'agent-presets', order: 20, label: 'Agent presets' },
+    { id: 'agent', order: 20, label: 'Agent' },
   ],
   active = rows[0]?.id,
 }: { rows?: Row[]; active?: string | undefined } = {}) {
@@ -125,13 +125,13 @@ describe('SettingsPage navigation', () => {
       rows: [
         { id: 'general', order: 0, label: 'General' },
         { id: 'models', order: 10, label: 'Models' },
-        { id: 'agent-presets', order: 20, label: 'Agent presets' },
+        { id: 'agent', order: 20, label: 'Agent' },
         { id: 'plugins', order: 30, label: 'Plugins' },
         { id: 'contributed', order: 40, label: 'Contributed' },
       ],
     })
     // Glyphs carry no id of their own, so the drawn paths are what tells them apart.
-    const glyphs = ['General', 'Models', 'Agent presets', 'Plugins', 'Contributed']
+    const glyphs = ['General', 'Models', 'Agent', 'Plugins', 'Contributed']
       .map(name => screen.getByRole('button', { name }).querySelector('svg')?.innerHTML)
     expect(glyphs.every(glyph => glyph !== undefined && glyph !== '')).toBe(true)
     // The three ids the shell names get their own glyph; every other section —

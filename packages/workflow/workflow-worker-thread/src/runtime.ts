@@ -22,10 +22,12 @@ import type {
   WorkflowAgentEndInfo,
   WorkflowAgentInfo,
   WorkflowMeta,
+  WorkflowNodeEndInfo,
+  WorkflowNodeInfo,
   WorkflowResult,
 } from '@deepseek-ai/dsh-workflow'
 import { materializeFromRealm, MaterializeError, renderThrown } from './realm.ts'
-import type { ChildHandle, ChildPort, WorkerLimits } from './types.ts'
+import type { ChildHandle, ChildPort, CodeExecuteOutcome, CodePort, HttpFetchOutcome, HttpPort, WorkerLimits } from './types.ts'
 
 /** The observers the execution reports progress through (the session posts them to the host). */
 export interface ExecutionObserver {
@@ -33,12 +35,31 @@ export interface ExecutionObserver {
   log(message: string): void
   agentStart(info: WorkflowAgentInfo): void
   agentEnd(info: WorkflowAgentEndInfo): void
+  nodeStart(info: WorkflowNodeInfo): void
+  nodeEnd(info: WorkflowNodeEndInfo): void
 }
 
 /** The `agent()` options the script may pass; everything else rejects loud. */
-const SUPPORTED_AGENT_OPTIONS = new Set(['label', 'phase', 'schema', 'provider', 'model', 'modelKinds'])
+const SUPPORTED_AGENT_OPTIONS = new Set([
+  'label', 'phase', 'schema', 'provider', 'model', 'modelKinds', 'childPresetId',
+])
 /** Deferred Claude Code options we name explicitly in the rejection message. */
 const DEFERRED_AGENT_OPTIONS = new Set(['effort', 'isolation', 'agentType'])
+
+/**
+ * The `http()` options the script may pass; everything else rejects loud.
+ * `phase` is required (unlike `agent()`'s optional phase): a processing
+ * node's own id IS the call's identity, matching {@link WorkflowNodeInfo.phase}.
+ */
+const SUPPORTED_HTTP_OPTIONS = new Set(['phase'])
+
+/**
+ * The `code()` options the script may pass; everything else rejects loud.
+ * `phase` is required, like `http()`'s; `out` is the flow compiler's own
+ * splice point for the sandboxed program's `OUT` prelude — a hand-written
+ * workflow script may omit it and run source with no prelude at all.
+ */
+const SUPPORTED_CODE_OPTIONS = new Set(['phase', 'out'])
 
 /** Flatten a child's final output blocks to text (the non-schema `agent()` result). */
 function outputText(blocks: ContentBlock[]): string {
@@ -64,6 +85,8 @@ function defaultLabel(prompt: string): string {
 export class WorkflowExecution {
   /** 1-based count of `agent()` calls started (the `agentsStarted` result field). */
   private started = 0
+  /** 1-based count of non-agent processing-node calls started (e.g. `http()`), in its own counter distinct from `started`. */
+  private nodeCalls = 0
   private activeSlots = 0
   private readonly slotWaiters: { resolve(): void; reject(error: unknown): void }[] = []
   private cancelReason: string | undefined
@@ -79,6 +102,8 @@ export class WorkflowExecution {
     private readonly limits: WorkerLimits,
     private readonly observer: ExecutionObserver,
     private readonly children: ChildPort,
+    private readonly httpPort: HttpPort,
+    private readonly codePort: CodePort,
   ) {
     // Compile FIRST: a body syntax error must throw out of the constructor
     // before any realm state exists. The host pre-parses the identical
@@ -99,6 +124,8 @@ export class WorkflowExecution {
 
     const globals: Record<string, unknown> = {
       agent: (prompt: unknown, opts?: unknown) => this.contain(this.agent(prompt, opts)),
+      http: (url: unknown, opts?: unknown) => this.contain(this.http(url, opts)),
+      code: (source: unknown, opts?: unknown) => this.contain(this.code(source, opts)),
       parallel: (thunks: unknown) => this.contain(this.parallel(thunks)),
       pipeline: (items: unknown, ...stages: unknown[]) => this.contain(this.pipeline(items, stages)),
       phase: (title: unknown) => { this.phase(title) },
@@ -280,6 +307,7 @@ export class WorkflowExecution {
           ...opts.provider !== undefined ? { provider: opts.provider } : {},
           ...opts.model !== undefined ? { model: opts.model } : {},
           ...opts.modelKinds !== undefined ? { modelKinds: opts.modelKinds } : {},
+          ...opts.childPresetId !== undefined ? { childPresetId: opts.childPresetId } : {},
         })
       } catch (error: unknown) {
         // The host refuses starts once the run is cancelled — a refusal that
@@ -353,6 +381,7 @@ export class WorkflowExecution {
     model?: string
     schema?: ObjectJsonSchema
     modelKinds?: Partial<Record<ModelKind, { provider?: string; model?: string }>>
+    childPresetId?: string
   } {
     if (rawOpts === undefined) return {}
     let opts: unknown
@@ -370,14 +399,17 @@ export class WorkflowExecution {
     for (const key of Object.keys(record)) {
       if (SUPPORTED_AGENT_OPTIONS.has(key)) continue
       if (DEFERRED_AGENT_OPTIONS.has(key)) {
-        throw new WorkflowError(`agent() option "${key}" is deferred and not supported by this engine (supported: label, phase, schema, provider, model, modelKinds)`, 'UNSUPPORTED_OPTION')
+        throw new WorkflowError(`agent() option "${key}" is deferred and not supported by this engine (supported: label, phase, schema, provider, model, modelKinds, childPresetId)`, 'UNSUPPORTED_OPTION')
       }
-      throw new WorkflowError(`agent() option "${key}" is not recognized (supported: label, phase, schema, provider, model, modelKinds)`, 'UNSUPPORTED_OPTION')
+      throw new WorkflowError(`agent() option "${key}" is not recognized (supported: label, phase, schema, provider, model, modelKinds, childPresetId)`, 'UNSUPPORTED_OPTION')
     }
-    for (const key of ['label', 'phase', 'provider', 'model'] as const) {
+    for (const key of ['label', 'phase', 'provider', 'model', 'childPresetId'] as const) {
       if (record[key] !== undefined && typeof record[key] !== 'string') {
         throw new WorkflowError(`agent() option "${key}" must be a string`, 'INVALID_ARGUMENT')
       }
+    }
+    if (typeof record.childPresetId === 'string' && record.childPresetId.trim() === '') {
+      throw new WorkflowError('agent() option "childPresetId" must be a non-empty string', 'INVALID_ARGUMENT')
     }
     let schema: ObjectJsonSchema | undefined
     if (record.schema !== undefined) {
@@ -401,6 +433,9 @@ export class WorkflowExecution {
       ...record.model !== undefined ? { model: record.model as string } : {},
       ...schema !== undefined ? { schema } : {},
       ...modelKinds !== undefined ? { modelKinds } : {},
+      ...typeof record.childPresetId === 'string'
+        ? { childPresetId: (record.childPresetId).trim() }
+        : {},
     }
   }
 
@@ -434,6 +469,122 @@ export class WorkflowExecution {
       }
     }
     return result
+  }
+
+  /** The `http(url, opts)` hook: one GET retrieval per call, routed through the host's `ctx.web.fetch`. */
+  private async http(rawUrl: unknown, rawOpts: unknown): Promise<unknown> {
+    this.throwIfCancelled()
+    if (typeof rawUrl !== 'string' || rawUrl.length === 0) {
+      throw new WorkflowError('http() requires a non-empty url string', 'INVALID_ARGUMENT')
+    }
+    const opts = this.readHttpOptions(rawOpts)
+    this.nodeCalls += 1
+    const info: WorkflowNodeInfo = { seq: this.nodeCalls, phase: opts.phase }
+    this.observer.nodeStart(info)
+    let result: HttpFetchOutcome
+    try {
+      result = await this.httpPort.fetch({ url: rawUrl })
+    } catch (error: unknown) {
+      if (this.isCancelled()) {
+        this.observer.nodeEnd({ ...info, outcome: 'cancelled' })
+        throw this.cancelledError()
+      }
+      this.observer.nodeEnd({ ...info, outcome: 'failed' })
+      throw new WorkflowError(`http() request failed: ${renderThrown(error)}`, 'HTTP_FETCH', { cause: error })
+    }
+    if (this.isCancelled()) {
+      this.observer.nodeEnd({ ...info, outcome: 'cancelled' })
+      throw this.cancelledError()
+    }
+    this.observer.nodeEnd({ ...info, outcome: 'completed' })
+    return result
+  }
+
+  /** Materialize + validate the `http()` options bag from the realm. */
+  private readHttpOptions(rawOpts: unknown): { phase: string } {
+    let opts: unknown
+    try {
+      opts = materializeFromRealm(rawOpts, 'http() options')
+    } catch (error: unknown) {
+      /* v8 ignore next -- defensive rethrow arm: materializeFromRealm only throws MaterializeError */
+      if (!(error instanceof MaterializeError)) throw error
+      throw new WorkflowError(`http() options must be plain JSON data — ${error.message}`, 'INVALID_ARGUMENT', { cause: error })
+    }
+    if (typeof opts !== 'object' || opts === null || Array.isArray(opts)) {
+      throw new WorkflowError('http() options must be an object', 'INVALID_ARGUMENT')
+    }
+    const record = opts as Record<string, unknown>
+    for (const key of Object.keys(record)) {
+      if (!SUPPORTED_HTTP_OPTIONS.has(key)) {
+        throw new WorkflowError(`http() option "${key}" is not recognized (supported: phase)`, 'UNSUPPORTED_OPTION')
+      }
+    }
+    if (typeof record.phase !== 'string' || record.phase.length === 0) {
+      throw new WorkflowError('http() option "phase" is required and must be a non-empty string', 'INVALID_ARGUMENT')
+    }
+    return { phase: record.phase }
+  }
+
+  /**
+   * The `code(source, opts)` hook: one program run per call, routed through
+   * the host's `ctx.codeRuntime.run()` — never a bare `eval` inside this vm
+   * context. When `opts.out` is present, it is spliced ahead of `source` as
+   * a `const OUT = <json>;` prelude (built here, so the sandboxed program
+   * never receives a partially-escaped string), letting the program read the
+   * flow's current outputs as ordinary object member access.
+   */
+  private async code(rawSource: unknown, rawOpts: unknown): Promise<unknown> {
+    this.throwIfCancelled()
+    if (typeof rawSource !== 'string' || rawSource.length === 0) {
+      throw new WorkflowError('code() requires a non-empty source string', 'INVALID_ARGUMENT')
+    }
+    const opts = this.readCodeOptions(rawOpts)
+    this.nodeCalls += 1
+    const info: WorkflowNodeInfo = { seq: this.nodeCalls, phase: opts.phase }
+    this.observer.nodeStart(info)
+    const program = opts.out === undefined ? rawSource : `const OUT = ${JSON.stringify(opts.out)};\n${rawSource}`
+    let result: CodeExecuteOutcome
+    try {
+      result = await this.codePort.execute({ program })
+    } catch (error: unknown) {
+      if (this.isCancelled()) {
+        this.observer.nodeEnd({ ...info, outcome: 'cancelled' })
+        throw this.cancelledError()
+      }
+      this.observer.nodeEnd({ ...info, outcome: 'failed' })
+      throw new WorkflowError(`code() execution failed: ${renderThrown(error)}`, 'CODE_EXECUTE', { cause: error })
+    }
+    if (this.isCancelled()) {
+      this.observer.nodeEnd({ ...info, outcome: 'cancelled' })
+      throw this.cancelledError()
+    }
+    this.observer.nodeEnd({ ...info, outcome: 'completed' })
+    return result
+  }
+
+  /** Materialize + validate the `code()` options bag from the realm. */
+  private readCodeOptions(rawOpts: unknown): { phase: string; out?: unknown } {
+    let opts: unknown
+    try {
+      opts = materializeFromRealm(rawOpts, 'code() options')
+    } catch (error: unknown) {
+      /* v8 ignore next -- defensive rethrow arm: materializeFromRealm only throws MaterializeError */
+      if (!(error instanceof MaterializeError)) throw error
+      throw new WorkflowError(`code() options must be plain JSON data — ${error.message}`, 'INVALID_ARGUMENT', { cause: error })
+    }
+    if (typeof opts !== 'object' || opts === null || Array.isArray(opts)) {
+      throw new WorkflowError('code() options must be an object', 'INVALID_ARGUMENT')
+    }
+    const record = opts as Record<string, unknown>
+    for (const key of Object.keys(record)) {
+      if (!SUPPORTED_CODE_OPTIONS.has(key)) {
+        throw new WorkflowError(`code() option "${key}" is not recognized (supported: phase, out)`, 'UNSUPPORTED_OPTION')
+      }
+    }
+    if (typeof record.phase !== 'string' || record.phase.length === 0) {
+      throw new WorkflowError('code() option "phase" is required and must be a non-empty string', 'INVALID_ARGUMENT')
+    }
+    return { phase: record.phase, ...record.out !== undefined ? { out: record.out } : {} }
   }
 
   /** The `parallel(thunks)` hook: each thunk caught → `null`; fatal errors propagate. */

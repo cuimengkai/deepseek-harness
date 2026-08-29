@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-本包提供 Web GUI 的 agent preset 表面：通用设置中的一行，选择新建会话据以组装的 preset；新建会话界面的一枚 chip，选择下一个会话的 preset；会话标题旁的一个只读标签；以及一个设置分区，用于管理名单——复制、删除、默认值，以及通往 preset 自身文件的入口。会话的 preset 在创建时即固定，因此选择作用于此后开启的会话，运行中的会话保持它们开始时的组装。当部署未组装任何 preset 时，四个表面都不渲染任何内容，每个会话共用宿主组装。
+本包提供对齐 WorkBuddy 的 Web GUI 能力预设表面：通用设置中的默认能力包行；活跃会话 composer 工具行里紧挨权限之后的 **能力** 芯片（`conversation.input.left`）；助理空态 **分段分类控件**（`conversation.hero.agentPreset`）与空白会话 **按类技能起步**（`conversation.input.dock`，`setDraft`）；已挂载能力包的只读会话头标签；以及 **场景 Agent** 设置中心（`/settings/agent`）的能力、技能地图（`remote.skills`）、集成（`pluginInventory` 卡片）与编排（由兄弟包注册）标签。会话预设在对话开始后固定；空白会话通过分类控件暂存（空白时不渲染工具行能力芯片）。
 
 ## 目录
 

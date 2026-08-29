@@ -22,7 +22,9 @@ export type PluginsSettingsLocaleKey =
 export const en: Record<PluginsSettingsLocaleKey, string> = {
   nav: 'Plugins',
   title: 'Plugins',
-  intro: 'Configure and inspect the plugins installed in this deployment.',
+  intro: 'Configure and inspect the plugins installed in this deployment. '
+    + 'To assemble plugins into a scenario capability pack, open Agent → Integrations '
+    + '(/settings/agent?tab=integrations). This page is the Host configuration view.',
   tabs: 'Plugin views',
   configurableTab: 'Plugin configuration',
   empty: 'This deployment exposes no plugin settings.',
@@ -78,7 +80,9 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
 export const zh: Record<PluginsSettingsLocaleKey, string> = {
   nav: '插件',
   title: '插件',
-  intro: '配置和查看本部署已安装的插件。',
+  intro: '配置和查看本部署已安装的插件。'
+    + '若要组装进场景能力包，请打开 Agent → 集成（/settings/agent?tab=integrations）。'
+    + '本页是宿主配置视角。',
   tabs: '插件视图',
   configurableTab: '插件配置',
   empty: '本部署没有开放任何插件设置。',

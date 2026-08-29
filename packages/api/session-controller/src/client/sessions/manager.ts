@@ -558,10 +558,16 @@ export class SessionManager {
       workspaceId?: WorkspaceId
       cwd?: string
       sessionId?: SessionId
+      agentPreset?: string
+      agentMode?: string
     } = {},
   ): Promise<ClientResult<{ sessionId: SessionId }>> {
     try {
-      const shared = opts.sessionId === undefined ? {} : { sessionId: opts.sessionId }
+      const shared = {
+        ...(opts.sessionId === undefined ? {} : { sessionId: opts.sessionId }),
+        ...(opts.agentPreset === undefined ? {} : { agentPreset: opts.agentPreset }),
+        ...(opts.agentMode === undefined ? {} : { agentMode: opts.agentMode }),
+      }
       const payload = opts.workspaceId !== undefined
         ? { workspaceId: opts.workspaceId, ...shared }
         : { ...(opts.cwd === undefined ? {} : { cwd: opts.cwd }), ...shared }

@@ -4,7 +4,10 @@
 export const en = {
   nav: 'Models',
   title: 'Models',
-  intro: 'Enter your API keys to use models from the following providers.',
+  intro: 'Enter your API keys to use models from the following providers. '
+    + 'The session model seat and orchestration Agent nodes share this catalog; '
+    + 'per-role modelKinds bindings are declared on nodes and route when the engine consumes them. '
+    + 'Installed Host plugins: Agent → Integrations (/settings/agent?tab=integrations).',
   edit: 'Edit',
   editProvider: 'Edit {provider}',
   remove: 'Delete',
@@ -157,7 +160,10 @@ export type ModelsKey = keyof typeof en
 export const zh: { [Key in keyof typeof en]: string } = {
   nav: '模型',
   title: '模型',
-  intro: '填入各提供方的 API 密钥即可使用其模型。',
+  intro: '填入各提供方的 API 密钥即可使用其模型。'
+    + '会话模型座位与编排 Agent 节点共用此目录；'
+    + '节点上声明的按角色 modelKinds 会在引擎消费时生效。'
+    + '已安装宿主插件见 Agent → 集成（/settings/agent?tab=integrations）。',
   edit: '编辑',
   editProvider: '编辑 {provider}',
   remove: '删除',

@@ -8,8 +8,10 @@ import AgentRegistry from '@deepseek-ai/dsh-agent'
 
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
+import WorkerThreadCodeRuntime from '@deepseek-ai/dsh-code-runtime-worker-thread'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as Spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import WebRuntime from '@deepseek-ai/dsh-web'
 import WorkerThreadWorkflowEngine from '../src/index.ts'
 
 /**
@@ -38,6 +40,8 @@ async function harness(): Promise<Context> {
   await built.plugin(AgentLoop, { agents: [] })
   await built.plugin(LlmDeepSeek)
   await built.plugin(SubagentRuntime)
+  await built.plugin(WebRuntime)
+  await built.plugin(WorkerThreadCodeRuntime, {})
   await built.plugin(Spawn, { providerName: 'spawn' })
   await built.plugin(WorkerThreadWorkflowEngine, { provider: 'spawn' })
   return built

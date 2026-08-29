@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package provides the agent-preset surfaces of the Web GUI: a General-settings row choosing which preset new sessions are composed from, a chip on the new-session screen choosing the next session's preset, a read-only label in the session header, and a settings section that manages the roster — copy, delete, default, and the way into a preset's own files. A session's preset is fixed at creation, so the choice applies to sessions started afterwards while running sessions keep the composition they began with. When a deployment composes no presets, all four surfaces render nothing and every session shares the host composition.
+This package provides capability-preset surfaces of the WorkBuddy-aligned Web GUI: a General-settings row for the default pack, a **capability** chip on the active-session composer tool row after permission (`conversation.input.left`), Assistant empty-state **segmented category control** (`conversation.hero.agentPreset`) and blank-session **category skill starters** that `setDraft` into the composer (`conversation.input.dock`), a read-only header label for the mounted pack, and the **Scenario Agent** settings hub (`/settings/agent`) whose tabs cover Capabilities, Skills Map (`remote.skills`), Integrations (`pluginInventory` cards), and Orchestration (sibling package). A session’s preset is fixed once conversation starts; blank sessions stage via categories (the tool-row chip stays hidden while blank).
 
 ## Table of Contents
 

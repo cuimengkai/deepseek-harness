@@ -55,7 +55,19 @@
       "path": "../../llm/llm"
     },
     {
+      "path": "../../preset/agent-modes"
+    },
+    {
       "path": "../../preset/agent-presets"
+    },
+    {
+      "path": "../../preset/project-bundle"
+    },
+    {
+      "path": "../../mcp/connector-registry"
+    },
+    {
+      "path": "../../automation/automation"
     },
     {
       "path": "../../settings/settings"

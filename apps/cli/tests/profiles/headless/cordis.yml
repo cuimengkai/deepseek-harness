@@ -143,6 +143,20 @@
     enableRunInBackground: false
     maxDepth: 1
 
+# The web capability seam: anonymous fetch only (no search provider), just
+# enough for the workflow engine's HTTP Request node (`ctx.web.fetch()`).
+- id: web
+  name: '@deepseek-ai/dsh-web'
+  config:
+    fetchProvider: http
+
+- id: web-fetch-http
+  name: '@deepseek-ai/dsh-web-fetch-http'
+
+# Worker-thread sandbox for the workflow engine's Code node (`ctx.codeRuntime`).
+- id: code-runtime
+  name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+
 # The worker-thread workflow engine fans a model-written JavaScript script's
 # `agent()` calls out through the spawn backend.
 - id: workflow-worker-thread

@@ -83,6 +83,8 @@ interface BenchOptions {
   overlay?: React.ReactNode
   leftItems?: React.ReactNode
   rightItems?: React.ReactNode
+  workspaceAccessory?: React.ReactNode
+  openAgentSettings?: () => void
   attachments?: readonly ComposerAttachment[]
   addImages?: (files: readonly File[]) => string | null
   commandMenuOpen?: boolean
@@ -179,6 +181,7 @@ function bench(over?: BenchOptions) {
       return gesture === 'enter' ? preferred : preferred === 'queue' ? 'steer' : 'queue'
     },
     toggleCommandMenu: over?.toggleCommandMenu ?? vi.fn(),
+    openAgentSettings: over?.openAgentSettings ?? vi.fn(),
     useNotices: bindSnapshotSelector(shell.notices),
     useLexicon: bindSnapshotSelector(shell.lexicon),
     useMenuLauncher: bindSnapshotSelector(menuLauncher),
@@ -197,6 +200,7 @@ function bench(over?: BenchOptions) {
     ...(over?.overlay !== undefined ? { overlay: over.overlay } : {}),
     ...(over?.leftItems !== undefined ? { leftItems: over.leftItems } : {}),
     ...(over?.rightItems !== undefined ? { rightItems: over.rightItems } : {}),
+    ...(over?.workspaceAccessory !== undefined ? { workspaceAccessory: over.workspaceAccessory } : {}),
   }
   const view = render(<InputBar {...props} />)
   const textarea = view.container.querySelector<HTMLDivElement>('[data-composer-input]')!
@@ -1449,5 +1453,29 @@ describe('command launcher chrome and control seats', () => {
     cleanup()
     const live = bench({ running: true, permissions })
     expect((live.view.getByLabelText(/^访问模式/) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('hero + opens the WorkBuddy flyout and keeps workspace in the context strip', () => {
+    const openAgentSettings = vi.fn()
+    const toggleCommandMenu = vi.fn()
+    const { view } = bench({
+      variant: 'hero',
+      openAgentSettings,
+      toggleCommandMenu,
+      workspaceAccessory: <span data-testid="ws-acc">WS</span>,
+      permissions: {
+        options: [{ value: 'workspace-write', name: 'workspace-write' }],
+        currentValue: 'workspace-write',
+      },
+    })
+    expect(view.getByTestId('ws-acc')).toBeTruthy()
+    expect(view.container.querySelector('[data-composer-context]')).toBeTruthy()
+    expect(view.queryByLabelText('指令')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: '添加' }))
+    expect(view.getByText('添加文件')).toBeTruthy()
+    expect(view.getByText('专家')).toBeTruthy()
+    expect(view.getByText('技能')).toBeTruthy()
+    fireEvent.click(view.getByText('专家'))
+    expect(openAgentSettings).toHaveBeenCalled()
   })
 })

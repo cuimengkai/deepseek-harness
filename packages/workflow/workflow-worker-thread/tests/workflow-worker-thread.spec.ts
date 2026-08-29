@@ -5,9 +5,13 @@ import type { Worker } from 'node:worker_threads'
 import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
+import type { CodeRunRequest, CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentCapabilities, SubagentProvider, SubagentResult, SubagentRun, SubagentStartRequest } from '@deepseek-ai/dsh-subagent'
-import type { WorkflowMeta, WorkflowResult, WorkflowResultInfo, WorkflowRun, WorkflowRunInfo } from '@deepseek-ai/dsh-workflow'
+import WebRuntime from '@deepseek-ai/dsh-web'
+import type { WebFetchProvider, WebFetchRequest, WebFetchResult } from '@deepseek-ai/dsh-web'
+import type { WorkflowMeta, WorkflowNodeEndInfo, WorkflowNodeInfo, WorkflowResult, WorkflowResultInfo, WorkflowRun, WorkflowRunInfo } from '@deepseek-ai/dsh-workflow'
 import * as workerEngineModule from '../src/index.ts'
 import WorkerThreadWorkflowEngine, { type Config } from '../src/index.ts'
 import { workerSpawnEnv } from '../src/host.ts'
@@ -139,6 +143,96 @@ function text(reply: string): SubagentResult {
   return { output: [{ type: 'text', text: reply }], stopReason: 'completed' }
 }
 
+/** A completed text fetch outcome. */
+function fetched(url: string, content: string): WebFetchResult {
+  return { url, statusCode: 200, body: { kind: 'text', content }, truncated: false }
+}
+
+/** One controllable fetch call: the test (or auto mode) settles it. */
+interface ControlledFetch {
+  request: WebFetchRequest
+  resolve(outcome: WebFetchResult): void
+  reject(error: unknown): void
+}
+
+/**
+ * A scripted in-test fetch provider over the REAL `ctx.web` seam: `auto`
+ * settles each call via the reply function on a microtask; `manual` piles
+ * calls up in `calls` for the test to settle. Mirrors {@link StubProvider}'s
+ * shape for the fetch capability.
+ */
+class StubFetchProvider implements WebFetchProvider {
+  readonly id = 'stub-fetch'
+  readonly calls: ControlledFetch[] = []
+
+  constructor(private readonly reply?: (request: WebFetchRequest, index: number) => WebFetchResult) {}
+
+  available(): boolean { return true }
+
+  fetch(request: WebFetchRequest): Promise<WebFetchResult> {
+    // Deliberately ignores the abort signal: the test drives resolve/reject
+    // itself to pin the exact race between the host's admission check and
+    // the fetch settling, which a self-aborting promise would preempt.
+    const deferred = Promise.withResolvers<WebFetchResult>()
+    const controlled: ControlledFetch = {
+      request,
+      resolve: (outcome) => { deferred.resolve(outcome) },
+      reject: (error) => { deferred.reject(error) },
+    }
+    const index = this.calls.length
+    this.calls.push(controlled)
+    if (this.reply) {
+      const reply = this.reply
+      queueMicrotask(() => { deferred.resolve(reply(request, index)) })
+    }
+    return deferred.promise
+  }
+}
+
+/** A completed code-run outcome carrying only a completion value. */
+function coded(value: unknown): CodeRunResult {
+  return { logs: [], value: value as Exclude<CodeRunResult['value'], undefined> }
+}
+
+/** One controllable code-run call: the test (or auto mode) settles it. */
+interface ControlledCode {
+  request: CodeRunRequest
+  resolve(outcome: CodeRunResult): void
+  reject(error: unknown): void
+}
+
+/**
+ * A scriptable in-repo `ctx.codeRuntime` over the REAL Service Definition,
+ * mirroring {@link StubFetchProvider}'s shape for the code-execution
+ * capability: `auto` settles each run via the reply function on a
+ * microtask; `manual` piles runs up in `calls` for the test to settle.
+ */
+class StubCodeRuntime extends CodeRuntime {
+  readonly language = 'typescript'
+  readonly isolation = 'stub'
+  readonly calls: ControlledCode[] = []
+
+  constructor(ctx: Context, private readonly reply?: (request: CodeRunRequest, index: number) => CodeRunResult) {
+    super(ctx)
+  }
+
+  run(request: CodeRunRequest): Promise<CodeRunResult> {
+    const deferred = Promise.withResolvers<CodeRunResult>()
+    const controlled: ControlledCode = {
+      request,
+      resolve: (outcome) => { deferred.resolve(outcome) },
+      reject: (error) => { deferred.reject(error) },
+    }
+    const index = this.calls.length
+    this.calls.push(controlled)
+    if (this.reply) {
+      const reply = this.reply
+      queueMicrotask(() => { deferred.resolve(reply(request, index)) })
+    }
+    return deferred.promise
+  }
+}
+
 interface SetupOptions {
   config?: Config
   reply?: (request: SubagentStartRequest, index: number) => SubagentResult
@@ -147,11 +241,18 @@ interface SetupOptions {
   deferStart?: boolean
   onChildAbortString?: (reason: string | undefined, index: number) => void
   onChildSignalAbort?: (reason: unknown, index: number) => void
+  /** Auto-respond to http-fetch calls; omit for the default text reply, or pass `manualFetch` to leave every call pending. */
+  fetchReply?: (request: WebFetchRequest, index: number) => WebFetchResult
+  manualFetch?: boolean
+  /** Auto-respond to code-execute calls; omit for the default stub value, or pass `manualCode` to leave every call pending. */
+  codeReply?: (request: CodeRunRequest, index: number) => CodeRunResult
+  manualCode?: boolean
 }
 
 async function setup(options?: SetupOptions) {
   const ctx = new Context()
   await ctx.plugin(SubagentRuntime)
+  await ctx.plugin(WebRuntime)
   const provider = new StubProvider(
     'stub',
     options?.manual ? undefined : options?.reply ?? (() => text('stub reply')),
@@ -161,11 +262,17 @@ async function setup(options?: SetupOptions) {
     options?.onChildSignalAbort,
   )
   ctx.subagents.registerProvider(provider)
+  const fetchProvider = new StubFetchProvider(
+    options?.manualFetch ? undefined : options?.fetchReply ?? (request => fetched(request.url, 'stub body')),
+  )
+  ctx.web.registerFetchProvider(fetchProvider)
+  await ctx.plugin(StubCodeRuntime, options?.manualCode ? undefined : options?.codeReply ?? (() => coded('stub code value')))
+  const codeRuntime = ctx.codeRuntime as StubCodeRuntime
   // A fixed concurrency ceiling: the auto-resolved default is machine-derived
   // (cores - 2, floored at 1), so tests that expect N children in flight
   // would wedge on small CI runners.
   const engineFiber = await ctx.plugin(WorkerThreadWorkflowEngine, { provider: 'stub', maxConcurrentAgents: 8, ...options?.config })
-  return { ctx, provider, parent: fakeParent(), engineFiber }
+  return { ctx, provider, fetchProvider, codeRuntime, parent: fakeParent(), engineFiber }
 }
 
 /** The standard test meta plus a body, spread into a start request. */
@@ -256,6 +363,16 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
       })
     })
 
+    it('agent({childPresetId}) forwards the preset id on the start request', async () => {
+      const { ctx, parent, provider } = await setup()
+      const result = await run(ctx, parent, scripted(`
+        return await agent('child preset', { childPresetId: 'reviewing' })
+      `))
+
+      expect(result.value).toBe('stub reply')
+      expect(provider.runs[0]!.request.childPresetId).toBe('reviewing')
+    })
+
     it('validates a modelKinds bag before starting a child', async () => {
       const cases: Array<[string, string]> = [
         ['[]', 'must be an object keyed by model kind'],
@@ -272,6 +389,186 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
         expect(result.stopReason).toBe('error')
         expect(result.error).toContain(expected)
       }
+    })
+
+    it('http(url) round-trips through the real ctx.web.fetch seam, pairing node-start/node-end', async () => {
+      const { ctx, parent, fetchProvider } = await setup({ fetchReply: request => fetched(request.url, `body of ${request.url}`) })
+      const nodeStarts: WorkflowNodeInfo[] = []
+      const nodeEnds: WorkflowNodeEndInfo[] = []
+      ctx.on('workflow/node-start', (_info, node) => { nodeStarts.push(node) })
+      ctx.on('workflow/node-end', (_info, node) => { nodeEnds.push(node) })
+      const result = await run(ctx, parent, scripted(`
+        phase('Fetch')
+        const page = await http('https://example.com/', { phase: 'h' })
+        return page.body.content
+      `))
+      expect(result.stopReason).toBe('completed')
+      expect(result.value).toBe('body of https://example.com/')
+      expect(fetchProvider.calls.map(call => call.request.url)).toEqual(['https://example.com/'])
+      expect(nodeStarts).toEqual([{ seq: 1, phase: 'h' }])
+      expect(nodeEnds).toEqual([{ seq: 1, phase: 'h', outcome: 'completed' }])
+    })
+
+    it('a provider fetch rejection crosses back as a fatal HTTP_FETCH error, paired with a failed node-end', async () => {
+      const { ctx, parent, fetchProvider } = await setup({ manualFetch: true })
+      const nodeEnds: WorkflowNodeEndInfo[] = []
+      ctx.on('workflow/node-end', (_info, node) => { nodeEnds.push(node) })
+      const handle = ctx.workflowEngine.start({
+        ...scripted(`
+          try { await http('https://example.com/', { phase: 'h' }); return 'unreachable' }
+          catch (e) { return { name: e.name, code: e.code, fatal: e.fatal } }
+        `),
+        parent,
+      })
+      await waitFor(() => { expect(fetchProvider.calls.length).toBe(1) })
+      fetchProvider.calls[0]!.reject(new Error('DNS resolution failed'))
+      const result = await handle.result
+      expect(result.value).toMatchObject({ name: 'WorkflowError', code: 'HTTP_FETCH', fatal: true })
+      expect(nodeEnds).toEqual([{ seq: 1, phase: 'h', outcome: 'failed' }])
+      await handle.dispose()
+    })
+
+    it('a http-fetch racing the host cancel is refused: no fetch runs after cancellation', async () => {
+      const { ctx, parent, fetchProvider } = await setup({ manualFetch: true })
+      ctx.on('workflow/log', () => { handle.cancel('cancelled from the log listener') })
+      const handle = ctx.workflowEngine.start({
+        ...scripted("log('mark')\nreturn await http('https://example.com/', { phase: 'h' })"),
+        parent,
+      })
+      const result = await handle.result
+      expect(result.stopReason).toBe('cancelled')
+      expect(fetchProvider.calls.length).toBe(0)
+      await handle.dispose()
+    })
+
+    it('a cancel landing exactly as the fetch resolves refuses the reply: the run reports cancelled, not completed', async () => {
+      const { ctx, parent, fetchProvider } = await setup({ manualFetch: true, config: { provider: 'stub', disposeGraceMs: 500 } })
+      const handle = ctx.workflowEngine.start({
+        ...scripted("return await http('https://example.com/', { phase: 'h' })"),
+        parent,
+      })
+      await waitFor(() => { expect(fetchProvider.calls.length).toBe(1) })
+      handle.cancel('stop the fetch')
+      fetchProvider.calls[0]!.resolve(fetched('https://example.com/', 'too late'))
+      const result = await handle.result
+      expect(result.stopReason).toBe('cancelled')
+      await handle.dispose()
+    })
+
+    it('a cancel landing exactly as the fetch REJECTS reports the cancellation, not the render, on the HttpFetchError reply', async () => {
+      const { ctx, parent, fetchProvider } = await setup({ manualFetch: true, config: { provider: 'stub', disposeGraceMs: 500 } })
+      const handle = ctx.workflowEngine.start({
+        ...scripted("return await http('https://example.com/', { phase: 'h' })"),
+        parent,
+      })
+      await waitFor(() => { expect(fetchProvider.calls.length).toBe(1) })
+      handle.cancel('stop the fetch before it fails')
+      fetchProvider.calls[0]!.reject(new Error('DNS resolution failed'))
+      const result = await handle.result
+      expect(result.stopReason).toBe('cancelled')
+      expect(result.error).toContain('stop the fetch before it fails')
+      await handle.dispose()
+    })
+
+    it('the grace force-settle pairs a stranded http() start: a synthesized cancelled node-end lands before workflow/end', async () => {
+      const { ctx, parent } = await setup({ manualFetch: true, config: { provider: 'stub', disposeGraceMs: 300 } })
+      const ends: { seq: number; outcome: string }[] = []
+      const order: string[] = []
+      ctx.on('workflow/node-start', (_info, node) => { order.push(`start:${node.seq}`) })
+      ctx.on('workflow/node-end', (_info, node) => {
+        ends.push({ seq: node.seq, outcome: node.outcome })
+        order.push(`end:${node.seq}`)
+      })
+      ctx.on('workflow/end', () => { order.push('run-end') })
+      const handle = ctx.workflowEngine.start({
+        ...scripted(`
+          const p = http('never settles', { phase: 'h' })
+          const end = Date.now() + 1500
+          while (Date.now() < end) {}
+          return 'raced'
+        `),
+        parent,
+      })
+      await waitFor(() => { expect(order).toEqual(['start:1']) })
+      handle.cancel('stop now')
+      const result = await handle.result
+      expect(result.stopReason).toBe('cancelled')
+      expect(ends).toEqual([{ seq: 1, outcome: 'cancelled' }])
+      expect(order.indexOf('run-end')).toBe(order.length - 1)
+      await handle.dispose()
+    }, 90_000)
+
+    it('code(source) round-trips through the real ctx.codeRuntime.run seam, pairing node-start/node-end', async () => {
+      const { ctx, parent, codeRuntime } = await setup({ codeReply: () => coded(42) })
+      const nodeStarts: WorkflowNodeInfo[] = []
+      const nodeEnds: WorkflowNodeEndInfo[] = []
+      ctx.on('workflow/node-start', (_info, node) => { nodeStarts.push(node) })
+      ctx.on('workflow/node-end', (_info, node) => { nodeEnds.push(node) })
+      const result = await run(ctx, parent, scripted(`
+        phase('Compute')
+        const outcome = await code('return 6 * 7', { phase: 'c' })
+        return outcome.value
+      `))
+      expect(result.stopReason).toBe('completed')
+      expect(result.value).toBe(42)
+      expect(codeRuntime.calls.map(call => call.request.program)).toEqual(['return 6 * 7'])
+      expect(nodeStarts).toEqual([{ seq: 1, phase: 'c' }])
+      expect(nodeEnds).toEqual([{ seq: 1, phase: 'c', outcome: 'completed' }])
+    })
+
+    it("code(source, { out }) splices a 'const OUT = <json>;' prelude ahead of the source, never bare-evaluating it in the workflow's own vm", async () => {
+      const { ctx, parent, codeRuntime } = await setup({ codeReply: request => coded(request.program) })
+      const result = await run(ctx, parent, scripted(`
+        const outcome = await code("return OUT['a']", { phase: 'c', out: { a: 1 } })
+        return outcome.value
+      `))
+      expect(result.stopReason).toBe('completed')
+      expect(result.value).toBe("const OUT = {\"a\":1};\nreturn OUT['a']")
+      expect(codeRuntime.calls).toHaveLength(1)
+    })
+
+    it('a failed program resolves the call (a CodeRunResult error field, not a thrown workflow error)', async () => {
+      const { ctx, parent } = await setup({
+        codeReply: () => ({ logs: ['before the throw'], error: { kind: 'exception', message: 'boom' } }),
+      })
+      const result = await run(ctx, parent, scripted(`
+        const outcome = await code('throw new Error("boom")', { phase: 'c' })
+        return { logs: outcome.logs, errorKind: outcome.error.kind, errorMessage: outcome.error.message }
+      `))
+      expect(result.stopReason).toBe('completed')
+      expect(result.value).toEqual({ logs: ['before the throw'], errorKind: 'exception', errorMessage: 'boom' })
+    })
+
+    it('an unusable code runtime crosses back as a fatal CODE_EXECUTE error, paired with a failed node-end', async () => {
+      const { ctx, parent, codeRuntime } = await setup({ manualCode: true })
+      const nodeEnds: WorkflowNodeEndInfo[] = []
+      ctx.on('workflow/node-end', (_info, node) => { nodeEnds.push(node) })
+      const handle = ctx.workflowEngine.start({
+        ...scripted(`
+          try { await code('return 1', { phase: 'c' }); return 'unreachable' }
+          catch (e) { return { name: e.name, code: e.code, fatal: e.fatal } }
+        `),
+        parent,
+      })
+      await waitFor(() => { expect(codeRuntime.calls.length).toBe(1) })
+      codeRuntime.calls[0]!.reject(new Error('no usable code runtime'))
+      const result = await handle.result
+      expect(result.value).toMatchObject({ name: 'WorkflowError', code: 'CODE_EXECUTE', fatal: true })
+      expect(nodeEnds).toEqual([{ seq: 1, phase: 'c', outcome: 'failed' }])
+      await handle.dispose()
+    })
+
+    it('a code-execute racing the host cancel is refused: no run starts after cancellation', async () => {
+      const { ctx, parent, codeRuntime } = await setup({ manualCode: true })
+      ctx.on('workflow/log', () => { handle.cancel('cancelled from the log listener') })
+      const handle = ctx.workflowEngine.start({
+        ...scripted("log('mark')\nreturn await code('return 1', { phase: 'c' })"),
+        parent,
+      })
+      const result = await handle.result
+      expect(result.stopReason).toBe('cancelled')
+      expect(codeRuntime.calls.length).toBe(0)
+      await handle.dispose()
     })
 
     it('a start-request provider override selects every child without changing the engine default', async () => {
@@ -497,6 +794,8 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
     it('a child result REJECTION crosses back as a fatal AGENT_RESULT error (a broken provider is not a failed child)', async () => {
       const ctx = new Context()
       await ctx.plugin(SubagentRuntime)
+      await ctx.plugin(WebRuntime)
+      await ctx.plugin(StubCodeRuntime, () => coded('stub code value'))
       const provider: SubagentProvider = {
         name: 'rejecting',
         capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: false },
@@ -556,6 +855,8 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
     it('a child whose dispose() throws synchronously cannot wedge the script (the host acks anyway)', async () => {
       const ctx = new Context()
       await ctx.plugin(SubagentRuntime)
+      await ctx.plugin(WebRuntime)
+      await ctx.plugin(StubCodeRuntime, () => coded('stub code value'))
       const provider: SubagentProvider = {
         name: 'bad-dispose',
         capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: false },
@@ -578,6 +879,8 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
     it('a child dispose() rejecting an UNRENDERABLE value still acks — the containment warn is total', async () => {
       const ctx = new Context()
       await ctx.plugin(SubagentRuntime)
+      await ctx.plugin(WebRuntime)
+      await ctx.plugin(StubCodeRuntime, () => coded('stub code value'))
       const provider: SubagentProvider = {
         name: 'coercion-trap-dispose',
         capabilities: { agentOptions: true, outputSchema: true, depthLimit: true, toolFilter: true, persona: false },
@@ -928,6 +1231,8 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
     it('the settle-reap fires the request signal too: a provider honoring ONLY the signal winds its stray down promptly', async () => {
       const ctx = new Context()
       await ctx.plugin(SubagentRuntime)
+      await ctx.plugin(WebRuntime)
+      await ctx.plugin(StubCodeRuntime, () => coded('stub code value'))
       const aborted: string[] = []
       const provider: SubagentProvider = {
         name: 'signal-only',
@@ -1223,6 +1528,8 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
     it('refuses and disposes a provider run that becomes ready after its real worker dies', async () => {
       const ctx = new Context()
       await ctx.plugin(SubagentRuntime)
+      await ctx.plugin(WebRuntime)
+      await ctx.plugin(StubCodeRuntime, () => coded('stub code value'))
       const requested = Promise.withResolvers<SubagentStartRequest>()
       const ready = Promise.withResolvers<SubagentRun>()
       let disposeCalls = 0
@@ -1285,6 +1592,8 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
     it('a worker that exits before settling reports an error result and reaps its children', async () => {
       const ctx = new Context()
       await ctx.plugin(SubagentRuntime)
+      await ctx.plugin(WebRuntime)
+      await ctx.plugin(StubCodeRuntime, () => coded('stub code value'))
       // The child's dispose() REJECTS on top of the worker death: the reap
       // must contain it (warn, not crash) while still emptying the registry.
       const signalAborts: unknown[] = []
@@ -1472,6 +1781,8 @@ describe('dsh-workflow-worker-thread', { timeout: 120_000 }, () => {
     it('unregisters ctx.workflowEngine when the engine fiber is disposed (HMR safety)', async () => {
       const ctx = new Context()
       await ctx.plugin(SubagentRuntime)
+      await ctx.plugin(WebRuntime)
+      await ctx.plugin(StubCodeRuntime, () => coded('stub code value'))
       const fiber = await ctx.plugin(WorkerThreadWorkflowEngine, {})
       expect(ctx.get('workflowEngine')).toBeDefined()
       await fiber.dispose()

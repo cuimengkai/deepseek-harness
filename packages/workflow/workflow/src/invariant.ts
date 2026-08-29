@@ -5,6 +5,8 @@ import type { InvariantFailure, InvariantInstaller } from '@deepseek-ai/dsh-inva
 import type {
   WorkflowAgentEndInfo,
   WorkflowAgentInfo,
+  WorkflowNodeEndInfo,
+  WorkflowNodeInfo,
   WorkflowResultInfo,
   WorkflowRunInfo,
 } from './types.ts'
@@ -20,6 +22,7 @@ interface WorkflowTrace {
   meta: string
   agents: Map<number, WorkflowAgentInfo>
   starts: number
+  nodes: Map<number, WorkflowNodeInfo>
 }
 
 /** Require every event for a run to retain its validated identity snapshot. */
@@ -47,9 +50,21 @@ function validateAgentEnd(start: WorkflowAgentInfo, end: WorkflowAgentEndInfo, f
   }
 }
 
+/** Assert the immutable identity fields shared by a node-call pair. */
+function validateNodeEnd(start: WorkflowNodeInfo, end: WorkflowNodeEndInfo, fail: InvariantFailure): void {
+  if (start.phase !== end.phase) {
+    fail(`workflow/node-end identity diverges from workflow/node-start for seq ${end.seq}`)
+  }
+  const outcome: string = end.outcome
+  if (outcome !== 'completed' && outcome !== 'failed' && outcome !== 'cancelled') {
+    fail(`workflow/node-end carries unknown outcome ${JSON.stringify(outcome)}`)
+  }
+}
+
 /** Validate a terminal result against the accumulated run trace. */
 function validateWorkflowEnd(trace: WorkflowTrace, result: WorkflowResultInfo, fail: InvariantFailure): void {
   if (trace.agents.size > 0) fail(`workflow/end has ${trace.agents.size} agent call(s) without workflow/agent-end`)
+  if (trace.nodes.size > 0) fail(`workflow/end has ${trace.nodes.size} node call(s) without workflow/node-end`)
   if (!Number.isSafeInteger(result.agentsStarted) || result.agentsStarted < trace.starts) {
     fail('workflow/end agentsStarted must be a safe integer covering every observed agent start')
   }
@@ -64,6 +79,8 @@ const install: InvariantInstaller = (ctx, fail) => {
   const stagedStarts = new WeakSet<WorkflowRunInfo>()
   const stagedAgentStarts = new WeakSet<WorkflowAgentInfo>()
   const stagedAgentEnds = new WeakSet<WorkflowAgentEndInfo>()
+  const stagedNodeStarts = new WeakSet<WorkflowNodeInfo>()
+  const stagedNodeEnds = new WeakSet<WorkflowNodeEndInfo>()
   const stagedEnds = new WeakSet<WorkflowResultInfo>()
 
   ctx.on('internal/dispatch', (_mode, eventName, args) => {
@@ -74,6 +91,25 @@ const install: InvariantInstaller = (ctx, fail) => {
       }
       if (traces.has(info.id)) fail(`workflow/start repeated run id ${JSON.stringify(info.id)}`)
       stagedStarts.add(info)
+      return
+    }
+    if (eventName === 'workflow/node-start') {
+      const node = args[1] as WorkflowNodeInfo
+      const trace = traceFor(traces, args[0] as WorkflowRunInfo, fail)
+      if (!Number.isSafeInteger(node.seq) || node.seq < 1 || node.phase.length === 0) {
+        fail('workflow/node-start seq must be positive and phase must be non-empty')
+      }
+      if (trace.nodes.has(node.seq)) fail(`workflow/node-start repeated seq ${node.seq}`)
+      stagedNodeStarts.add(node)
+      return
+    }
+    if (eventName === 'workflow/node-end') {
+      const node = args[1] as WorkflowNodeEndInfo
+      const trace = traceFor(traces, args[0] as WorkflowRunInfo, fail)
+      const start = trace.nodes.get(node.seq)
+      if (start === undefined) return fail(`workflow/node-end has no matching start for seq ${node.seq}`)
+      validateNodeEnd(start, node, fail)
+      stagedNodeEnds.add(node)
       return
     }
     if (!eventName.startsWith('workflow/')) return
@@ -106,7 +142,7 @@ const install: InvariantInstaller = (ctx, fail) => {
   ctx.on('workflow/start', (info) => {
     /* v8 ignore next -- internal/dispatch stages the same run-info object */
     if (!stagedStarts.delete(info)) return
-    traces.set(info.id, { meta: JSON.stringify(info.meta), agents: new Map(), starts: 0 })
+    traces.set(info.id, { meta: JSON.stringify(info.meta), agents: new Map(), starts: 0, nodes: new Map() })
   }, { global: true })
   ctx.on('workflow/agent-start', (info, agent) => {
     /* v8 ignore next -- internal/dispatch stages the same agent object */
@@ -119,6 +155,16 @@ const install: InvariantInstaller = (ctx, fail) => {
     /* v8 ignore next -- internal/dispatch stages the same agent object */
     if (!stagedAgentEnds.delete(agent)) return
     traceFor(traces, info, fail).agents.delete(agent.seq)
+  }, { global: true })
+  ctx.on('workflow/node-start', (info, node) => {
+    /* v8 ignore next -- internal/dispatch stages the same node object */
+    if (!stagedNodeStarts.delete(node)) return
+    traceFor(traces, info, fail).nodes.set(node.seq, node)
+  }, { global: true })
+  ctx.on('workflow/node-end', (info, node) => {
+    /* v8 ignore next -- internal/dispatch stages the same node object */
+    if (!stagedNodeEnds.delete(node)) return
+    traceFor(traces, info, fail).nodes.delete(node.seq)
   }, { global: true })
   ctx.on('workflow/end', (info, result) => {
     /* v8 ignore next -- internal/dispatch stages the same result object */

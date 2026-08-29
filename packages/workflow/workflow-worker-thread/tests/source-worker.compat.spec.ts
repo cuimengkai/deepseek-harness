@@ -7,8 +7,10 @@
 import { expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import WorkerThreadCodeRuntime from '@deepseek-ai/dsh-code-runtime-worker-thread'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentProvider } from '@deepseek-ai/dsh-subagent'
+import WebRuntime from '@deepseek-ai/dsh-web'
 import WorkerThreadWorkflowEngine from '../src/index.ts'
 import { SessionId } from '@deepseek-ai/dsh-session'
 
@@ -26,6 +28,8 @@ it('runs the default config through the source worker', async () => {
     start: () => Promise.reject(new Error('source-worker compat script must not start a child')),
   }
   ctx.subagents.registerProvider(provider)
+  const web = await ctx.plugin(WebRuntime)
+  const codeRuntime = await ctx.plugin(WorkerThreadCodeRuntime, {})
   const engine = await ctx.plugin(WorkerThreadWorkflowEngine, {})
   const parent = { id: SessionId('workflow-compat-parent'), options: {} } as unknown as Agent
   try {
@@ -41,6 +45,8 @@ it('runs the default config through the source worker', async () => {
     }
   } finally {
     await engine.dispose()
+    await codeRuntime.dispose()
+    await web.dispose()
     await subagents.dispose()
   }
 })

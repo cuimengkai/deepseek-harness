@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-29-agent-modes-preset-flow-binding.md
+2026-08-29-agent-modes-preset-flow-binding.md: 6ab356a256e31ba328ae14add79503c22ae83f4b
+2026-08-29-agent-modes-preset-flow-binding.zh.md: 4cf98d741d61f0c640930d1dc79edc3779c49bb6

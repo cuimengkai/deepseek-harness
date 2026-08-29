@@ -171,9 +171,12 @@ interface AgentOptions {
   maxTokens?: number
   /**
    * Per-kind model routes. A kind listed here routes that kind's requests to
-   * the bound route (this agent's provider/model otherwise). Declaration only
-   * until request routing consumes kinds (a Phase B/C follow-on); carried so a
-   * flow-authored per-kind binding survives into the child's durable options.
+   * the bound route (this agent's provider/model otherwise); either side of
+   * a binding may be absent, inheriting the base field. `dsh-agent-loop`'s
+   * single request channel is always kind `text`, so only `modelKinds.text`
+   * currently affects a live request; other kinds are carried (e.g. into a
+   * flow-started child's durable options) for a future request channel that
+   * issues them.
    */
   modelKinds?: Partial<Record<ModelKind, { provider?: string; model?: string }>>
 }

@@ -139,9 +139,11 @@ export function childSessionMeta(
   parent: Agent,
   childDepth: number,
   lineageSeedLength: number,
+  childPresetId?: string,
 ): NonNullable<CreateAgentOptions['meta']> {
   const parentHeader = parent.session.header
-  const agentPreset = parent.ctx.get('agentPresets')?.composedPreset(parent.ctx)
+  const agentPreset = childPresetId
+    ?? parent.ctx.get('agentPresets')?.composedPreset(parent.ctx)
   return {
     ...parentHeader.cwd !== undefined ? { cwd: parentHeader.cwd } : {},
     ...agentPreset === undefined ? {} : { agentPreset },
@@ -161,6 +163,11 @@ export interface ChildComposition {
   readonly persona?: string | undefined
   /** Per-child tool scoping. */
   readonly toolFilter?: ToolRestriction | undefined
+  /**
+   * When set, mount this preset on the child instead of joining the parent's
+   * standing composition via {@link AgentPresets.composeFrom}.
+   */
+  readonly childPresetId?: string | undefined
 }
 
 /**
@@ -175,11 +182,12 @@ export const SUBAGENT_DELEGATION_CONTEXT
     + 'limitation in your reply so the delegating agent can handle it.'
 
 /**
- * Compose one child inside its creation window: join its parent's preset,
- * register the fixed delegation-scope statement, then apply the child's own
- * shadowing persona section and tool restriction, all owned by the child's
- * scope and therefore invisible to its parent and siblings. Creation and cold
- * resume both pass through here.
+ * Compose one child inside its creation window: join its parent's preset (or
+ * mount {@link ChildComposition.childPresetId} when set), register the fixed
+ * delegation-scope statement, then apply the child's own shadowing persona
+ * section and tool restriction, all owned by the child's scope and therefore
+ * invisible to its parent and siblings. Creation and cold resume both pass
+ * through here.
  *
  * The join comes first and the child's own registrations second, which is the
  * order the layering already implies — the nearest scope wins a name, and a
@@ -193,15 +201,25 @@ export const SUBAGENT_DELEGATION_CONTEXT
  * sections. Taking the parent as a parameter is what makes that omission
  * unrepresentable at the call sites.
  * @param childCtx - the child agent's scoped creation context.
- * @param parent - the delegating parent whose composition the child joins.
- * @param composition - the per-child persona and tool filter to install.
+ * @param parent - the delegating parent whose composition the child joins
+ *   (unless `childPresetId` names a different mount).
+ * @param composition - the per-child persona, tool filter, and optional preset.
  */
-export function applyChildComposition(
+export async function applyChildComposition(
   childCtx: Context,
   parent: Agent,
   composition: ChildComposition,
-): void {
-  childCtx.get('agentPresets')?.composeFrom(childCtx, parent.ctx)
+): Promise<void> {
+  const presets = childCtx.get('agentPresets')
+  const childPresetId = composition.childPresetId?.trim()
+  if (childPresetId !== undefined && childPresetId !== '') {
+    if (presets === undefined) {
+      throw new Error('childPresetId requires agentPresets in the composition')
+    }
+    await presets.mount(childCtx, childPresetId)
+  } else {
+    presets?.composeFrom(childCtx, parent.ctx)
+  }
   // Order 120: after the sandbox:policy (110) and approval:policy (115) sentences.
   childCtx.systemPrompt.context({ name: 'subagent:delegation', order: 120, text: SUBAGENT_DELEGATION_CONTEXT })
   if (composition.persona !== undefined) {

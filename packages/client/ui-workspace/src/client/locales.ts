@@ -7,9 +7,9 @@
 /** Simplified Chinese dictionary (the key-set source of truth). */
 export const zh = {
   'group.ungrouped': '未分组',
-  'session.new': '新会话',
+  'session.new': '草稿',
   'section.workspaces': '工作区',
-  'section.sessions': '会话',
+  'section.sessions': '任务',
   'viewOptions.label': '视图选项',
   'groupBy.label': '分组方式',
   'groupBy.workspace': '按工作区',
@@ -79,9 +79,9 @@ export type WorkspaceKey = keyof typeof zh
 /** English dictionary, checked complete against the zh key set. */
 export const en = {
   'group.ungrouped': 'Ungrouped',
-  'session.new': 'New Session',
+  'session.new': 'Draft',
   'section.workspaces': 'Workspaces',
-  'section.sessions': 'Sessions',
+  'section.sessions': 'Tasks',
   'viewOptions.label': 'View options',
   'groupBy.label': 'Group by',
   'groupBy.workspace': 'WorkSpace',

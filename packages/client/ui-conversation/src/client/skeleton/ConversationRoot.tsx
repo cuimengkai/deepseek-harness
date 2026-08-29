@@ -296,8 +296,8 @@ export function ConversationRoot({
           ? undefined
           : workspaceLabel(cwd)))
 
-  const heroWorkspaceRow = (
-    <div className={css.heroWorkspaceRow}>
+  const heroWorkspaceAccessory = (
+    <>
       <WorkspaceChip
         buttonRef={pickerAnchor}
         label={chipTitle}
@@ -320,8 +320,7 @@ export function ConversationRoot({
         },
         onClose: () => { setPickerOpen(false) },
       })}
-      {renderSlot('conversation.hero.agentPreset', {})}
-    </div>
+    </>
   )
 
   // The placeholder chip ("Choose workspace") and the Workspace-trigger input travel
@@ -350,17 +349,18 @@ export function ConversationRoot({
         ? { blocked: composerBlock, placeholder: composerBlock.reason }
         : hero ? { placeholder: t('placeholder.hero') } : {}),
     overlay: sessionId === undefined ? undefined : renderSlot('conversation.input.overlay', {}),
-    leftItems: zone === undefined ? null : renderSlot('conversation.input.left', zone),
+    // Hero categories already stage the preset; keep capability chip off the tool row.
+    leftItems: hero || zone === undefined ? null : renderSlot('conversation.input.left', zone),
     rightItems: zone === undefined ? null : renderSlot('conversation.input.right', zone),
     // Ambient dock under the card shares the composer's width constraint.
     footer: !hero && zone !== undefined ? renderSlot('conversation.composer.dock', zone) : null,
+    ...(hero ? { workspaceAccessory: heroWorkspaceAccessory } : {}),
   })
 
   const composerBar = (
     <div className={clsx(css.composerStack, hero && css.composerHero)}>
       {hero && <HeroGlow className={css.heroGlow} />}
       {hero && <HeroShell t={t} renderSlot={renderSlot} />}
-      {hero && heroWorkspaceRow}
       {hero && workspaceError !== null && (
         <div className={css.workspaceError} role="alert">
           {t('workspace.connectError', { message: workspaceError })}

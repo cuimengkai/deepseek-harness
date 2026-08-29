@@ -1,0 +1,122 @@
+/* Scenario chip — same geometry as HeroShell workspace; selected fill marks
+   the primary context without a second visual language. */
+
+.seat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: min(100%, 360px);
+  min-height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 16px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.seat[data-selected='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.seat:not(:disabled):hover,
+.seat[aria-expanded='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.seat:disabled {
+  cursor: default;
+  color: var(--dsw-alias-label-quaternary);
+  background: transparent;
+}
+
+.seatKind {
+  flex: none;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.seatIcon {
+  flex: none;
+  color: var(--dsw-alias-label-primary);
+}
+
+.introIcon {
+  animation: seat-icon-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes seat-icon-in {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.introText {
+  display: inline-block;
+  white-space: pre;
+}
+
+.introChar {
+  display: inline-block;
+  white-space: pre;
+  opacity: 0;
+  animation: seat-char-in 0.4s ease-out forwards;
+}
+
+@keyframes seat-char-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .introIcon,
+  .introChar {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+.chevron {
+  flex: none;
+  color: var(--dsw-alias-label-caption);
+}
+
+.item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 320px;
+}
+
+.itemName {
+  font-size: 13px;
+  line-height: 20px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.itemDesc {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-caption);
+  white-space: normal;
+}

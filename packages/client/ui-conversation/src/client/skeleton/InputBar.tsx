@@ -35,17 +35,18 @@ import { registerComposerKeymap } from '../input/editor/keymap.ts'
 import { attachmentErrorText, imageSizeText } from '../image-labels.ts'
 import { ContextMeter } from './ContextMeter.tsx'
 import { PermissionSelect } from './PermissionSelect.tsx'
+import { ComposerPlusMenu } from './ComposerPlusMenu.tsx'
 import css from './InputBar.module.css'
 
 export type InputBarProps = ComposerBarProps
 
 export function InputBar({
   useSession, useInput, inputActions, keyboard, addImages, removeImage, draftImages,
-  resolveSubmitMode, toggleCommandMenu, stop, command, t,
+  resolveSubmitMode, toggleCommandMenu, stop, command, openAgentSettings, t,
   renderSlot, useNotices, useLexicon, useMenuLauncher,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
   workspacePickerOpen = false, onRequestWorkspace,
-  placeholder, accessory, overlay, leftItems, rightItems, footer,
+  placeholder, accessory, overlay, leftItems, rightItems, footer, workspaceAccessory,
 }: InputBarProps) {
   const input = useInput(s => s)
   const notice = useNotices(s => s)
@@ -434,25 +435,44 @@ export function InputBar({
         </div>
         <div className={css.row}>
           <div className={css.tools}>
-            <Tooltip label={t('input.commands')} side="top" delayMs={500}>
-              <button
-                type="button"
-                className={css.add}
-                aria-label={t('input.commands')}
-                aria-haspopup="listbox"
-                aria-expanded={commandMenuOpen}
-                disabled={locked || toggleCommandMenu === undefined}
-                onMouseDown={keepFocus}
-                onClick={onToggleCommandMenu}
-              >
-                <IconPlusOutline16 size={14} />
-              </button>
-            </Tooltip>
-            <div className={css.modes}>
-              {accessSelect}
-              {sessionId === undefined ? null : renderSlot('conversation.input.plan', { locked })}
-            </div>
-            {leftItems}
+            {variant === 'hero' ? (
+              <ComposerPlusMenu
+                locked={locked}
+                t={t}
+                actions={{
+                  onFiles: (files) => { intakeImages(files) },
+                  togglePlan: (leaving) => {
+                    void command?.(leaving ? '/plan off' : '/plan')
+                  },
+                  planActive:  planActive,
+                  openAgentSettings,
+                  openSkills: (selection) => { toggleCommandMenu?.(selection) },
+                  caretSpan: () => keyboard?.caretSpan() ?? { start: 0, end: 0 },
+                }}
+              />
+            ) : (
+              <Tooltip label={t('input.commands')} side="top" delayMs={500}>
+                <button
+                  type="button"
+                  className={css.add}
+                  aria-label={t('input.commands')}
+                  aria-haspopup="listbox"
+                  aria-expanded={commandMenuOpen}
+                  disabled={locked || toggleCommandMenu === undefined}
+                  onMouseDown={keepFocus}
+                  onClick={onToggleCommandMenu}
+                >
+                  <IconPlusOutline16 size={14} />
+                </button>
+              </Tooltip>
+            )}
+            {variant === 'hero' ? null : (
+              <div className={css.modes}>
+                {accessSelect}
+                {leftItems}
+                {sessionId === undefined ? null : renderSlot('conversation.input.plan', { locked })}
+              </div>
+            )}
           </div>
           <div className={css.trailing}>
             {rightItems}
@@ -496,6 +516,12 @@ export function InputBar({
             </Tooltip>
           </div>
         </div>
+        {variant === 'hero' && (workspaceAccessory !== undefined || accessSelect !== null) && (
+          <div className={css.contextStrip} data-composer-context="">
+            {workspaceAccessory}
+            {accessSelect}
+          </div>
+        )}
       </div>
       {footer}
     </div>

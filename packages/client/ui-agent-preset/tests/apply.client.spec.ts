@@ -14,6 +14,7 @@ import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { apply as settingsApply, inject as settingsInject } from '@deepseek-ai/dsh-client-ui-settings/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-agent-preset/client'
+import { AgentHubSection } from '../src/client/AgentHubSection.tsx'
 import { AgentPresetLabel } from '../src/client/AgentPresetLabel.tsx'
 import type { AgentPresetLabelInjected } from '../src/client/AgentPresetLabel.tsx'
 import { AgentPresetRow } from '../src/client/AgentPresetRow.tsx'
@@ -23,6 +24,16 @@ import type { AgentPresetSectionInjected } from '../src/client/AgentPresetSectio
 import { AgentPresetSeat } from '../src/client/AgentPresetSeat.tsx'
 import type { AgentPresetSeatInjected } from '../src/client/AgentPresetSeat.tsx'
 import { AgentPresetSeatController } from '../src/client/seat-store.ts'
+import { CategoryChips } from '../src/client/CategoryChips.tsx'
+import { CategorySkillRow } from '../src/client/CategorySkillRow.tsx'
+import type { IntegrationsSectionInjected } from '../src/client/IntegrationsSection.tsx'
+
+/** The presets tab inject face after the Agent hub has registered. */
+function presetSection(slots: SlotRegistry): AgentPresetSectionInjected {
+  const tab = slots.entries('settings.agent.tab').find(entry => entry.options.id === 'presets')
+  if (tab === undefined) throw new Error('expected presets tab')
+  return (tab.inject as unknown as () => AgentPresetSectionInjected)()
+}
 
 // These specs assert the shipped Chinese copy. The lane has no jsdom `window`,
 // so browser-language detection never runs and a fresh LocaleRuntime opens on
@@ -98,6 +109,11 @@ async function bench() {
   }
   ;(remote as unknown as { pluginInventory: unknown }).pluginInventory = pluginInventory
   ctx.provide('remote.pluginInventory', pluginInventory)
+  const skills = {
+    list: () => Promise.resolve({ ok: true as const, value: { skills: [] } }),
+  }
+  ;(remote as unknown as { skills: unknown }).skills = skills
+  ctx.provide('remote.skills', skills)
   // The roster and the switch are the AgentPresets Remote namespace; the
   // shared double carries no generated namespaces, so this spec stages its
   // own. Registered twice on purpose: the nested key satisfies the plugin's
@@ -125,6 +141,15 @@ async function bench() {
   ctx.provide('remote.agentPresets', agentPresets as never)
   Object.assign(remote, { agentPresets })
   ctx.provide('connection', { isLoopback: true } as never)
+  ctx.provide('router', {
+    getVersion: () => 0,
+    getSnapshot: () => ({ pathname: '/', search: '' }),
+    matchParams: () => undefined,
+    navigate: () => {},
+    back: () => {},
+    match: () => undefined,
+    subscribe: () => () => {},
+  } as never)
   await ctx.plugin({ inject: [...settingsInject], apply: settingsApply }).await()
   return { ctx, slots: ctx.get('slots') as SlotRegistry, calls, moveDefault, remote }
 }
@@ -145,6 +170,8 @@ function declareConversation(slots: SlotRegistry): () => void {
   return slots.register({
     name: 'conversation',
     children: {
+      'conversation.input.left': { kind: 'list', scope: 'session' },
+      'conversation.input.dock': { kind: 'list', scope: 'session' },
       'conversation.hero.agentPreset': { kind: 'single', scope: 'root' },
       'conversation.session.header.actions': { kind: 'list', scope: 'session' },
     },
@@ -186,11 +213,12 @@ function sessionsDouble(state: {
 describe('ui-agent-preset apply', () => {
   it('declares the services it uses', () => {
     expect(inject).toEqual([
-      'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'remote.pluginInventory', 'settingsScope',
+      'slots', 'locale', 'remote', 'remote.agentPresets', 'remote.settings', 'remote.pluginInventory',
+      'remote.skills', 'settingsScope', 'router',
     ])
   })
 
-  it('registers the General row and the settings section', async () => {
+  it('registers the General row and the Agent hub settings section', async () => {
     const { ctx, slots } = await bench()
     declareRoot(slots)
 
@@ -200,10 +228,18 @@ describe('ui-agent-preset apply', () => {
     expect(row.component).toBe(AgentPresetRow)
     expect(row.options).toMatchObject({ id: 'agent-preset', order: -25 })
     const section = slots.entries('settings.section')[0]!
-    expect(section.component).toBe(AgentPresetSection)
-    expect(section.options).toMatchObject({ id: 'agent-presets', order: 20 })
-    // The nav label is a locale-following thunk; owners resolve it at read time.
-    expect(resolveSlotLabel(section.options.label)).toBe('Agent 预设')
+    expect(section.component).toBe(AgentHubSection)
+    expect(section.options).toMatchObject({ id: 'agent', order: 20 })
+    expect(resolveSlotLabel(section.options.label)).toBe('Agent')
+    const presets = slots.entries('settings.agent.tab').find(entry => entry.options.id === 'presets')
+    expect(presets?.component).toBe(AgentPresetSection)
+    const skills = slots.entries('settings.agent.tab').find(entry => entry.options.id === 'skills')
+    expect(skills?.options.order).toBe(20)
+    const integrations = slots.entries('settings.agent.tab').find(entry => entry.options.id === 'integrations')
+    expect(integrations?.options.order).toBe(30)
+    const injected = (integrations!.inject as unknown as () => IntegrationsSectionInjected)()
+    await expect(injected.listConnectors()).resolves.toEqual([])
+    injected.goConnectors()
   })
 
   it('registers into a declaration that arrives after apply', async () => {
@@ -221,7 +257,7 @@ describe('ui-agent-preset apply', () => {
     await ctx.plugin({ inject: [...inject], apply }).await()
 
     const row = (slots.entries('settings.general.item')[0]!.inject as unknown as () => AgentPresetRowInjected)()
-    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+    const section = presetSection(slots)
 
     expect(row.hooks.agentPreset).not.toBe(section.hooks.agentPresetSection)
     // Each thunk reaches its own controller: the row's load fills the row's
@@ -238,7 +274,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots, calls } = await bench()
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
-    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+    const section = presetSection(slots)
 
     await section.load()
     section.beginCopy('standard')
@@ -264,7 +300,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots, calls, remote } = await bench()
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
-    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+    const section = presetSection(slots)
     await section.load()
     const before = calls.length
 
@@ -284,7 +320,7 @@ describe('ui-agent-preset apply', () => {
     const { ctx, slots, calls } = await bench()
     declareRoot(slots)
     await ctx.plugin({ inject: [...inject], apply }).await()
-    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+    const section = presetSection(slots)
     await section.load()
     const before = calls.length
 
@@ -318,13 +354,16 @@ describe('ui-agent-preset apply', () => {
     const fiber = ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply })
     await fiber.await()
 
-    const chip = slots.entries('conversation.hero.agentPreset')[0]!
+    const chip = slots.entries('conversation.input.left')[0]!
     expect(chip.component).toBe(AgentPresetSeat)
+    expect(slots.entries('conversation.hero.agentPreset')[0]?.component).toBe(CategoryChips)
+    expect(slots.entries('conversation.input.dock').find(e => e.options.id === 'category-skills')?.component)
+      .toBe(CategorySkillRow)
     const label = slots.entries('conversation.session.header.actions')[0]!
     expect(label.component).toBe(AgentPresetLabel)
     expect(label.options).toMatchObject({ id: 'agent-preset', order: -10 })
     await fiber.dispose()
-    expect(slots.entries('conversation.hero.agentPreset')).toHaveLength(0)
+    expect(slots.entries('conversation.input.left')).toHaveLength(0)
     expect(slots.entries('conversation.session.header.actions')).toHaveLength(0)
     expect(slots.entries('settings.section')).toHaveLength(0)
     conversation()
@@ -339,7 +378,7 @@ describe('ui-agent-preset apply', () => {
     ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
 
-    const chip = slots.entries('conversation.hero.agentPreset')[0]!
+    const chip = slots.entries('conversation.input.left')[0]!
     const seat = (chip.inject as unknown as () => AgentPresetSeatInjected)()
     await seat.load()
     expect(seat.hooks.agentPresetSeat.getSnapshot().current).toBe('standard')
@@ -371,12 +410,12 @@ describe('ui-agent-preset apply', () => {
     ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
 
-    const chip = slots.entries('conversation.hero.agentPreset')[0]!
+    const chip = slots.entries('conversation.input.left')[0]!
     const seat = (chip.inject as unknown as () => AgentPresetSeatInjected)()
     await seat.load()
     expect(seat.hooks.agentPresetSeat.getSnapshot().options.map(option => option.id)).toEqual(['standard'])
 
-    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+    const section = presetSection(slots)
     await section.load()
     section.beginCopy('standard')
     section.setCopyId('mine')
@@ -409,7 +448,7 @@ describe('ui-agent-preset apply', () => {
     ctx.provide('sessions', sessions as never)
     ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
-    const chip = (slots.entries('conversation.hero.agentPreset')[0]!
+    const chip = (slots.entries('conversation.input.left')[0]!
       .inject as unknown as () => AgentPresetSeatInjected)()
 
     await chip.load()
@@ -439,7 +478,7 @@ describe('ui-agent-preset apply', () => {
     ctx.provide('sessions', sessions as never)
     ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
-    const chip = (slots.entries('conversation.hero.agentPreset')[0]!
+    const chip = (slots.entries('conversation.input.left')[0]!
       .inject as unknown as () => AgentPresetSeatInjected)()
 
     await chip.load()
@@ -465,7 +504,7 @@ describe('ui-agent-preset apply', () => {
     ctx.provide('sessions', sessions as never)
     ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
-    const chip = (slots.entries('conversation.hero.agentPreset')[0]!
+    const chip = (slots.entries('conversation.input.left')[0]!
       .inject as unknown as () => AgentPresetSeatInjected)()
 
     await chip.load()
@@ -510,8 +549,8 @@ describe('ui-agent-preset apply', () => {
     const uiWorkspace = uiWorkspaceDouble()
     ctx.provide('uiWorkspace', uiWorkspace as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
-    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
-    const seat = (slots.entries('conversation.hero.agentPreset')[0]!
+    const section = presetSection(slots)
+    const seat = (slots.entries('conversation.input.left')[0]!
       .inject as unknown as () => AgentPresetSeatInjected)()
 
     section.startCreatorDraft?.()
@@ -551,8 +590,8 @@ describe('ui-agent-preset apply', () => {
     ctx.provide('sessions', sessions as never)
     ctx.provide('uiWorkspace', uiWorkspaceDouble() as never)
     await ctx.plugin({ inject: [...inject, 'conversation', 'sessions', 'uiWorkspace'], apply }).await()
-    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
-    const seat = (slots.entries('conversation.hero.agentPreset')[0]!
+    const section = presetSection(slots)
+    const seat = (slots.entries('conversation.input.left')[0]!
       .inject as unknown as () => AgentPresetSeatInjected)()
 
     section.startCreatorDraft?.()
@@ -581,7 +620,7 @@ describe('ui-agent-preset apply', () => {
 
     // No conversation scope mounted: the face omits the affordance and the
     // section hides its button rather than staging into nowhere.
-    const section = (slots.entries('settings.section')[0]!.inject as unknown as () => AgentPresetSectionInjected)()
+    const section = presetSection(slots)
     expect(section.startCreatorDraft).toBeUndefined()
   })
 })

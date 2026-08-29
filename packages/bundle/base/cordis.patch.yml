@@ -392,6 +392,9 @@
     - id: tool-subagent-report
       name: '@deepseek-ai/dsh-tool-subagent-report'
 
+    - id: code-runtime
+      name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+
     - id: workflow-worker-thread
       name: '@deepseek-ai/dsh-workflow-worker-thread'
       config:

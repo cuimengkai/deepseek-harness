@@ -110,6 +110,53 @@ describe('Agent', () => {
     expect(adapter.requests).toHaveLength(1)
   })
 
+  it('routes the request through modelKinds.text when set, over the base provider/model', async () => {
+    const adapter = new MockAdapter([textResponse('ok')])
+    const ctx = await harness(adapter)
+    ctx.llm.registerAdapter(['mock-alt'], adapter)
+    const agent = ctx.agentLoop.create(SessionId('a1'), {
+      provider: 'mock',
+      model: 'mock',
+      modelKinds: { text: { provider: 'mock-alt', model: 'mock-alt-model' } },
+    })
+
+    send(agent, 'hi')
+    await agent.whenIdle()
+
+    expect(adapter.requests).toHaveLength(1)
+    expect(adapter.requests[0]).toMatchObject({ provider: 'mock-alt', model: 'mock-alt-model' })
+  })
+
+  it('modelKinds.text may override only one field, inheriting the other from the base route', async () => {
+    const adapter = new MockAdapter([textResponse('ok')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('a1'), {
+      provider: 'mock',
+      model: 'mock',
+      modelKinds: { text: { model: 'mock-model-only' } },
+    })
+
+    send(agent, 'hi')
+    await agent.whenIdle()
+
+    expect(adapter.requests[0]).toMatchObject({ provider: 'mock', model: 'mock-model-only' })
+  })
+
+  it('a modelKinds entry for another kind never affects the text request', async () => {
+    const adapter = new MockAdapter([textResponse('ok')])
+    const ctx = await harness(adapter)
+    const agent = ctx.agentLoop.create(SessionId('a1'), {
+      provider: 'mock',
+      model: 'mock',
+      modelKinds: { image: { provider: 'mock-alt', model: 'mock-alt-model' } },
+    })
+
+    send(agent, 'hi')
+    await agent.whenIdle()
+
+    expect(adapter.requests[0]).toMatchObject({ provider: 'mock', model: 'mock' })
+  })
+
   it('emits one running and idle transition for one completed turn', async () => {
     const ctx = await harness(new MockAdapter([textResponse('ok')]))
     const agent = ctx.agentLoop.create(SessionId('a1'), { provider: 'mock', model: 'mock' })

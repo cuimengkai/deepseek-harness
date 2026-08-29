@@ -331,6 +331,17 @@
   cursor: default;
 }
 
+/* Hero: workspace + permission under the tool row, inside the card. */
+.contextStrip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  min-width: 0;
+  padding: 0 8px 10px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
 .retry {
   margin-left: 8px;
   padding: 1px 8px;

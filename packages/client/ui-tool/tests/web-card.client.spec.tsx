@@ -252,6 +252,7 @@ describe('DetailsPanel web Output section', () => {
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
         closeDetails={vi.fn()}
+        openFile={vi.fn(async () => {})}
         t={chatT}
       />,
     )

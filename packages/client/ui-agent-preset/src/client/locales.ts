@@ -2,12 +2,33 @@
 
 /** Locale keys these surfaces render. */
 export type AgentPresetSettingsKey =
-  | 'title' | 'description' | 'loading' | 'error' | 'userTrust' | 'seatHint' | 'headerHint'
+  | 'title' | 'description' | 'loading' | 'error' | 'userTrust' | 'seatHint' | 'seatKind' | 'headerHint'
   | 'nav' | 'sectionIntro' | 'builtIn' | 'setDefault' | 'view' | 'editCopy'
+  | 'category.label' | 'category.office' | 'category.coding' | 'category.creative'
+  | 'skill.label' | 'skill.scroll'
+  | 'skill.office.docs' | 'skill.office.docs.draft'
+  | 'skill.office.finance' | 'skill.office.finance.draft'
+  | 'skill.office.data' | 'skill.office.data.draft'
+  | 'skill.office.desk' | 'skill.office.desk.draft'
+  | 'skill.office.slides' | 'skill.office.slides.draft'
+  | 'skill.office.research' | 'skill.office.research.draft'
+  | 'skill.coding.daily' | 'skill.coding.daily.draft'
+  | 'skill.coding.web' | 'skill.coding.web.draft'
+  | 'skill.coding.agent' | 'skill.coding.agent.draft'
+  | 'skill.coding.skill' | 'skill.coding.skill.draft'
+  | 'skill.coding.cicd' | 'skill.coding.cicd.draft'
+  | 'skill.coding.docs' | 'skill.coding.docs.draft'
+  | 'skill.creative.site' | 'skill.creative.site.draft'
+  | 'skill.creative.ppt' | 'skill.creative.ppt.draft'
+  | 'skill.creative.poster' | 'skill.creative.poster.draft'
+  | 'skill.creative.app' | 'skill.creative.app.draft'
+  | 'skill.creative.system' | 'skill.creative.system.draft'
+  | 'skill.creative.brand' | 'skill.creative.brand.draft'
   | 'presetStandardName' | 'presetStandardDescription'
   | 'presetPtcName' | 'presetPtcDescription'
   | 'presetMinimalName' | 'presetMinimalDescription'
   | 'presetCordisName' | 'presetCordisDescription'
+  | 'presetOrchestrationSampleName' | 'presetOrchestrationSampleDescription'
   | 'duplicate' | 'duplicateUnavailable' | 'delete' | 'presetId' | 'presetIdPlaceholder' | 'copyOf'
   | 'displayName' | 'displayNamePlaceholder'
   | 'inUse' | 'noDescription' | 'builtInGroup' | 'customGroup'
@@ -31,34 +52,80 @@ export type AgentPresetSettingsKey =
 
 /** English copy. */
 export const en: Record<AgentPresetSettingsKey, string> = {
-  title: 'Agent preset',
-  description: 'Applies to sessions you start from now on. Running sessions keep the preset they began with.',
+  title: 'Capabilities',
+  description: 'Capability pack for sessions (tools and plugins). Scenarios in Orchestration bind a pack to a flow.',
   loading: 'Loading presets…',
   error: 'Could not load agent presets.',
   userTrust: 'Custom',
-  seatHint: 'Agent preset for the session you are about to start',
-  headerHint: 'The agent preset this session runs, fixed when it started',
-  nav: 'Agent presets',
+  seatHint: 'Capability pack for this session',
+  seatKind: 'Capabilities',
+  headerHint: 'Capability pack this session mounted',
+  nav: 'Capabilities',
+  'category.label': 'Task categories',
+  'category.office': 'Everyday work',
+  'category.coding': 'Code & build',
+  'category.creative': 'Design & create',
+  'skill.label': 'Suggested starters',
+  'skill.scroll': 'Show more starters',
+  'skill.office.docs': 'Documents',
+  'skill.office.docs.draft': 'Help me draft and organize a document.',
+  'skill.office.finance': 'Finance',
+  'skill.office.finance.draft': 'Help me analyze this finance question.',
+  'skill.office.data': 'Data & charts',
+  'skill.office.data.draft': 'Help me analyze data and visualize it.',
+  'skill.office.desk': 'Workbench',
+  'skill.office.desk.draft': 'Help me set up a personal workbench for this task.',
+  'skill.office.slides': 'Slides',
+  'skill.office.slides.draft': 'Help me outline a slide deck.',
+  'skill.office.research': 'Deep research',
+  'skill.office.research.draft': 'Help me research this topic thoroughly.',
+  'skill.coding.daily': 'Day-to-day coding',
+  'skill.coding.daily.draft': 'Help me with day-to-day coding in this workspace.',
+  'skill.coding.web': 'Web development',
+  'skill.coding.web.draft': 'Help me build or fix a web feature.',
+  'skill.coding.agent': 'Agent apps',
+  'skill.coding.agent.draft': 'Help me design or implement an agent application.',
+  'skill.coding.skill': 'Skill development',
+  'skill.coding.skill.draft': 'Help me author or improve an agent skill.',
+  'skill.coding.cicd': 'CI/CD',
+  'skill.coding.cicd.draft': 'Help me improve CI/CD for this project.',
+  'skill.coding.docs': 'Docs',
+  'skill.coding.docs.draft': 'Help me write or update project documentation.',
+  'skill.creative.site': 'Site design',
+  'skill.creative.site.draft': 'Help me design a website layout and visual direction.',
+  'skill.creative.ppt': 'PPT design',
+  'skill.creative.ppt.draft': 'Help me design presentation slides.',
+  'skill.creative.poster': 'Poster',
+  'skill.creative.poster.draft': 'Help me design a visual poster.',
+  'skill.creative.app': 'Mobile app',
+  'skill.creative.app.draft': 'Help me design a mobile app experience.',
+  'skill.creative.system': 'Design system',
+  'skill.creative.system.draft': 'Help me define or extend a design system.',
+  'skill.creative.brand': 'Brand design',
+  'skill.creative.brand.draft': 'Help me explore brand design directions.',
   sectionIntro:
-    'A preset is the plugin composition one session\'s agent runs — its tools, prompt, and capabilities. '
-    + 'Assemble one from the installed plugins, duplicate an existing one and make it yours, '
-    + 'or let the agent draft one for you in Creator mode.',
+    'Step 1 of a scenario Agent: the plugin composition one session’s agent runs — tools, prompts, and capabilities. '
+    + 'Assemble one from installed plugins, duplicate an existing pack, or let Creator draft one. '
+    + 'Then open Orchestration to bind a pack to a flow.',
   builtIn: 'Built-in',
   setDefault: 'Set as default',
   view: 'View',
   editCopy: 'Edit a copy',
-  presetStandardName: 'Standard mode',
+  presetStandardName: 'Standard preset',
   presetStandardDescription:
     'Full coding agent with file editing, shell, file and web search, skills, planning, goals, subagents, and workflows.',
-  presetPtcName: 'PTC mode',
+  presetPtcName: 'PTC preset',
   presetPtcDescription:
-    'All Standard mode capabilities, with tools exposed through the PTC mode SDK so the model can combine multi-step operations in one TypeScript program.',
-  presetMinimalName: 'Minimal mode',
+    'All Standard preset capabilities, with tools exposed through the PTC mode SDK so the model can combine multi-step operations in one TypeScript program.',
+  presetMinimalName: 'Minimal preset',
   presetMinimalDescription:
     'Two-tool coding agent with persistent bash and str_replace_editor.',
-  presetCordisName: 'Creator mode',
+  presetCordisName: 'Creator preset',
   presetCordisDescription:
-    'Built for creating custom agent presets, with all Standard mode capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.',
+    'Built for creating custom agent presets, with all Standard preset capabilities plus runtime inspection, plugin experiments, and preset-authoring guidance.',
+  presetOrchestrationSampleName: 'Sample · orchestration',
+  presetOrchestrationSampleDescription:
+    'Learning preset for orchestration modes: lean tools (shell, editor, ask_user) so the shipped hello-orchestration mode can teach flow branching. Copy before customizing.',
   duplicate: 'Duplicate',
   duplicateUnavailable: 'This deployment has no writable preset directory',
   delete: 'Delete',
@@ -149,27 +216,76 @@ export const en: Record<AgentPresetSettingsKey, string> = {
 
 /** Simplified Chinese copy. */
 export const zh: Record<AgentPresetSettingsKey, string> = {
-  title: 'Agent 预设',
-  description: '对此后新建的会话生效。运行中的会话保持它开始时的预设。',
+  title: '能力',
+  description: '会话使用的能力包（工具与插件）。编排里的场景会把能力包绑定到流程。',
   loading: '正在加载预设…',
   error: '无法加载 Agent 预设。',
   userTrust: '自定义',
-  seatHint: '即将开始的这个会话所用的 Agent 预设',
-  headerHint: '本会话运行的 Agent 预设，开始时即固定',
-  nav: 'Agent 预设',
-  sectionIntro: '预设即一个会话的 Agent 所运行的插件组装 —— 它的工具、提示词与能力。从已安装的插件组装一个、复制一份既有预设改成自己的，或用「创造模式」让 Agent 帮你创建。',
+  seatHint: '本会话的能力包',
+  seatKind: '能力',
+  headerHint: '本会话挂载的能力包',
+  nav: '能力',
+  'category.label': '任务分类',
+  'category.office': '日常办公',
+  'category.coding': '代码开发',
+  'category.creative': '设计创意',
+  'skill.label': '推荐起步',
+  'skill.scroll': '查看更多起步项',
+  'skill.office.docs': '文档处理',
+  'skill.office.docs.draft': '帮我起草并整理一份文档。',
+  'skill.office.finance': '金融服务',
+  'skill.office.finance.draft': '帮我分析这个财务问题。',
+  'skill.office.data': '数据分析及可视化',
+  'skill.office.data.draft': '帮我分析数据并可视化。',
+  'skill.office.desk': '个人工作台',
+  'skill.office.desk.draft': '帮我为这项任务搭一个个人工作台。',
+  'skill.office.slides': '幻灯片',
+  'skill.office.slides.draft': '帮我梳理一份幻灯片大纲。',
+  'skill.office.research': '深度研究',
+  'skill.office.research.draft': '帮我深入调研这个主题。',
+  'skill.coding.daily': '日常开发',
+  'skill.coding.daily.draft': '帮我在这个工作区完成日常开发任务。',
+  'skill.coding.web': '网站开发',
+  'skill.coding.web.draft': '帮我开发或修复一个 Web 功能。',
+  'skill.coding.agent': 'Agent 应用',
+  'skill.coding.agent.draft': '帮我设计或实现一个 Agent 应用。',
+  'skill.coding.skill': 'Skill 开发',
+  'skill.coding.skill.draft': '帮我编写或改进一个 Agent Skill。',
+  'skill.coding.cicd': 'CI/CD',
+  'skill.coding.cicd.draft': '帮我改进这个项目的 CI/CD。',
+  'skill.coding.docs': '文档',
+  'skill.coding.docs.draft': '帮我撰写或更新项目文档。',
+  'skill.creative.site': '网站设计',
+  'skill.creative.site.draft': '帮我设计网站布局与视觉方向。',
+  'skill.creative.ppt': 'PPT设计',
+  'skill.creative.ppt.draft': '帮我设计演示文稿幻灯片。',
+  'skill.creative.poster': '视觉海报',
+  'skill.creative.poster.draft': '帮我设计一张视觉海报。',
+  'skill.creative.app': '移动端App',
+  'skill.creative.app.draft': '帮我设计一个移动端 App 体验。',
+  'skill.creative.system': '设计系统',
+  'skill.creative.system.draft': '帮我定义或扩展一套设计系统。',
+  'skill.creative.brand': '品牌设计',
+  'skill.creative.brand.draft': '帮我探索品牌设计方向。',
+  sectionIntro:
+    '场景 Agent 的第一步：一个会话的 Agent 所运行的插件组装——工具、提示词与能力。'
+    + '从已安装插件组装、复制后改成自己的，或用「创造」让 Agent 起草。'
+    + '然后打开「编排」把能力包绑到流程上。',
   builtIn: '内置',
   setDefault: '设为默认',
   view: '查看',
   editCopy: '编辑副本',
-  presetStandardName: '标准模式',
+  presetStandardName: '标准预设',
   presetStandardDescription: '功能完整的编码 Agent，支持文件编辑、Shell、文件与网页检索、Skills、计划、目标、子代理和工作流。',
-  presetPtcName: 'PTC 模式',
-  presetPtcDescription: '具备标准模式的全部能力，并通过 PTC 模式 SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作。',
-  presetMinimalName: '极简模式',
+  presetPtcName: 'PTC 预设',
+  presetPtcDescription: '具备标准预设的全部能力，并通过 PTC 模式 SDK 呈现工具，让模型用一个 TypeScript 程序组合多步操作。',
+  presetMinimalName: '极简预设',
   presetMinimalDescription: '仅提供持久 bash 与 str_replace_editor 的双工具编码 Agent。',
-  presetCordisName: '创造模式',
-  presetCordisDescription: '用于创建自定义 Agent preset：具备标准模式的全部能力，并提供运行时检查、插件实验和 preset 创作指导。',
+  presetCordisName: '创造预设',
+  presetCordisDescription: '用于创建自定义 Agent 预设：具备标准预设的全部能力，并提供运行时检查、插件实验和 preset 创作指导。',
+  presetOrchestrationSampleName: '样本 · 编排',
+  presetOrchestrationSampleDescription:
+    '配合编排模式学习的精简预设（Shell、编辑器、ask_user），供内置 hello-orchestration 模式演示流程分支。请先复制再改。',
   duplicate: '复制',
   duplicateUnavailable: '此部署未配置可写的预设目录',
   delete: '删除',
@@ -283,6 +399,10 @@ const BUILT_IN_PRESET_KEYS: Readonly<Partial<Record<string, PresetLocaleKeys>>> 
   ptc: { name: 'presetPtcName', description: 'presetPtcDescription' },
   minimal: { name: 'presetMinimalName', description: 'presetMinimalDescription' },
   cordis: { name: 'presetCordisName', description: 'presetCordisDescription' },
+  'orchestration-sample': {
+    name: 'presetOrchestrationSampleName',
+    description: 'presetOrchestrationSampleDescription',
+  },
 }
 
 /**

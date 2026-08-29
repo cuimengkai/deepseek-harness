@@ -4,8 +4,9 @@
  * see one flat id space. Sub-node ids are namespaced as
  * `${embedNodeId}-sub-${subNodeId}` (recursively, so a nested embedding
  * produces `embed-sub-embed-sub-…`), and the sub-graph's own `OUT`
- * references — in its prompts, condition expressions, and loop iterables —
- * are rewritten from the bare sub-node id to the namespaced one. The
+ * references — in its prompts, condition expressions, loop iterables, http
+ * urls, templates, and code sources — are rewritten from the bare sub-node
+ * id to the namespaced one. The
  * expansion is pure: it returns a new graph plus an `owner` map and never
  * mutates its input.
  *
@@ -116,14 +117,43 @@ function namespacedNode(node: FlowNode, ns: (id: string) => string, subIds: Read
   if (node.type === 'loop') {
     return { ...node, id: ns(node.id), iterable: rewriteOutRefs(node.iterable, subIds, ns) }
   }
+  if (node.type === 'http') {
+    return { ...node, id: ns(node.id), url: rewriteOutRefs(node.url, subIds, ns) }
+  }
+  if (node.type === 'template') {
+    return { ...node, id: ns(node.id), template: rewriteOutRefs(node.template, subIds, ns) }
+  }
+  if (node.type === 'code') {
+    return { ...node, id: ns(node.id), source: rewriteOutRefs(node.source, subIds, ns) }
+  }
+  if (node.type === 'aggregate') {
+    return {
+      ...node,
+      id: ns(node.id),
+      items: node.items.map(item => ({
+        ...item,
+        expression: rewriteOutRefs(item.expression, subIds, ns),
+      })),
+    }
+  }
+  if (node.type === 'list') {
+    return { ...node, id: ns(node.id), source: rewriteOutRefs(node.source, subIds, ns) }
+  }
+  if (node.type === 'classify') {
+    return { ...node, id: ns(node.id), query: rewriteOutRefs(node.query, subIds, ns) }
+  }
+  if (node.type === 'extract') {
+    return { ...node, id: ns(node.id), query: rewriteOutRefs(node.query, subIds, ns) }
+  }
   return { ...node, id: ns(node.id) }
 }
 
 /**
  * Rewrite `OUT` references to sub-node ids in one sub-graph text (a prompt,
- * condition expression, or loop iterable) to the namespaced ids, so the
- * sub-graph keeps referring to its own outputs after flattening.
- * @param text - the JS expression or template-literal prompt source.
+ * condition expression, loop iterable, http url, template, or code source)
+ * to the namespaced ids, so the sub-graph keeps referring to its own outputs
+ * after flattening.
+ * @param text - the JS expression, template-literal, or code-source text.
  * @param subIds - the sub-graph's own node ids (the only ids rewritten).
  * @param ns - the namespacing function for this sub-graph.
  * @returns the text with rewritten references.

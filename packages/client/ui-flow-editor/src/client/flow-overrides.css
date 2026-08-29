@@ -32,10 +32,30 @@
   cursor: grabbing;
 }
 
-/* Unselected edge paths rest on the separator color; selection is the
-   brand-accent stroke applied by FlowCanvas.module.css. */
+/* Edge SVGs default to a 300×150 CSS box; graph path coords live outside it.
+   Keep overflow visible and shrink the layout box so painting is not clipped by
+   an ancestor with overflow:hidden (known React Flow + transform interaction). */
+.react-flow .react-flow__edges svg {
+  overflow: visible;
+  width: 1px;
+  height: 1px;
+}
+
+/* Unselected edge paths: concrete color + width so a missing token or faint
+   secondary label color cannot make connections look absent. */
 .react-flow__edge-path {
-  stroke: var(--dsw-alias-separator-primary);
+  stroke: #475569;
+  stroke-width: 2.5;
+}
+
+.react-flow__edge .react-flow__edge-path {
+  stroke-width: 2.5;
+}
+
+.react-flow__arrowhead polyline,
+.react-flow__arrowhead polyline.arrowclosed {
+  stroke: #475569;
+  fill: #475569;
 }
 
 .react-flow__controls {

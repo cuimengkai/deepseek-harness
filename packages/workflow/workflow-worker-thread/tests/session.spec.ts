@@ -4,7 +4,7 @@ import type { MessagePort } from 'node:worker_threads'
 import { HostToWorkerType, WorkerToHostType } from '../src/protocol.ts'
 import type { HostToWorkerMessage, WorkerToHostMessage } from '../src/protocol.ts'
 import { requireParentPort, runWorkerSession } from '../src/session.ts'
-import type { ChildResult, WorkerInit } from '../src/types.ts'
+import type { ChildResult, CodeExecuteOutcome, HttpFetchOutcome, WorkerInit } from '../src/types.ts'
 
 /** Default limits for in-process sessions (concurrency pinned; auto is machine-derived). */
 function limits(overrides?: Partial<WorkerInit['limits']>): WorkerInit['limits'] {
@@ -38,6 +38,14 @@ interface FakeHostOptions {
   reply?: (request: { prompt: string; schema?: unknown; provider?: string; model?: string }, index: number) => ChildResult | undefined
   /** Reject the start instead (child-start-error) when returning a string. */
   refuse?: (index: number) => string | undefined
+  /** Auto-respond to http-fetch: reply with a fetch outcome per call index. Omit a reply to leave the call pending. */
+  httpReply?: (request: { url: string }, index: number) => HttpFetchOutcome | undefined
+  /** Reject the fetch instead (http-fetch-error) when returning a string. */
+  httpRefuse?: (index: number) => string | undefined
+  /** Auto-respond to code-execute: reply with a run outcome per call index. Omit a reply to leave the call pending. */
+  codeReply?: (request: { program: string }, index: number) => CodeExecuteOutcome | undefined
+  /** Reject the run instead (code-execute-error) when returning a string. */
+  codeRefuse?: (index: number) => string | undefined
   /** Auto-send `go` on `ready` (default true). */
   go?: boolean
   /** Manual mode: do NOT auto-answer child-start at all (the test scripts the replies). */
@@ -54,6 +62,8 @@ function fakeHost(options?: FakeHostOptions): FakeHost {
   const messages: WorkerToHostMessage[] = []
   const resultGate = Promise.withResolvers<Extract<WorkerToHostMessage, { type: 'result' }>['result']>()
   let childIndex = 0
+  let httpIndex = 0
+  let codeIndex = 0
   channel.port1.on('message', (message: WorkerToHostMessage) => {
     messages.push(message)
     switch (message.type) {
@@ -83,6 +93,44 @@ function fakeHost(options?: FakeHostOptions): FakeHost {
       case WorkerToHostType.ChildDispose:
         channel.port1.postMessage({ type: HostToWorkerType.ChildDisposed, callId: message.callId } satisfies HostToWorkerMessage)
         break
+      case WorkerToHostType.HttpFetch: {
+        if (options?.manual) break
+        const index = httpIndex
+        httpIndex += 1
+        const refusal = options?.httpRefuse?.(index)
+        if (refusal !== undefined) {
+          channel.port1.postMessage(
+            { type: HostToWorkerType.HttpFetchError, callId: message.callId, rendered: refusal } satisfies HostToWorkerMessage,
+          )
+          break
+        }
+        const outcome = options?.httpReply?.(message.request, index)
+        if (outcome !== undefined) {
+          channel.port1.postMessage(
+            { type: HostToWorkerType.HttpFetched, callId: message.callId, outcome } satisfies HostToWorkerMessage,
+          )
+        }
+        break
+      }
+      case WorkerToHostType.CodeExecute: {
+        if (options?.manual) break
+        const index = codeIndex
+        codeIndex += 1
+        const refusal = options?.codeRefuse?.(index)
+        if (refusal !== undefined) {
+          channel.port1.postMessage(
+            { type: HostToWorkerType.CodeExecuteError, callId: message.callId, rendered: refusal } satisfies HostToWorkerMessage,
+          )
+          break
+        }
+        const outcome = options?.codeReply?.(message.request, index)
+        if (outcome !== undefined) {
+          channel.port1.postMessage(
+            { type: HostToWorkerType.CodeExecuted, callId: message.callId, outcome } satisfies HostToWorkerMessage,
+          )
+        }
+        break
+      }
       case WorkerToHostType.Result:
         resultGate.resolve(message.result)
         break
@@ -103,6 +151,16 @@ function fakeHost(options?: FakeHostOptions): FakeHost {
 /** A completed text child result. */
 function text(reply: string): ChildResult {
   return { output: [{ type: 'text', text: reply }], stopReason: 'completed' }
+}
+
+/** A completed text fetch outcome. */
+function fetched(url: string, content: string): HttpFetchOutcome {
+  return { url, statusCode: 200, body: { kind: 'text', content }, truncated: false }
+}
+
+/** A completed code-run outcome carrying only a completion value. */
+function coded(value: unknown): CodeExecuteOutcome {
+  return { logs: [], value: value as Exclude<CodeExecuteOutcome['value'], undefined> }
 }
 
 describe('runWorkerSession over an in-process MessageChannel', () => {
@@ -338,7 +396,8 @@ describe('runWorkerSession over an in-process MessageChannel', () => {
       ["return await agent('p', { label: 3 })", '"label" must be a string'],
       ["return await agent('p', { get label() { throw new Error('read failed') } })", 'options must be plain JSON data'],
       ["return await agent('p', { bogus: true })", '"bogus" is not recognized'],
-      ["return await agent('p', { effort: 'high' })", '"effort" is deferred and not supported by this engine (supported: label, phase, schema, provider, model, modelKinds)'],
+      ["return await agent('p', { effort: 'high' })", '"effort" is deferred and not supported by this engine (supported: label, phase, schema, provider, model, modelKinds, childPresetId)'],
+      ["return await agent('p', { childPresetId: '  ' })", '"childPresetId" must be a non-empty string'],
       ["return await agent('p', { schema: { type: 'object', oneOf: [] } })", 'outside the supported subset'],
       ['return await parallel([() => 1, () => 2, () => 3])', 'over the per-call cap (2)'],
       ['return await pipeline([1, 2, 3], (x) => x)', 'maxItemsPerCall'],
@@ -487,6 +546,227 @@ describe('runWorkerSession over an in-process MessageChannel', () => {
     expect(result.stopReason).toBe('cancelled')
     expect(host.ofType(WorkerToHostType.AgentEnd)[0]!.info.outcome).toBe('cancelled')
     host.close()
+  })
+
+  it('agent({modelKinds}) forwards a validated per-kind route map on the start request', async () => {
+    const host = fakeHost({ reply: () => text('ok') })
+    void runWorkerSession(host.port, init(`
+      return await agent('route by kind', { modelKinds: { text: { provider: 'openai', model: 'gpt-5' }, image: { model: 'img-1' }, audio: { provider: 'together' } } })
+    `))
+    const result = await host.result()
+    expect(result.value).toBe('ok')
+    const start = host.ofType(WorkerToHostType.ChildStart)[0]!
+    expect(start.request.modelKinds).toEqual({
+      text: { provider: 'openai', model: 'gpt-5' },
+      image: { model: 'img-1' },
+      audio: { provider: 'together' },
+    })
+    host.close()
+  })
+
+  it('agent({childPresetId}) forwards the trimmed preset id on the start request', async () => {
+    const host = fakeHost({ reply: () => text('ok') })
+    void runWorkerSession(host.port, init("return await agent('review this', { childPresetId: '  reviewing  ' })"))
+    const result = await host.result()
+    expect(result.value).toBe('ok')
+    const start = host.ofType(WorkerToHostType.ChildStart)[0]!
+    expect(start.request.childPresetId).toBe('reviewing')
+    host.close()
+  })
+
+  it('agent({modelKinds}) validation rejects malformed route maps loud', async () => {
+    const cases: [string, string][] = [
+      ["return await agent('p', { modelKinds: 'nope' })", '"modelKinds" must be an object keyed by model kind'],
+      ["return await agent('p', { modelKinds: { text: 'nope' } })", 'entry "text" must be an object'],
+      ["return await agent('p', { modelKinds: { text: { bogus: 1 } } })", 'entry "text" only accepts provider and model'],
+      ["return await agent('p', { modelKinds: { text: { provider: '' } } })", 'entry "text" provider must be a non-empty string'],
+      ["return await agent('p', { modelKinds: { text: {} } })", 'entry "text" binds nothing'],
+    ]
+    for (const [body, expected] of cases) {
+      const host = fakeHost({ reply: () => text('ok') })
+      void runWorkerSession(host.port, init(body))
+      const result = await host.result()
+      expect(result.stopReason).toBe('error')
+      expect(result.error).toContain(expected)
+      host.close()
+    }
+  })
+
+  it("http(url) round-trips through the host's ctx.web.fetch and pairs node-start/node-end", async () => {
+    const host = fakeHost({ httpReply: request => fetched(request.url, `body of ${request.url}`) })
+    void runWorkerSession(host.port, init(`
+      phase('Fetch')
+      const page = await http('https://example.com/', { phase: 'h' })
+      return page.body.content
+    `))
+    const result = await host.result()
+    expect(result.stopReason).toBe('completed')
+    expect(result.value).toBe('body of https://example.com/')
+    expect(host.ofType(WorkerToHostType.NodeStart).map(m => m.node)).toEqual([{ seq: 1, phase: 'h' }])
+    expect(host.ofType(WorkerToHostType.NodeEnd).map(m => m.node)).toEqual([{ seq: 1, phase: 'h', outcome: 'completed' }])
+    host.close()
+  })
+
+  it('a refused http() fetch (http-fetch-error) is a fatal HTTP_FETCH with a paired failed node-end', async () => {
+    const host = fakeHost({ httpRefuse: () => 'no route to host' })
+    void runWorkerSession(host.port, init(`
+      try { await http('https://example.com/', { phase: 'h' }); return 'unreachable' }
+      catch (e) { return { name: e.name, code: e.code, fatal: e.fatal } }
+    `))
+    const result = await host.result()
+    expect(result.value).toMatchObject({ name: 'WorkflowError', code: 'HTTP_FETCH', fatal: true })
+    expect(host.ofType(WorkerToHostType.NodeEnd)[0]!.node.outcome).toBe('failed')
+    host.close()
+  })
+
+  it('a cancel landing during an in-flight http() fetch pairs a cancelled node-end and dies cancelled', async () => {
+    const host = fakeHost({ manual: true })
+    void runWorkerSession(host.port, init("return await http('https://example.com/', { phase: 'h' })"))
+    await vi.waitFor(() => { expect(host.ofType(WorkerToHostType.HttpFetch).length).toBe(1) })
+    const callId = host.ofType(WorkerToHostType.HttpFetch)[0]!.callId
+    host.send({ type: HostToWorkerType.Cancel, reason: 'stop the fetch' })
+    host.send({ type: HostToWorkerType.HttpFetchError, callId, rendered: 'aborted' })
+    const result = await host.result()
+    expect(result.stopReason).toBe('cancelled')
+    expect(host.ofType(WorkerToHostType.NodeEnd)[0]!.node.outcome).toBe('cancelled')
+    host.close()
+  })
+
+  it('a cancel landing between a SUCCESSFUL http() fetch and its continuation still dies cancelled, not completed', async () => {
+    const host = fakeHost({ manual: true })
+    void runWorkerSession(host.port, init("return await http('https://example.com/', { phase: 'h' })"))
+    await vi.waitFor(() => { expect(host.ofType(WorkerToHostType.HttpFetch).length).toBe(1) })
+    const callId = host.ofType(WorkerToHostType.HttpFetch)[0]!.callId
+    // FIFO delivery over one port: Cancel is processed before the fetch reply
+    // reaches the hook's post-await continuation, even though the fetch
+    // itself fulfilled successfully.
+    host.send({ type: HostToWorkerType.Cancel, reason: 'stop right after the fetch lands' })
+    host.send({ type: HostToWorkerType.HttpFetched, callId, outcome: fetched('https://example.com/', 'too late') })
+    const result = await host.result()
+    expect(result.stopReason).toBe('cancelled')
+    expect(host.ofType(WorkerToHostType.NodeEnd)[0]!.node.outcome).toBe('cancelled')
+    host.close()
+  })
+
+  it('http() malformed hook arguments reject loud', async () => {
+    const cases: [string, string][] = [
+      ['return await http(42, { phase: "h" })', 'non-empty url string'],
+      ['return await http("", { phase: "h" })', 'non-empty url string'],
+      ['return await http("https://example.com/")', 'options must be an object'],
+      ['return await http("https://example.com/", {})', '"phase" is required and must be a non-empty string'],
+      ['return await http("https://example.com/", { phase: 3 })', '"phase" is required and must be a non-empty string'],
+      ['return await http("https://example.com/", { phase: "" })', '"phase" is required and must be a non-empty string'],
+      ['return await http("https://example.com/", "opts")', 'options must be an object'],
+      ['return await http("https://example.com/", { phase: "h", bogus: 1 })', '"bogus" is not recognized'],
+      ['return await http("https://example.com/", { get phase() { throw new Error("read failed") } })', 'options must be plain JSON data'],
+    ]
+    for (const [body, expected] of cases) {
+      const host = fakeHost()
+      void runWorkerSession(host.port, init(body))
+      const result = await host.result()
+      expect(result.stopReason).toBe('error')
+      expect(result.error).toContain(expected)
+      host.close()
+    }
+  })
+
+  it("code(source) round-trips through the host's ctx.codeRuntime.run and pairs node-start/node-end", async () => {
+    const host = fakeHost({ codeReply: () => coded(42) })
+    void runWorkerSession(host.port, init(`
+      phase('Compute')
+      const outcome = await code('return 6 * 7', { phase: 'c' })
+      return outcome.value
+    `))
+    const result = await host.result()
+    expect(result.stopReason).toBe('completed')
+    expect(result.value).toBe(42)
+    expect(host.ofType(WorkerToHostType.NodeStart).map(m => m.node)).toEqual([{ seq: 1, phase: 'c' }])
+    expect(host.ofType(WorkerToHostType.NodeEnd).map(m => m.node)).toEqual([{ seq: 1, phase: 'c', outcome: 'completed' }])
+    host.close()
+  })
+
+  it("code(source, { out }) splices a 'const OUT = <json>;' prelude ahead of the source before it ever reaches the port", async () => {
+    const host = fakeHost({ codeReply: request => coded(request.program) })
+    void runWorkerSession(host.port, init(`
+      const outcome = await code("return OUT['a']", { phase: 'c', out: { a: 1 } })
+      return outcome.value
+    `))
+    const result = await host.result()
+    expect(result.stopReason).toBe('completed')
+    expect(result.value).toBe("const OUT = {\"a\":1};\nreturn OUT['a']")
+    host.close()
+  })
+
+  it('code(source) omitting { out } forwards the source verbatim, with no prelude spliced', async () => {
+    const host = fakeHost({ codeReply: request => coded(request.program) })
+    void runWorkerSession(host.port, init("const outcome = await code('return 1', { phase: 'c' })\nreturn outcome.value"))
+    const result = await host.result()
+    expect(result.stopReason).toBe('completed')
+    expect(result.value).toBe('return 1')
+    host.close()
+  })
+
+  it('a refused code() run (code-execute-error) is a fatal CODE_EXECUTE with a paired failed node-end', async () => {
+    const host = fakeHost({ codeRefuse: () => 'no usable code runtime' })
+    void runWorkerSession(host.port, init(`
+      try { await code('return 1', { phase: 'c' }); return 'unreachable' }
+      catch (e) { return { name: e.name, code: e.code, fatal: e.fatal } }
+    `))
+    const result = await host.result()
+    expect(result.value).toMatchObject({ name: 'WorkflowError', code: 'CODE_EXECUTE', fatal: true })
+    expect(host.ofType(WorkerToHostType.NodeEnd)[0]!.node.outcome).toBe('failed')
+    host.close()
+  })
+
+  it('a cancel landing during an in-flight code() run pairs a cancelled node-end and dies cancelled', async () => {
+    const host = fakeHost({ manual: true })
+    void runWorkerSession(host.port, init("return await code('return 1', { phase: 'c' })"))
+    await vi.waitFor(() => { expect(host.ofType(WorkerToHostType.CodeExecute).length).toBe(1) })
+    const callId = host.ofType(WorkerToHostType.CodeExecute)[0]!.callId
+    host.send({ type: HostToWorkerType.Cancel, reason: 'stop the run' })
+    host.send({ type: HostToWorkerType.CodeExecuteError, callId, rendered: 'aborted' })
+    const result = await host.result()
+    expect(result.stopReason).toBe('cancelled')
+    expect(host.ofType(WorkerToHostType.NodeEnd)[0]!.node.outcome).toBe('cancelled')
+    host.close()
+  })
+
+  it('a cancel landing between a SUCCESSFUL code() run and its continuation still dies cancelled, not completed', async () => {
+    const host = fakeHost({ manual: true })
+    void runWorkerSession(host.port, init("return await code('return 1', { phase: 'c' })"))
+    await vi.waitFor(() => { expect(host.ofType(WorkerToHostType.CodeExecute).length).toBe(1) })
+    const callId = host.ofType(WorkerToHostType.CodeExecute)[0]!.callId
+    // FIFO delivery over one port: Cancel is processed before the run reply
+    // reaches the hook's post-await continuation, even though the run itself
+    // fulfilled successfully.
+    host.send({ type: HostToWorkerType.Cancel, reason: 'stop right after the run lands' })
+    host.send({ type: HostToWorkerType.CodeExecuted, callId, outcome: coded('too late') })
+    const result = await host.result()
+    expect(result.stopReason).toBe('cancelled')
+    expect(host.ofType(WorkerToHostType.NodeEnd)[0]!.node.outcome).toBe('cancelled')
+    host.close()
+  })
+
+  it('code() malformed hook arguments reject loud', async () => {
+    const cases: [string, string][] = [
+      ['return await code(42, { phase: "c" })', 'non-empty source string'],
+      ['return await code("", { phase: "c" })', 'non-empty source string'],
+      ['return await code("return 1")', 'options must be an object'],
+      ['return await code("return 1", {})', '"phase" is required and must be a non-empty string'],
+      ['return await code("return 1", { phase: 3 })', '"phase" is required and must be a non-empty string'],
+      ['return await code("return 1", { phase: "" })', '"phase" is required and must be a non-empty string'],
+      ['return await code("return 1", "opts")', 'options must be an object'],
+      ['return await code("return 1", { phase: "c", bogus: 1 })', '"bogus" is not recognized'],
+      ['return await code("return 1", { get phase() { throw new Error("read failed") } })', 'options must be plain JSON data'],
+    ]
+    for (const [body, expected] of cases) {
+      const host = fakeHost()
+      void runWorkerSession(host.port, init(body))
+      const result = await host.result()
+      expect(result.stopReason).toBe('error')
+      expect(result.error).toContain(expected)
+      host.close()
+    }
   })
 
 })

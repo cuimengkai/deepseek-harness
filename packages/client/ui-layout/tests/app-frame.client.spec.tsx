@@ -106,6 +106,7 @@ function mountFrame() {
       t={key => key === 'brand.localBuild' ? 'DSH Local Build' : key}
       usePages={((sel: (s: PagesSnapshot) => unknown) =>
         sel({ pages: [], activeId: pageState.activeId })) as never}
+      syncPanels={vi.fn()}
     />
   )
   const utils = render(element())
@@ -231,12 +232,19 @@ describe('AppFrame', () => {
     selectedSession.current = 's-blank' as SessionId
     selectedSessionBlank.current = true
     act(() => { rerenderFrame() })
+    // Session id change closes details; blank sessions may reopen the Results column.
     expect(tracks(frame)).toEqual([280, 0])
-    expect(instance.getSnapshot().details).toBe(360)
+    expect(instance.getSnapshot().details).toBe(0)
+
+    act(() => { instance.actions.openDetails() })
+    expect(tracks(frame)).toEqual([280, 360])
 
     selectedSession.current = 's-next' as SessionId
     selectedSessionBlank.current = false
     act(() => { rerenderFrame() })
+    expect(tracks(frame)).toEqual([280, 0])
+
+    act(() => { instance.actions.openDetails() })
     expect(tracks(frame)).toEqual([280, 360])
 
     selectedSession.current = undefined

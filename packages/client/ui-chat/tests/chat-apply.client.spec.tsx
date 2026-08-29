@@ -37,7 +37,13 @@ async function bench() {
       ? chatSettings.scope
       : stubSettingsScope().scope,
   } as never)
-  runtime.ctx.provide('layout', { openDetails: vi.fn(), closeDetails: vi.fn() } as never)
+  runtime.ctx.provide('layout', {
+    openDetails: vi.fn(),
+    closeDetails: vi.fn(),
+    toggleDetails: vi.fn(),
+    getDetailsOpen: vi.fn(() => false),
+    subscribeDetails: vi.fn(() => () => {}),
+  } as never)
   runtime.ctx.provide('uiWorkspace', {
     connectWorkspace: vi.fn(async () => SID),
   } as never)
@@ -81,6 +87,8 @@ describe('Chat apply wiring', () => {
     expect(b.runtime.slots.entries('settings.general.item').map(row => row.options.id))
       .toEqual(['transcript-view', 'composer-enter'])
     expect(b.runtime.slots.entries('details')).toHaveLength(1)
+    expect(b.runtime.slots.entries('conversation.session.header.utilities').map(row => row.options.id))
+      .toEqual(['results'])
     await b.runtime.dispose()
   })
 

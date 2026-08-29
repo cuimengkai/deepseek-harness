@@ -25,6 +25,8 @@ preset 组提供按会话的 agent（智能体）组装：agent preset 是一个
 | 包 | 职责 | ctx 键 |
 |---|---|---|
 | [`agent-presets`](agent-presets/README.zh.md) | preset 名单、对受信任根目录与用户根目录的发现、按 agent 组装、只复制的创作 | `ctx.agentPresets` |
+| [`agent-modes`](agent-modes/README.zh.md) | 将预设绑定到可执行入口流程的产品模式 | `ctx.agentModes` |
+| [`project-bundle`](project-bundle/README.zh.md) | 持久化的项目卡片：指令、连接器、专家、技能与 `sharedRoot` 工作区 | `ctx.projectBundles` |
 | [`persona`](persona/README.zh.md) | preset 挂载的可组装人设行，用于遮蔽或替换部署级人设 | — |
 
 -----

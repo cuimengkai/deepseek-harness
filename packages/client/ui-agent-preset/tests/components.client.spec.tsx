@@ -70,6 +70,8 @@ function renderSeat(
   const store = createSnapshotStore<AgentPresetSeatState>({ ...SEAT_READY, ...state })
   const actions = { load: vi.fn(() => Promise.resolve()), select: vi.fn(select), introduced: vi.fn() }
   render(<AgentPresetSeat {...({
+    session: { blank: false },
+    input: {},
     ...actions,
     useAgentPresetSeat: bindSnapshotSelector(store),
     t: translate,
@@ -208,6 +210,20 @@ describe('the General-settings row', () => {
 })
 
 describe('the new-session chip', () => {
+  it('hides on blank sessions (categories own staging)', () => {
+    const store = createSnapshotStore<AgentPresetSeatState>(SEAT_READY)
+    const { container } = render(<AgentPresetSeat {...({
+      session: { blank: true },
+      input: {},
+      load: vi.fn(() => Promise.resolve()),
+      select: vi.fn(() => Promise.resolve(undefined)),
+      introduced: vi.fn(),
+      useAgentPresetSeat: bindSnapshotSelector(store),
+      t: translate,
+    } as unknown as AgentPresetSeatProps)} />)
+    expect(container.firstChild).toBeNull()
+  })
+
   it('reads the roster once and shows the staged preset by name', async () => {
     const actions = renderSeat()
 

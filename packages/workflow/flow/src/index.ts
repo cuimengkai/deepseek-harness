@@ -21,14 +21,27 @@ export { FlowError } from './error.ts'
 export type { FlowErrorCode } from './error.ts'
 export { FlowRunId } from './types.ts'
 export type {
+  FlowAggregateItem,
+  FlowAggregateMode,
+  FlowAggregateNode,
   FlowAgentNode,
   FlowAgentOptions,
+  FlowClassifyClass,
+  FlowClassifyNode,
+  FlowCodeNode,
   FlowConditionNode,
   FlowEdge,
   FlowEndNode,
+  FlowExtractNode,
+  FlowExtractParam,
+  FlowExtractParamType,
   FlowFile,
   FlowGraph,
+  FlowHttpNode,
+  FlowJoinNode,
   FlowId,
+  FlowListNode,
+  FlowListOp,
   FlowLoopNode,
   FlowModelKindBinding,
   FlowNode,
@@ -40,10 +53,11 @@ export type {
   FlowRunSummary,
   FlowStartNode,
   FlowSummary,
+  FlowTemplateNode,
 } from './types.ts'
 export { FLOW_FORMAT_VERSION } from './types.ts'
 export { compileFlow } from './compile.ts'
-export type { CompiledFlow } from './compile.ts'
+export type { CompiledFlow, CompileFlowOptions } from './compile.ts'
 export { expandGraph } from './expand.ts'
 export type { ExpandedFlow } from './expand.ts'
 export { validateFlow } from './validate.ts'

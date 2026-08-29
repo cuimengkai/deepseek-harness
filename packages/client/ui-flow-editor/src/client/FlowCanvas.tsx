@@ -234,8 +234,10 @@ function FlowCanvasInner({
   // top-left, which makes a short chain read as a page that was never laid out.
   // The fit runs only when React Flow has measured the nodes and the canvas has
   // a real size, and only once per mount — later pans and zooms own the view.
+  // Retry when the wrapper later gains size (common when a flex parent was
+  // zero-height on the first paint).
   const fittedRef = useRef(false)
-  useLayoutEffect(() => {
+  const tryFitView = useCallback((): void => {
     if (fittedRef.current) return
     if (!initialized) return
     if (graph === null || graph.nodes.length === 0) return
@@ -246,6 +248,18 @@ function FlowCanvasInner({
     fittedRef.current = true
     void fitView({ padding: 0.2, duration: 0 })
   }, [fitView, graph, initialized])
+
+  useLayoutEffect(() => {
+    tryFitView()
+  }, [tryFitView])
+
+  useEffect(() => {
+    const wrapper = wrapperRef.current
+    if (wrapper === null || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(() => { tryFitView() })
+    observer.observe(wrapper)
+    return () => { observer.disconnect() }
+  }, [tryFitView])
 
   if (graph === null) return null
 
@@ -264,7 +278,10 @@ function FlowCanvasInner({
         onPaneClick={onPaneClick}
         onDrop={onDrop}
         onDragOver={onDragOver}
-        defaultEdgeOptions={{ type: INSERTABLE_EDGE_TYPE }}
+        defaultEdgeOptions={{
+          type: INSERTABLE_EDGE_TYPE,
+          style: { stroke: '#475569', strokeWidth: 2.5 },
+        }}
         nodeExtent={[[0, 0], [Infinity, Infinity]]}
         deleteKeyCode={null}
         nodesDraggable={!readOnly}

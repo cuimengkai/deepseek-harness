@@ -4,9 +4,6 @@
  * per-root debounce, and `project-insight/updated` fires only at the commit
  * point. Sessions under another preset and sessions without a cwd stay inert,
  * while a session that switches into develop mid-lifecycle re-triggers a scan.
- * A read observing an absent or stale document schedules the same debounced
- * scan, so a session restored after a host restart heals its document without
- * firing any session event.
  */
 
 import { mkdtemp, mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises'
@@ -200,7 +197,7 @@ describe('project-insight auto-scan hook', () => {
     }
   })
 
-  it('a stale read schedules the debounced re-scan and converges on fresh', async () => {
+  it('a read never schedules a re-scan', async () => {
     const root = await tempProject()
     await seed(root, {
       'package.json': '{}',
@@ -212,33 +209,15 @@ describe('project-insight auto-scan hook', () => {
       await until(() => updated.length > 0, 'project-insight/updated')
       const committed = updated.length
 
-      // A host-restarted session fires no session events, so a stale read is
-      // its own trigger: the document heals to fresh without another event.
+      // Editing turns the document stale, but reading must not schedule a
+      // re-scan: the stale document persists until an explicit trigger.
       await writeFile(join(root, 'src', 'index.ts'), 'export const x = 2\n')
       await utimes(join(root, 'src', 'index.ts'), FUTURE_MTIME, FUTURE_MTIME)
       const stale = await ctx.projectInsight.read(root)
       expect(stale.status).toBe('stale')
-      await until(async () => (await ctx.projectInsight.read(root)).status === 'fresh', 'healed stale document')
-      // No session joined the waiting set, so the commit stays unannounced.
+      await sleep(150) // well past the 10 ms debounce
       expect(updated).toHaveLength(committed)
-    } finally {
-      await dispose(ctx)
-    }
-  })
-
-  it('a none read schedules the scan of a never-scanned project', async () => {
-    const root = await tempProject()
-    await seed(root, {
-      'package.json': '{}',
-      'src/index.ts': 'export const x = 1\n',
-    })
-    const { ctx } = await setup()
-    try {
-      // A restored develop session over a project with no committed document
-      // reads `none`; the read itself must schedule the initial scan.
-      const none = await ctx.projectInsight.read(root)
-      expect(none.status).toBe('none')
-      await until(async () => (await ctx.projectInsight.read(root)).status === 'fresh', 'scanned absent document')
+      expect((await ctx.projectInsight.read(root)).status).toBe('stale')
     } finally {
       await dispose(ctx)
     }

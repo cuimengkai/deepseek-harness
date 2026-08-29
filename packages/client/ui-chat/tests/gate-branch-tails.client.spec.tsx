@@ -127,7 +127,7 @@ describe('render branch tails', () => {
     expect(view.container.querySelector('[data-state="running"]')).not.toBeNull()
   })
 
-  it('DetailsPanel title falls to 详情 when the selection has no toolName and no material', () => {
+  it('DetailsPanel shows Results title and inspect empty when selection has no material', () => {
     localStorage.clear()
     const session = sessionSnapshot()
     const chatSnapshot = chatSnapshotFixture()
@@ -162,10 +162,11 @@ describe('render branch tails', () => {
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
         closeDetails={vi.fn()}
+        openFile={vi.fn(async () => {})}
         t={t}
       />,
     )
-    expect(view.getByText('详情')).toBeTruthy()
+    expect(view.getByText('结果')).toBeTruthy()
     expect(view.getByText('该调用不在当前窗口内')).toBeTruthy()
   })
 
@@ -224,6 +225,7 @@ describe('render branch tails', () => {
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
         closeDetails={vi.fn()}
+        openFile={vi.fn(async () => {})}
         t={t}
       />,
     )

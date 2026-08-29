@@ -22,11 +22,18 @@ import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // Type-only: pulls the Session root standard-hook merge.
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
+// Type-only: pulls the layout-owned `page` SlotMap merge.
+import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+// Type-only: pulls ctx.router.
+import type {} from '@deepseek-ai/dsh-client-ui-router/client'
+import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from './contract/slots.ts'
 import { UiWorkspaceService } from './navigation.ts'
 import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
+import { ProjectsPage } from './ProjectsPage.tsx'
+import type { ProjectsPageInjected } from './ProjectsPage.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
 export type { UiWorkspace } from './navigation.ts'
@@ -34,6 +41,7 @@ export type {
   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
   WorkspaceBrowserInjected, WorkspaceBrowserProps, WorkspacePickerInjected, WorkspacePickerProps,
 } from './contract/slots.ts'
+export type { ProjectsPageInjected, ProjectsPageProps } from './ProjectsPage.tsx'
 export type { WorkspaceKey } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -60,7 +68,7 @@ const NS = 'workspace'
  * declaration through `slots.inject()` instead of assuming order.
  */
 export const inject = [
-  'slots', 'sessions', 'workspaces', 'locale', 'connection', 'remote', 'remote.directoryPicker',
+  'slots', 'sessions', 'workspaces', 'locale', 'connection', 'remote', 'remote.directoryPicker', 'router',
 ]
 
 /**
@@ -153,4 +161,53 @@ export function apply(ctx: Context): void {
     },
     WorkspacePicker,
   ))
+
+  // The Projects destination on the layout `page` slot. It lives here (not
+  // ui-sidebar) because it reads this package's `useWorkspaces` hook; the
+  // 'sidebar' dictionary namespace it renders from is registered by ui-sidebar.
+  const remotes = ctx.remote as unknown as {
+    projectBundles?: {
+      list: ProjectsPageInjected['listBundles']
+      create: ProjectsPageInjected['createBundle']
+      prepareStart: (id: string) => Promise<{ sharedRoot: string; expertPresetIds: readonly string[] }>
+      remove: ProjectsPageInjected['removeBundle']
+    }
+  }
+  const missing = (name: string) => (): never => {
+    throw new Error(`${name} remote is not mounted`)
+  }
+
+  const projectsInjected = (): ProjectsPageInjected => ({
+    goAssistant: () => { ctx.router.navigate('/') },
+    goAgentSettings: () => { ctx.router.navigate('/settings/agent') },
+    startSession: (workspaceId) => {
+      uiWorkspace.startSession(workspaceId)
+      ctx.router.navigate('/')
+    },
+    openSession: (sessionId) => {
+      sessions.open(sessionId)
+      ctx.router.navigate('/')
+    },
+    listBundles: remotes.projectBundles?.list ?? missing('projectBundles'),
+    createBundle: remotes.projectBundles?.create ?? missing('projectBundles'),
+    startBundle: async (id) => {
+      const prepare = remotes.projectBundles?.prepareStart ?? missing('projectBundles')
+      const bundle = await prepare(id)
+      const sessionId = await sessions.create({
+        cwd: bundle.sharedRoot,
+        ...bundle.expertPresetIds[0] === undefined ? {} : { agentPreset: bundle.expertPresetIds[0] },
+      })
+      sessions.open(sessionId)
+      ctx.router.navigate('/')
+    },
+    removeBundle: remotes.projectBundles?.remove ?? missing('projectBundles'),
+  })
+  ctx.slots.inject('page', () => ctx.slots.register({
+    name: 'page',
+    id: 'projects',
+    order: 10,
+    path: '/projects',
+    locale: 'sidebar',
+    inject: projectsInjected,
+  }, ProjectsPage))
 }

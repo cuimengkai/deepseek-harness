@@ -103,6 +103,8 @@ describe('graphToRfEdges', () => {
       source: 'start',
       target: 'agent-a',
       selected: false,
+      markerEnd: { type: 'arrowclosed', width: 18, height: 18, color: '#475569' },
+      style: { stroke: '#475569', strokeWidth: 2.5 },
       data: {
         readOnly: true,
         label: 'true',
@@ -113,6 +115,9 @@ describe('graphToRfEdges', () => {
     expect(mapped[1]?.selected).toBe(true)
     expect(mapped[1]?.data?.label).toBeUndefined()
     expect(mapped[1]?.data?.onInsertBetween).toBe(onInsertBetween)
+    expect(mapped[1]?.markerEnd).toEqual({
+      type: 'arrowclosed', width: 18, height: 18, color: '#475569',
+    })
   })
 })
 

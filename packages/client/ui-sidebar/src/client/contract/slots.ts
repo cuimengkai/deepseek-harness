@@ -87,18 +87,24 @@ export interface SidebarFooterActionOwnerProps {
 
 /**
  * Registrant-private injected share (arrives via the register inject
- * factory). The shell keeps only its own controls: starting a Session from
- * the New Session button and toggling the column.
+ * factory). The shell keeps New Task, primary nav, and column toggle.
  */
 export type SidebarRootInjected = {
   /**
-   * Start a New Session: with a workspace, reuse-or-create its blank session
-   * and open it; without one, inherit the current Session Workspace, then the
-   * recent Workspace, or clear into the New Session pure view when none exist.
+   * Start a New Task session: with a workspace, reuse-or-create its blank
+   * session and open it; without one, inherit the current Session Workspace,
+   * then the recent Workspace, or clear into the blank Assistant view when
+   * none exist.
    */
   startSession: (workspaceId?: WorkspaceId) => void
   /** Toggle the sidebar column through the layout service. */
   toggleSidebar: () => void
+  /** Current router pathname (for nav active state). */
+  getPathname: () => string
+  /** Subscribe to pathname changes. */
+  subscribePathname: (listener: () => void) => () => void
+  /** Navigate to a client path (`/`, `/projects`, `/settings/agent`, …). */
+  navigate: (path: string) => void
 }
 
 /**

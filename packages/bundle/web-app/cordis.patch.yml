@@ -46,9 +46,6 @@
     - id: subagent-model-selection-settings
       name: '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 
-    - id: code-runtime
-      name: '@deepseek-ai/dsh-code-runtime-worker-thread'
-
     - id: message-feedback
       name: '@deepseek-ai/dsh-message-feedback'
       config:
@@ -298,6 +295,10 @@
     - id: ui-agent-preset
       name: '@deepseek-ai/dsh-client-ui-agent-preset'
 
+    # Agent-mode roster and orchestration canvas (preset + entry flow).
+    - id: ui-agent-mode
+      name: '@deepseek-ai/dsh-client-ui-agent-mode'
+
     # Plugin configuration: the host-plane sections a user owns, as expandable
     # cards. A namespace this deployment does not expose renders nothing.
     - id: ui-settings-plugins
@@ -348,6 +349,19 @@
     # row; this host engine is a separate realm.
     - id: flow
       name: '@deepseek-ai/dsh-flow'
+
+    # Generic MCP connector roster (add-by-URL / stdio). Mounts stay
+    # fail-open so a dead URL does not fail Host load.
+    - id: connector-registry
+      name: '@deepseek-ai/dsh-connector-registry'
+
+    # WorkBuddy project bundle: instructions + connectors + experts + skills + sharedRoot.
+    - id: project-bundle
+      name: '@deepseek-ai/dsh-project-bundle'
+
+    # App-running-only automation rules. Does not wake a closed process.
+    - id: automation
+      name: '@deepseek-ai/dsh-automation'
 
 # ── the agent plane moves behind agent presets ─────────────────────────────
 #
@@ -489,3 +503,12 @@
       name: '@deepseek-ai/dsh-agent-presets'
       config:
         default: standard
+
+# Product modes: bind a preset to an executable entry flow. User modes live
+# under `$DSH_HOME/.agent-modes`; shipped learning samples use the package modes/ root.
+- insert:
+    - id: agent-modes
+      name: '@deepseek-ai/dsh-agent-modes'
+      config:
+        includeShippedRoot: true
+        includeUserRoot: true

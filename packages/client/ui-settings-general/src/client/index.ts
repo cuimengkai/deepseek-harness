@@ -193,7 +193,12 @@ export function apply(ctx: ClientContext): void {
         sectionLedgerVersion = ledger
         const requested = ctx.router.matchParams(SETTINGS_PATH, ctx.router.getSnapshot().pathname)?.section
         const projected = projectRows()
-        activeSection = projected.some(row => row.id === requested) ? requested : projected[0]?.id
+        // Legacy Agent URLs still resolve the hub row while the rewrite effect
+        // below replaces the path.
+        const normalized = requested === 'agent-presets' || requested === 'agent-modes'
+          ? 'agent'
+          : requested
+        activeSection = projected.some(row => row.id === normalized) ? normalized : projected[0]?.id
       }
       return activeSection
     },
@@ -203,6 +208,21 @@ export function apply(ctx: ClientContext): void {
       return () => { offRouter(); offLedger() }
     },
   }
+
+  ctx.effect(() => {
+    const rewrite = (): void => {
+      const requested = ctx.router.matchParams(SETTINGS_PATH, ctx.router.getSnapshot().pathname)?.section
+      if (requested === 'agent-presets') {
+        ctx.router.navigate('/settings/agent?tab=presets', { replace: true })
+        return
+      }
+      if (requested === 'agent-modes') {
+        ctx.router.navigate('/settings/agent?tab=modes', { replace: true })
+      }
+    }
+    rewrite()
+    return ctx.router.subscribe(rewrite)
+  }, 'ui-settings-general: legacy agent section rewrite')
 
   const pageInjected = (): SettingsPageInjected => ({
     hooks: {

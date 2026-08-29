@@ -2,8 +2,8 @@
  * The canvas's custom node: the caller's card content wrapped for React Flow,
  * with a target/source handle pair on the flow axis and, when editable and the
  * caller wired a picker, a floating "+" that opens it for a successor. Handles
- * and the button hide in read-only, but the node stays selectable so the
- * inspector can still explain it.
+ * stay mounted in read-only (so edges keep their anchors) but are not
+ * connectable; the node stays selectable so the inspector can still explain it.
  */
 
 import { memo, type ReactNode } from 'react'
@@ -21,27 +21,23 @@ function CanvasNodeComponent({ id, data, selected }: NodeProps<CanvasNodeModel>)
   const className = `${css.node}${selected ? ` ${css.nodeSelected}` : ''}${extra === undefined ? '' : ` ${extra}`}`
   return (
     <div className={className} data-node-id={id}>
-      {readOnly
-        ? null
-        : (
-          <Handle
-            type="target"
-            position={Position.Left}
-            className={css.port}
-            aria-label={connectAriaLabel}
-          />
-        )}
+      {/* Handles stay mounted in read-only: React Flow anchors edges on them.
+          Hiding them for system samples made every edge disappear. */}
+      <Handle
+        type="target"
+        position={Position.Left}
+        className={`${css.port}${readOnly ? ` ${css.portReadOnly}` : ''}`}
+        isConnectable={!readOnly}
+        aria-label={connectAriaLabel}
+      />
       {renderNode(node)}
-      {readOnly
-        ? null
-        : (
-          <Handle
-            type="source"
-            position={Position.Right}
-            className={css.port}
-            aria-label={connectAriaLabel}
-          />
-        )}
+      <Handle
+        type="source"
+        position={Position.Right}
+        className={`${css.port}${readOnly ? ` ${css.portReadOnly}` : ''}`}
+        isConnectable={!readOnly}
+        aria-label={connectAriaLabel}
+      />
       {readOnly || onAddNode === undefined
         ? null
         : (

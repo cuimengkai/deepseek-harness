@@ -96,6 +96,13 @@ export interface SessionHeader {
    * would replay history the model can no longer act on.
    */
   readonly agentPreset?: string
+  /**
+   * Id of the product mode this session was created under, when the deployment
+   * binds sessions to a mode (preset + entry flow). Durable so resume and the
+   * UI can re-open the same mode; the bound preset is still recorded separately
+   * in {@link agentPreset}.
+   */
+  readonly agentMode?: string
 }
 
 /**
@@ -118,6 +125,7 @@ export interface CreateSessionOptions {
     readonly origin?: 'subagent'
     readonly delegationDepth?: number
     readonly agentPreset?: string
+    readonly agentMode?: string
   }
 }
 

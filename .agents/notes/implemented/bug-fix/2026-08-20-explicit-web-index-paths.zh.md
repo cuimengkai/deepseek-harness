@@ -10,9 +10,9 @@ Status: implemented
 
 ## 决策
 
-`dsh-host-frontend-static` 只在规范化目标为 dist 根目录或配置的 index 路径时渲染 `index.html`。当前 Web 客户端没有 History API pathname 路由；查询字符串不会改变 pathname 匹配，URL 片段也不会到达服务器。现有文件照常提供，而 `ENOENT`、`EISDIR` 和 `ENOTDIR` 读取产生不带内容类型的空 404 响应。其他文件系统失败会重新抛给 webserver 的请求失败处理，不会被错误标记为缺失。
+`dsh-host-frontend-static` 在规范化目标为 dist 根目录或配置的 index 路径时，或在文件未命中且位于配置的 `indexPaths` 前缀之下时，渲染 `index.html`。已发布的 Web 组合列出 `/settings`，使客户端 History 路由 `/settings/:section?` 在刷新与深链时仍能存活。查询字符串不会改变 pathname 匹配，URL 片段也不会到达服务器。现有文件照常提供，而未列入允许列表的 `ENOENT`、`EISDIR` 和 `ENOTDIR` 读取产生不带内容类型的空 404 响应。其他文件系统失败会重新抛给 webserver 的请求失败处理，不会被错误标记为缺失。
 
-GET 与 HEAD 对 index 入口、文件和未命中项使用相同的状态码与内容类型。具名路由仍先于回退匹配，越出 dist 根目录的遍历仍返回 403，到达回退的非 GET/HEAD 请求仍返回 405。
+GET 与 HEAD 对 index 入口、文件和未命中项使用相同的状态码与内容类型。具名路由仍先于回退匹配，越出 dist 根目录的遍历仍返回 403，到达回退的非 GET/HEAD 请求仍返回 405。每个 index 响应（包括允许列表未命中）仍须通过 Connection 的 `authorizeIndex`。
 
 ## 曾考虑的替代方案
 
@@ -20,8 +20,8 @@ GET 与 HEAD 对 index 入口、文件和未命中项使用相同的状态码与
 
 **把 `Accept: text/html` 请求头作为回退规则。** 该请求头表达的是内容表示偏好，而不是 pathname 是否为已声明的客户端路由。浏览器 fetch、机器人和监控都可能为无效路径请求 HTML，因此仍会产生同样的假成功行为。
 
-**添加可配置的 pathname 允许列表。** 当前没有客户端路由消费这项配置。未来的 History API 路由可以在引入所需路由时，同时添加显式服务器规则或配置字段，无需保留推测性的公开选项。
+**让 History 路由没有服务器入口。** 客户端已经注册了 `/settings/:section?`。没有匹配的服务器规则时，首次导航或刷新该 pathname 会返回空 404。在该路由落地后拒绝这一做法。
 
 ## 后果
 
-失效链接与缺失资源具有可供缓存和监控观察的独立 HTTP 状态，资源加载器也不会把 HTML 外壳当作 JavaScript 执行。未来基于 pathname 的客户端路由会保持 404，直到同一项变更同时加入服务器入口规则与真实组合测试。frontend-static 的真实 Loader 测试固定了 index 入口、现有资源、普通未命中和资源未命中的 GET/HEAD 状态一致性，并覆盖类似 API 的路径、路径遍历、畸形目标、不支持的方法和回退释放。
+失效链接与缺失资源具有可供缓存和监控观察的独立 HTTP 状态，资源加载器也不会把 HTML 外壳当作 JavaScript 执行。每条新的 History API pathname 路由必须在同一项变更中加入其 `indexPaths` 前缀（或等价规则）与真实组合覆盖。frontend-static 的真实 Loader 测试固定了 index 入口、允许列表 History 未命中、现有资源、普通未命中和资源未命中的 GET/HEAD 状态一致性，并覆盖类似 API 的路径、路径遍历、畸形目标、不支持的方法和回退释放。

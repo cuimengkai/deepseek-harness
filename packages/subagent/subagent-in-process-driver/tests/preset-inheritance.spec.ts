@@ -103,6 +103,21 @@ describe('a child agent composed in-process', () => {
     await run.dispose()
   })
 
+  it('mounts childPresetId instead of joining the parent preset', async () => {
+    const { ctx, parent } = await setupPresetHost()
+
+    const run = await startInProcessRun(
+      { ...spawnRequest(parent), childPresetId: 'reviewing' },
+      {},
+    )
+    await run.result
+
+    expect(run.localAgent?.session.header.agentPreset).toBe('reviewing')
+    expect(ctx.tools.schemas(run.localAgent).map(schema => schema.name)).toEqual(['reviewing_only'])
+    expect(ctx.agentPresets.composedPreset(parent.ctx)).toBe('coding')
+    await run.dispose()
+  })
+
   it('honours a tool filter over the preset tools it inherited', async () => {
     const { ctx, parent } = await setupPresetHost()
 

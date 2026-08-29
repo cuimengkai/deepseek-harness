@@ -5,7 +5,7 @@
  * conversation starts, and a header is only worth reading after that. Offering
  * a control here would promise a switch the host refuses; naming what the
  * session runs is the honest affordance, and the choice itself lives on the
- * new-session screen ({@link AgentPresetSeat}).
+ * composer capability chip ({@link AgentPresetSeat}).
  */
 
 import { useEffect } from 'react'

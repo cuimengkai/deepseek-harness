@@ -23,10 +23,14 @@ describe.skipIf(!existsSync(builtIndex) || !existsSync(builtWorker))('built work
       await writeFile(driver, `
 import { Context } from '@deepseek-ai/cordis'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import WebRuntime from '@deepseek-ai/dsh-web'
+import WorkerThreadCodeRuntime from '@deepseek-ai/dsh-code-runtime-worker-thread'
 import WorkerThreadWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
 
 const ctx = new Context()
 await ctx.plugin(SubagentRuntime)
+await ctx.plugin(WebRuntime)
+await ctx.plugin(WorkerThreadCodeRuntime, {})
 let selectedStarts = 0
 ctx.subagents.registerProvider({
   name: 'built-selected',

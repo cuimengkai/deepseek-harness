@@ -5,8 +5,10 @@
  * @module @deepseek-ai/dsh-workflow-worker-thread/types
  */
 
+import type { CodeRunResult } from '@deepseek-ai/dsh-code-runtime'
 import type { ContentBlock, ModelKind } from '@deepseek-ai/dsh-llm'
 import type { ObjectJsonSchema } from '@deepseek-ai/dsh-tools'
+import type { WebFetchResult } from '@deepseek-ai/dsh-web'
 import type { WorkflowMeta } from '@deepseek-ai/dsh-workflow'
 
 /**
@@ -47,10 +49,16 @@ export interface ChildStartRequest {
   /** The per-child model override, if the call passed one. */
   model?: string
   /**
-   * Per-kind model routes, if the call passed them. Declaration only until
-   * request routing consumes kinds (a Phase B/C follow-on).
+   * Per-kind model routes, if the call passed them; forwarded onto the
+   * child's `AgentOptions.modelKinds`, whose `text` entry then overrides the
+   * child's provider/model for its (single) request channel.
    */
   modelKinds?: Partial<Record<ModelKind, { provider?: string; model?: string }>>
+  /**
+   * Optional child agent-preset id. When set, the host mounts that preset on
+   * the child instead of joining the parent's standing composition.
+   */
+  childPresetId?: string
 }
 
 /**
@@ -96,4 +104,69 @@ export interface ChildPort {
    *   provider's asynchronous start fails.
    */
   startAgent(request: ChildStartRequest): Promise<ChildHandle>
+}
+
+/** What the worker asks the host to retrieve for one `http()` call. */
+export interface HttpFetchRequest {
+  /** The request URL (already interpolated worker-side). */
+  readonly url: string
+}
+
+/**
+ * The JSON projection of one `http()` call's result crossing the port —
+ * `ctx.web.fetch`'s own result shape (already plain JSON).
+ */
+export type HttpFetchOutcome = WebFetchResult
+
+/**
+ * The worker-side port the runtime issues `http()` calls through — the single
+ * request/response seam for the flow engine's HTTP Request node, mirroring
+ * {@link ChildPort} but with no published-child lifecycle: one call is one
+ * round trip.
+ */
+export interface HttpPort {
+  /**
+   * Retrieve one URL on the host through `ctx.web.fetch` (the `http()` hook's
+   * only half — there is no separate dispose).
+   * @param request - the URL to retrieve.
+   * @returns the retrieval outcome; rejects when the host has no usable web
+   *   fetch provider or the provider itself fails.
+   */
+  fetch(request: HttpFetchRequest): Promise<HttpFetchOutcome>
+}
+
+/** What the worker asks the host to run for one `code()` call. */
+export interface CodeExecuteRequest {
+  /**
+   * The full program text, already carrying its `const OUT = <json>;`
+   * prelude (spliced in worker-side, ahead of the flow-authored source) so
+   * the sandboxed program sees the flow's current outputs as ordinary data,
+   * never as a host binding call.
+   */
+  readonly program: string
+}
+
+/**
+ * The JSON projection of one `code()` call's result crossing the port —
+ * `ctx.codeRuntime.run()`'s own result shape (already plain JSON: a
+ * completion `value`, ordered `logs`, and an optional `error`).
+ */
+export type CodeExecuteOutcome = CodeRunResult
+
+/**
+ * The worker-side port the runtime issues `code()` calls through — the
+ * single request/response seam for the flow engine's Code node, mirroring
+ * {@link HttpPort}: one call is one round trip, with no published-child
+ * lifecycle.
+ */
+export interface CodePort {
+  /**
+   * Run one program on the host through `ctx.codeRuntime.run()` (the
+   * `code()` hook's only half — there is no separate dispose).
+   * @param request - the program to run.
+   * @returns the run's outcome; rejects only when the host has no usable
+   *   code runtime — a failed or budget-exceeded program still resolves,
+   *   per {@link CodeRunResult}'s own contract.
+   */
+  execute(request: CodeExecuteRequest): Promise<CodeExecuteOutcome>
 }

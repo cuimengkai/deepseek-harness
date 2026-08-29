@@ -83,7 +83,7 @@ return { reviewed: reviews.length }
 
 运行由持有方负责：引擎插件卸载会阻止新的启动，但不会撤销已接受的运行，调用方必须 dispose 自己启动的每个运行。`dispose()` 在需要时取消，并在引擎文档规定的期限内等待脚本与子 agent 完全停稳，因此等待 `result` 的消费方绝不会因取消而卡死。
 
-`workflow/start` 与 `workflow/end` 为运行配对；`workflow/phase` 与 `workflow/log` 携带脚本叙述；`workflow/agent-start` 与 `workflow/agent-end` 按 `seq` 为每次子 agent 调用配对。每个监听器都独立隔离：抛错的监听器只记录日志，不会饿死同级监听器或改变执行，并且每个监听器都会收到自己的 payload 副本。
+`workflow/start` 与 `workflow/end` 为运行配对；`workflow/phase` 与 `workflow/log` 携带脚本叙述；`workflow/agent-start` 与 `workflow/agent-end` 按 `seq` 为每次子 agent 调用配对；`workflow/node-start` 与 `workflow/node-end` 用同一套 `seq` 词汇为非 agent 的处理节点调用（例如某引擎的 `http()` 钩子）配对，供那些在 `agent()` 之外还要暴露画布可见节点生命周期的引擎使用。每个监听器都独立隔离：抛错的监听器只记录日志，不会饿死同级监听器或改变执行，并且每个监听器都会收到自己的 payload 副本。
 
 ### 失败纪律
 

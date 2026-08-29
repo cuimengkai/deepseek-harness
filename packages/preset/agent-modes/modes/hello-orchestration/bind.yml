@@ -1,0 +1,4 @@
+# Learning sample: capabilities come from this preset; the flow below teaches
+# branching. Copy the mode (and optionally the preset) before editing.
+preset: orchestration-sample
+entryFlow: pipeline

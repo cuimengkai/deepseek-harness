@@ -30,6 +30,25 @@ describe('LayoutController', () => {
     expect(panels.setDetails).not.toHaveBeenCalled()
   })
 
+  it('toggleDetails and syncPanels keep getDetailsOpen in sync', () => {
+    const service = new LayoutController()
+    const panels = fakePanels()
+    service.attachPanels(panels)
+    const seen: boolean[] = []
+    service.subscribeDetails(() => { seen.push(service.getDetailsOpen()) })
+
+    service.toggleDetails()
+    expect(panels.openDetails).toHaveBeenCalledTimes(1)
+    expect(service.getDetailsOpen()).toBe(true)
+
+    service.syncPanels({ details: 0 })
+    expect(service.getDetailsOpen()).toBe(false)
+    expect(seen).toEqual([true, false])
+
+    service.toggleDetails()
+    expect(panels.openDetails).toHaveBeenCalledTimes(2)
+  })
+
   it('fails loud before the root entry wired its actions', () => {
     const service = new LayoutController()
     expect(() => { service.toggleSidebar() }).toThrow(/panel actions not wired/)

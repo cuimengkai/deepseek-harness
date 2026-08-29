@@ -8,6 +8,7 @@
 
 import type { ReactNode } from 'react'
 import type { Connection, Edge, Node } from '@xyflow/react'
+import { MarkerType } from '@xyflow/react'
 import type { FlowGraph, FlowNode } from '@deepseek-ai/dsh-flow/types'
 import type { FlowCanvasSurface } from './FlowCanvas.tsx'
 
@@ -34,7 +35,7 @@ export type CanvasNodeData = {
   readonly addNodeAriaLabel?: string
 }
 
-/** The data one insertable edge carries: the branch label plus the insert hook. */
+/** The data one canvas edge carries (branch label + optional insert hook). */
 export type InsertableEdgeData = {
   /** Whether the canvas is read-only (hides the edge's insert button). */
   readonly readOnly: boolean
@@ -48,8 +49,11 @@ export type InsertableEdgeData = {
 
 /** The React Flow node model the canvas renders. */
 export type CanvasNodeModel = Node<CanvasNodeData, typeof CANVAS_NODE_TYPE>
-/** The React Flow edge model the canvas renders. */
-export type InsertableEdgeModel = Edge<InsertableEdgeData, typeof INSERTABLE_EDGE_TYPE>
+/**
+ * The React Flow edge model the canvas renders. Type is either the built-in
+ * smoothstep or the custom insertable edge.
+ */
+export type InsertableEdgeModel = Edge<InsertableEdgeData>
 
 /** The surface options every node mapping reads. */
 export interface CanvasNodeOptions {
@@ -110,9 +114,10 @@ export function graphToRfNodes(
 }
 
 /**
- * Project a flow graph onto React Flow's edge array: one insertable edge per
- * flow edge, selected from the surface's current state, with the branch label
- * and insert hook on the edge data.
+ * Project a flow graph onto React Flow's edge array. Always uses the custom
+ * insertable edge so branch labels and the insert control share one path helper
+ * (`getSmoothStepPath` with source/target positions). Stroke is a concrete
+ * color on the Edge model — a missing CSS variable must not erase the path.
  * @param graph - the flow graph being edited, or null while none is loaded.
  * @param options - the canvas state the mapping reads (selection, read-only, hook).
  * @returns React Flow edges; empty for a null graph.
@@ -122,17 +127,26 @@ export function graphToRfEdges(
   options: CanvasEdgeOptions,
 ): InsertableEdgeModel[] {
   if (graph === null) return []
-  return graph.edges.map(edge => ({
+  return graph.edges.map((edge): InsertableEdgeModel => ({
     id: edge.id,
     type: INSERTABLE_EDGE_TYPE,
     source: edge.from,
     target: edge.to,
     selected: edge.id === options.selectedEdgeId,
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      width: 18,
+      height: 18,
+      color: '#475569',
+    },
+    style: { stroke: '#475569', strokeWidth: 2.5 },
     data: {
       readOnly: options.readOnly,
       ...(edge.label === undefined ? {} : { label: edge.label }),
       ...(options.onInsertBetween === undefined ? {} : { onInsertBetween: options.onInsertBetween }),
-      ...(options.insertBetweenAriaLabel === undefined ? {} : { insertBetweenAriaLabel: options.insertBetweenAriaLabel }),
+      ...(options.insertBetweenAriaLabel === undefined
+        ? {}
+        : { insertBetweenAriaLabel: options.insertBetweenAriaLabel }),
     },
   }))
 }

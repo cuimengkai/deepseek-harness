@@ -47,7 +47,13 @@ function sessionFakeFor() {
 async function bench() {
   const runtime = await SlotTestRuntime.create()
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
-  const layout = { openDetails: vi.fn(), closeDetails: vi.fn() }
+  const layout = {
+    openDetails: vi.fn(),
+    closeDetails: vi.fn(),
+    toggleDetails: vi.fn(),
+    getDetailsOpen: vi.fn(() => false),
+    subscribeDetails: vi.fn(() => () => {}),
+  }
   runtime.ctx.provide('layout', layout as never)
   const openWorkspacePath = vi.fn<ClientRemote['session']['openWorkspacePath']>(
     () => Promise.resolve({ ok: true, value: { opened: true } }),
@@ -148,8 +154,8 @@ describe('Chat inject API', () => {
   it('closes details while sharing selection through the Chat store', async () => {
     const b = await bench()
     const entry = b.runtime.slots.entries('details')[0]!
-    const injected = (entry.inject as unknown as () => DetailsInjected)()
-    expect(Object.keys(injected)).toEqual(['closeDetails'])
+    const injected = (entry.inject as unknown as (sessionId: SessionId) => DetailsInjected)(ROOT)
+    expect(Object.keys(injected).sort()).toEqual(['closeDetails', 'openFile'])
     injected.closeDetails()
     expect(b.layout.closeDetails).toHaveBeenCalledOnce()
     expect(b.runtime.storeOf('details', ROOT)).toBe(b.runtime.storeOf('conversation.view', ROOT))

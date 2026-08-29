@@ -26,6 +26,7 @@ import { registerChatNodeRenderers } from './chat/register-node-renderers.ts'
 import { StatsLine } from './chat/StatsLine.tsx'
 import { registerConversationNodes } from './conversation-nodes/register.ts'
 import { DetailsPanel } from './details/DetailsPanel.tsx'
+import { ResultsToggle, type ResultsToggleInjected } from './details/ResultsToggle.tsx'
 import { en, NS, zh } from './locale.ts'
 import { TranscriptViewRow, type TranscriptViewRowInjected } from './settings/TranscriptViewRow.tsx'
 import { createChatStore } from './stores.ts'
@@ -162,6 +163,29 @@ export function apply(ctx: Context): void {
     locale: NS,
     children: { 'conversation.details.tool': { kind: 'single', scope: 'session' } },
     store: chatStore,
-    inject: (): DetailsInjected => ({ closeDetails: () => { ctx.layout.closeDetails() } }),
+    inject: (sessionId: SessionId): DetailsInjected => ({
+      closeDetails: () => { ctx.layout.closeDetails() },
+      openFile: async (path) => {
+        const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
+        const result = await ctx.remote.session.openWorkspacePath({
+          path: resolveWorkspacePath(cwd, path),
+        })
+        if (!result.ok) throw new Error(`path open failed: ${result.error.message}`)
+      },
+    }),
   }, DetailsPanel))
+
+  ctx.slots.inject('conversation.session.header.utilities', () => ctx.slots.register({
+    name: 'conversation.session.header.utilities',
+    id: 'results',
+    // Leading utility: Results before jobs/subagent companions.
+    order: -20,
+    locale: NS,
+    inject: (): ResultsToggleInjected => ({
+      getDetailsOpen: () => ctx.layout.getDetailsOpen(),
+      subscribeDetails: listener => ctx.layout.subscribeDetails(listener),
+      toggleDetails: () => { ctx.layout.toggleDetails() },
+      openDetails: () => { ctx.layout.openDetails() },
+    }),
+  }, ResultsToggle))
 }

@@ -164,7 +164,7 @@ describe('WorkspaceBrowser', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: '单列表' }))
     // Store-driven flip: title changes, rows flatten newest-first, headers gone.
     expect(b.store.getSnapshot().groupBy).toBe('flat')
-    expect(screen.getByText('会话')).toBeTruthy()
+    expect(screen.getByText('任务')).toBeTruthy()
     expect(screen.queryByText('alpha')).toBeNull()
     expect(screen.getByText('alpha-s')).toBeTruthy()
     expect(screen.getByText('beta-s')).toBeTruthy()
@@ -283,7 +283,7 @@ describe('WorkspaceBrowser', () => {
       useSessions: hook(sessionState([blank, ...ordinary], { current: blank.id })),
       useWorkspaces: hook(workspaceState([workspace('alpha', [blank.id, ...ordinary.map(item => item.id)])])),
     })
-    expect(screen.getByText('新会话')).toBeTruthy()
+    expect(screen.getByText('草稿')).toBeTruthy()
     for (const item of ordinary.slice(0, 5)) expect(screen.getByText(item.displayTitle)).toBeTruthy()
     expect(screen.queryByText('session-6')).toBeNull()
     expect(screen.getByRole('button', { name: '展开其余 1 个会话' })).toBeTruthy()
@@ -316,7 +316,7 @@ describe('WorkspaceBrowser', () => {
     })
 
     fireEvent.click(screen.getByRole('button', { name: '展开其余 1 个会话' }))
-    const blankRow = screen.getByText('新会话').closest('[role="treeitem"]') as HTMLElement
+    const blankRow = screen.getByText('草稿').closest('[role="treeitem"]') as HTMLElement
     const session6 = screen.getByText('session-6').closest('[role="treeitem"]') as HTMLElement
     session6.getBoundingClientRect = () => ({
       top: 200, bottom: 234, left: 0, right: 200, width: 200, height: 34,
@@ -329,7 +329,7 @@ describe('WorkspaceBrowser', () => {
 
     insertSessionBefore.mockClear()
     fireEvent.click(screen.getByRole('button', { name: '收起' }))
-    const collapsedBlank = screen.getByText('新会话').closest('[role="treeitem"]') as HTMLElement
+    const collapsedBlank = screen.getByText('草稿').closest('[role="treeitem"]') as HTMLElement
     collapsedBlank.getBoundingClientRect = () => ({
       top: 200, bottom: 234, left: 0, right: 200, width: 200, height: 34,
       x: 0, y: 200, toJSON: () => ({}),
@@ -610,21 +610,21 @@ describe('WorkspaceBrowser', () => {
         workspace('alpha', ['alpha-blank']), workspace('beta', ['beta-blank']),
       ])),
     })
-    expect(screen.getByText('新会话')).toBeTruthy()
+    expect(screen.getByText('草稿')).toBeTruthy()
     expect(screen.queryByText('alpha-blank')).toBeNull()
     expect(screen.queryByText('beta-blank')).toBeNull()
 
     rerender(b, { useSessions: hook({ ...sessions, current: staleBlank.id }) })
-    expect(screen.getAllByText('新会话')).toHaveLength(1)
+    expect(screen.getAllByText('草稿')).toHaveLength(1)
     b.store.actions.setGroupBy('flat')
     rerender(b, {})
-    expect(screen.getAllByText('新会话')).toHaveLength(1)
+    expect(screen.getAllByText('草稿')).toHaveLength(1)
     // Search excludes blank rows entirely — neither the canonical stored
     // title nor the localized display label participates in matching.
     fireEvent.change(screen.getByPlaceholderText('搜索会话…'), { target: { value: 'new session' } })
-    expect(screen.queryByText('新会话')).toBeNull()
-    fireEvent.change(screen.getByPlaceholderText('搜索会话…'), { target: { value: '新会话' } })
-    expect(screen.queryByText('新会话')).toBeNull()
+    expect(screen.queryByText('草稿')).toBeNull()
+    fireEvent.change(screen.getByPlaceholderText('搜索会话…'), { target: { value: '草稿' } })
+    expect(screen.queryByText('草稿')).toBeNull()
   })
 
   it('promotes the blank selected by New Session in its grouped and flat orders', async () => {
@@ -671,7 +671,7 @@ describe('WorkspaceBrowser', () => {
     await waitFor(() => {
       expect(b.store.getSnapshot().sessionOrderByAccount.alpha).toEqual(['blank', 'old', 'mid'])
     })
-    const blank = screen.getByText('新会话').closest('[role="treeitem"]') as HTMLElement
+    const blank = screen.getByText('草稿').closest('[role="treeitem"]') as HTMLElement
     const mid = screen.getByText('mid').closest('[role="treeitem"]') as HTMLElement
     mid.getBoundingClientRect = () => ({
       top: 150, bottom: 184, left: 0, right: 200, width: 200, height: 34, x: 0, y: 150, toJSON: () => ({}),
@@ -719,7 +719,7 @@ describe('WorkspaceBrowser', () => {
       expect(screen.getByText('无匹配会话')).toBeTruthy()
       fireEvent.click(screen.getByRole('button', { name: '清除搜索' }))
       expect(input.value).toBe('')
-      expect(screen.getByRole('tree', { name: '会话' })).toBeTruthy()
+      expect(screen.getByRole('tree', { name: '任务' })).toBeTruthy()
       // Clicking the field row focuses the input (wide mode).
       fireEvent.click(input.parentElement as HTMLElement)
       expect(document.activeElement).toBe(input)

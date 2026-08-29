@@ -9,6 +9,12 @@
   ],
   "references": [
     {
+      "path": "../../api/remotes/tsconfig.client.json"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.client.json"
+    },
+    {
       "path": "../../api/workspace-controller/tsconfig.client.json"
     },
     {
@@ -30,7 +36,13 @@
       "path": "../ui-layout"
     },
     {
+      "path": "../ui-router"
+    },
+    {
       "path": "../locale"
+    },
+    {
+      "path": "../../core/session"
     },
     {
       "path": "../../runtime-diagnostics/invariants"

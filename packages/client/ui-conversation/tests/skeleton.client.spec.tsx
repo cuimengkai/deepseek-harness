@@ -257,6 +257,7 @@ function mount(
           useMenuLauncher={bindSnapshotSelector(createSnapshotStore<string | null>(null))}
           stop={stop}
           command={() => Promise.resolve(true)}
+          openAgentSettings={vi.fn()}
           t={t}
           renderSlot={((key: string, seatOwner: object) => {
             // The bar's own seats: recorded so a case can assert what share
@@ -308,20 +309,16 @@ function mount(
 }
 
 describe('Hero chrome', () => {
-  it('renders the English preview badge through the hero locale seat', () => {
+  it('renders the WorkBuddy greeting without fish mark or preview badge', () => {
     const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
     const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
-    expect(view.getByText('Into the Unknown')).toBeTruthy()
-    expect(view.getByText('Preview')).toBeTruthy()
-    expect(renderSlot).toHaveBeenCalledOnce()
-    expect(renderSlot.mock.calls[0]?.[0]).toBe('conversation.hero.brand.mark')
-    const brandMarkOwner = renderSlot.mock.calls[0]?.[1]
-    if (brandMarkOwner === undefined || !('size' in brandMarkOwner) || !('className' in brandMarkOwner)) {
-      throw new Error('hero brand-mark owner must provide size and className')
-    }
-    expect(brandMarkOwner.size).toBe(34)
-    expect(brandMarkOwner.className).toBeTypeOf('string')
-    expect(renderSlot.mock.calls[0]?.[2]?.fallback).toBeTruthy()
+    expect(view.getByText('DeepSeek, I can help')).toBeTruthy()
+    expect(view.queryByText('Preview')).toBeNull()
+    expect(view.queryByText('Hi, I am your assistant')).toBeNull()
+    expect(renderSlot).toHaveBeenCalledTimes(1)
+    expect(renderSlot.mock.calls.map(call => call[0])).toEqual([
+      'conversation.hero.agentPreset',
+    ])
   })
 })
 
@@ -425,7 +422,7 @@ describe('ConversationRoot resident composer', () => {
     expect(seat?.contains(fallback)).toBe(true)
   })
 
-  it('hero phase: same textarea, hero chrome, no header, picker switches the workspace', () => {
+  it('hero phase: same textarea, hero chrome, visible header, picker switches the workspace', () => {
     const b = mount(
       sessionSnapshotOf({ blank: true }),
       [
@@ -435,16 +432,17 @@ describe('ConversationRoot resident composer', () => {
     )
     // Hero chrome present, view ring absent; scroll host already wraps the
     // resident composer so the blank → active flip does not remount it.
+    // Header stays visible on blank so Results / capability density match active.
     const host = b.view.container.querySelector('[data-conversation-scroll]')
     const header = b.view.container.querySelector('header')
     expect(host).not.toBeNull()
-    expect(header?.getAttribute('aria-hidden')).toBe('true')
-    expect(b.view.getByText('探索未至之境')).toBeTruthy()
-    expect(b.view.getByText('预览版')).toBeTruthy()
+    expect(header?.getAttribute('aria-hidden')).toBeNull()
+    expect(header?.getAttribute('data-blank-hero')).toBe('true')
+    expect(b.view.getByText('DeepSeek, 我帮你')).toBeTruthy()
+    expect(b.view.queryByText('预览版')).toBeNull()
     expect(b.view.queryByTestId('view-chat')).toBeNull()
     // The same machine-backed textarea is live in the hero, and the
-    // persistence mirror stays bound (ConversationSession mounts chrome-hidden
-    // for blank sessions): hero typing reaches the Conversation store.
+    // persistence mirror stays bound: hero typing reaches the Conversation store.
     const box = b.view.getByRole('textbox')
     expect(host?.contains(box)).toBe(true)
     act(() => { b.wiring.setDraft('draft in hero') })
@@ -473,14 +471,14 @@ describe('ConversationRoot resident composer', () => {
     expect(conversationPhase(failed, EMPTY_CONVERSATION_SNAPSHOT)).toBe('engaging')
     const b = mount(failed, undefined, undefined, { summaryBlank: true })
     expect(b.view.container.querySelector('[data-phase]')?.getAttribute('data-phase')).toBe('active')
-    expect(b.view.queryByText('探索未至之境')).toBeNull()
+    expect(b.view.queryByText('DeepSeek, 我帮你')).toBeNull()
   })
 
   it('settling phase: a summary that does not prove the session blank hides the composer while it opens', () => {
     const b = mount(sessionSnapshotOf({ blank: true, openState: 'loading' }))
     const root = b.view.container.querySelector('[data-phase]')
     expect(root?.getAttribute('data-phase')).toBe('settling')
-    expect(b.view.queryByText('探索未至之境')).toBeNull()
+    expect(b.view.queryByText('DeepSeek, 我帮你')).toBeNull()
   })
 
   it('settling phase: a session the list has no row for settles conservatively', () => {
@@ -505,7 +503,7 @@ describe('ConversationRoot resident composer', () => {
     // blank the column for the history round-trip.
     const root = b.view.container.querySelector('[data-phase]')
     expect(root?.getAttribute('data-phase')).toBe('hero')
-    expect(b.view.getByText('探索未至之境')).toBeTruthy()
+    expect(b.view.getByText('DeepSeek, 我帮你')).toBeTruthy()
     expect(b.view.getByRole('textbox')).toBeTruthy()
   })
 
@@ -523,7 +521,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.wiring.snapshot.draft).toBe('kept across flip')
     expect(b.store.store.getSnapshot().draft).toBe('kept across flip')
     expect(b.view.container.querySelector('[data-conversation-scroll]')?.contains(after)).toBe(true)
-    expect(b.view.queryByText('探索未至之境')).toBeNull()
+    expect(b.view.queryByText('DeepSeek, 我帮你')).toBeNull()
     expect(b.view.getByTestId('view-chat')).toBeTruthy()
   })
 
@@ -565,7 +563,7 @@ describe('ConversationRoot resident composer', () => {
     expect(b.view.getByText('one')).toBeTruthy()
     // The failure is surfaced, not swallowed: the failed pick shows an alert
     // under the hero row instead of looking like it did nothing.
-    expect(b.view.getByRole('alert').textContent).toContain('打开工作区失败：connect failed')
+    expect(b.view.getByRole('alert').textContent).toContain('工作区连接失败：connect failed')
   })
 
   it('blank session keeps the interactive picker chip (workspace switchable until the first message)', () => {
@@ -573,9 +571,12 @@ describe('ConversationRoot resident composer', () => {
     const chip = b.view.getByRole('button', { name: '选择工作区' })
     expect((chip as HTMLButtonElement).disabled).toBe(false)
     expect(b.slotCalls).toContain('conversation.hero.workspace')
-    // The agent-preset chip sits in the same row, for the same reason: both
-    // choices are only open before the first message.
+    // Category chips occupy the hero agentPreset seat; blank hero omits the
+    // composer capability chip (categories stage the preset instead).
+    expect(b.slotCalls).not.toContain('conversation.hero.agentMode')
     expect(b.slotCalls).toContain('conversation.hero.agentPreset')
+    expect(b.slotCalls).not.toContain('conversation.input.left')
+    expect(b.view.container.querySelector('[data-composer-context]')).toBeTruthy()
   })
 
   it('prompt failure renders the promptError strip (ordinary failure, no transaction UI)', () => {

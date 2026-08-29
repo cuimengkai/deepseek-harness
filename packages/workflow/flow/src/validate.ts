@@ -7,15 +7,14 @@
  * The graph compiles to nested `await visit(...)` calls, so a node with more
  * than one incoming edge (a merge) is safe only when its branches are mutually
  * exclusive — they may diverge at a `condition` (exactly one branch executes)
- * but never at a parallel fan-out (all branches execute) and never at a loop's
- * `body`/`after` split (both run). To decide that, each node is annotated with
- * the set of "branch contexts" it can be reached through — every split decision
- * on a path from `start`, propagated in topological order. Two incoming
- * contexts are exclusive iff their first divergence is at a condition; a merge
- * is valid iff every pair of its incoming contexts is exclusive. A fan-out that
- * reconverges (its branches share a downstream node) is rejected by the same
- * rule, because the shared node then carries two contexts that diverge at a
- * parallel split.
+ * — or when the merge target is an explicit `join` after a parallel fan-out.
+ * A loop's `body`/`after` split still cannot reconverge. To decide that, each
+ * node is annotated with the set of "branch contexts" it can be reached
+ * through — every split decision on a path from `start`, propagated in
+ * topological order. Two incoming contexts are exclusive iff their first
+ * divergence is at a condition or classify class split; a non-join merge is
+ * valid iff every pair of its incoming contexts is exclusive. A fan-out that
+ * reconverges at a non-join node is rejected by the same rule.
  *
  * A sub-graph never interacts with the branch-context analysis across levels: it
  * has a single entry (the embedding node) and its terminals have no outgoing
@@ -53,7 +52,7 @@ type BranchContext = Map<string, string>
 const FLOW_ID_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 
 /** The branch labels a condition's and a loop's outgoing edges must carry. */
-const BRANCH_LABELS: Record<Exclude<FlowNodeType, 'start' | 'end' | 'agent'>, readonly string[]> = {
+const BRANCH_LABELS: Record<Exclude<FlowNodeType, 'start' | 'end' | 'agent' | 'http' | 'template' | 'code' | 'aggregate' | 'list' | 'classify' | 'extract' | 'join'>, readonly string[]> = {
   condition: ['true', 'false'],
   loop: ['body', 'after'],
 }
@@ -107,9 +106,13 @@ function validateGraph(graph: FlowGraph, errors: string[], checkIdentity: boolea
       continue
     }
     // An embedding node (one with a `subgraph`) runs its sub-graph instead of a
-    // subagent, so its prompt is unused and may be empty.
-    if (node.type === 'agent' && node.subgraph === undefined && node.prompt.trim() === '') {
-      errors.push(`agent node "${node.id}" has an empty prompt`)
+    // subagent, so its prompt is unused and may be empty. A plain agent needs
+    // at least one of systemPrompt / prompt non-empty after trim.
+    if (node.type === 'agent' && node.subgraph === undefined) {
+      const system = node.systemPrompt?.trim() ?? ''
+      if (system === '' && node.prompt.trim() === '') {
+        errors.push(`agent node "${node.id}" has an empty prompt`)
+      }
     }
     if (node.type === 'condition' && node.expression.trim() === '') {
       errors.push(`condition node "${node.id}" has an empty expression`)
@@ -118,6 +121,85 @@ function validateGraph(graph: FlowGraph, errors: string[], checkIdentity: boolea
       if (node.iterable.trim() === '') errors.push(`loop node "${node.id}" has an empty iterable`)
       if (!isValidIdentifier(node.variable)) {
         errors.push(`loop node "${node.id}" variable "${node.variable}" is not a valid JS identifier`)
+      }
+    }
+    if (node.type === 'http' && node.url.trim() === '') {
+      errors.push(`http node "${node.id}" has an empty url`)
+    }
+    if (node.type === 'template' && node.template.trim() === '') {
+      errors.push(`template node "${node.id}" has an empty template`)
+    }
+    if (node.type === 'code' && node.source.trim() === '') {
+      errors.push(`code node "${node.id}" has an empty source`)
+    }
+    if (node.type === 'aggregate') {
+      if (node.items.length === 0) {
+        errors.push(`aggregate node "${node.id}" needs at least one item`)
+      }
+      if (node.mode !== 'object' && node.mode !== 'first' && node.mode !== 'concat') {
+        errors.push(`aggregate node "${node.id}" has an unknown mode`)
+      }
+      const names = new Set<string>()
+      for (const [index, item] of node.items.entries()) {
+        if (item.name.trim() === '') {
+          errors.push(`aggregate node "${node.id}" item ${String(index)} has an empty name`)
+        } else if (names.has(item.name)) {
+          errors.push(`aggregate node "${node.id}" repeats item name "${item.name}"`)
+        } else {
+          names.add(item.name)
+        }
+        if (item.expression.trim() === '') {
+          errors.push(`aggregate node "${node.id}" item "${item.name || String(index)}" has an empty expression`)
+        }
+      }
+    }
+    if (node.type === 'list') {
+      if (node.source.trim() === '') {
+        errors.push(`list node "${node.id}" has an empty source`)
+      }
+      if (node.op !== 'first' && node.op !== 'last' && node.op !== 'length' && node.op !== 'reverse' && node.op !== 'flatten') {
+        errors.push(`list node "${node.id}" has an unknown op`)
+      }
+    }
+    if (node.type === 'classify') {
+      if (node.query.trim() === '') {
+        errors.push(`classify node "${node.id}" has an empty query`)
+      }
+      if (node.classes.length < 2) {
+        errors.push(`classify node "${node.id}" needs at least two classes`)
+      }
+      const classIds = new Set<string>()
+      for (const [index, item] of node.classes.entries()) {
+        if (item.id.trim() === '') {
+          errors.push(`classify node "${node.id}" class ${String(index)} has an empty id`)
+        } else if (item.id === 'default') {
+          errors.push(`classify node "${node.id}" reserves "default" as the unmatched-class label`)
+        } else if (classIds.has(item.id)) {
+          errors.push(`classify node "${node.id}" repeats class id "${item.id}"`)
+        } else {
+          classIds.add(item.id)
+        }
+      }
+    }
+    if (node.type === 'extract') {
+      if (node.query.trim() === '') {
+        errors.push(`extract node "${node.id}" has an empty query`)
+      }
+      if (node.parameters.length === 0) {
+        errors.push(`extract node "${node.id}" needs at least one parameter`)
+      }
+      const names = new Set<string>()
+      for (const [index, param] of node.parameters.entries()) {
+        if (param.name.trim() === '') {
+          errors.push(`extract node "${node.id}" parameter ${String(index)} has an empty name`)
+        } else if (names.has(param.name)) {
+          errors.push(`extract node "${node.id}" repeats parameter name "${param.name}"`)
+        } else {
+          names.add(param.name)
+        }
+        if (param.type !== 'string' && param.type !== 'number' && param.type !== 'integer' && param.type !== 'boolean') {
+          errors.push(`extract node "${node.id}" parameter "${param.name || String(index)}" has an unknown type`)
+        }
       }
     }
     if (node.type === 'agent' && node.subgraph !== undefined) {
@@ -158,16 +240,32 @@ function validateGraph(graph: FlowGraph, errors: string[], checkIdentity: boolea
       case 'loop':
         checkBranchLabels(node, out, BRANCH_LABELS[node.type], errors)
         break
+      case 'classify':
+        checkClassifyLabels(node, out, errors)
+        break
       case 'agent':
+      case 'http':
+      case 'template':
+      case 'code':
+      case 'aggregate':
+      case 'list':
+      case 'extract':
         // 0 outgoing edges is a valid terminal; >= 2 is a parallel fan-out
-        // whose reconvergence the exclusivity analysis rejects.
+        // whose reconvergence the exclusivity analysis rejects unless the
+        // shared successor is an explicit join.
+        break
+      case 'join':
+        if (out.length > 1) errors.push(`join node "${node.id}" needs at most one outgoing edge (found ${out.length})`)
         break
     }
   }
   for (const edge of graph.edges) {
     const source = nodes.get(edge.from)
     if (source === undefined) continue
-    if (edge.label !== undefined && (source.type === 'agent' || source.type === 'start' || source.type === 'end')) {
+    if (
+      edge.label !== undefined
+      && (source.type === 'agent' || source.type === 'http' || source.type === 'template' || source.type === 'code' || source.type === 'aggregate' || source.type === 'list' || source.type === 'extract' || source.type === 'join' || source.type === 'start' || source.type === 'end')
+    ) {
       errors.push(`edge "${edge.id}" carries a branch label on a ${source.type} node`)
     }
     if (source.type === 'condition' && edge.label !== 'true' && edge.label !== 'false') {
@@ -223,6 +321,38 @@ function checkBranchLabels(
   for (const edge of out) {
     if (edge.label === undefined || !labels.includes(edge.label)) {
       errors.push(`${node.type} node "${node.id}" edge "${edge.id}" must be labeled ${labels.join(' or ')}`)
+    }
+  }
+}
+
+/**
+ * Validate a classify node's outgoing edges: one labeled edge per class id,
+ * plus an optional `default` for a null / unknown structured result.
+ */
+function checkClassifyLabels(
+  node: FlowNode,
+  out: FlowEdge[],
+  errors: string[],
+): void {
+  if (node.type !== 'classify') return
+  const classIds = node.classes
+    .map(item => item.id)
+    .filter(id => id.trim() !== '' && id !== 'default')
+  const seen = new Set<string>()
+  for (const edge of out) {
+    if (edge.label === undefined || (edge.label !== 'default' && !classIds.includes(edge.label))) {
+      errors.push(`classify node "${node.id}" edge "${edge.id}" must be labeled with a class id or default`)
+      continue
+    }
+    if (seen.has(edge.label)) {
+      errors.push(`classify node "${node.id}" repeats outgoing label "${edge.label}"`)
+      continue
+    }
+    seen.add(edge.label)
+  }
+  for (const id of classIds) {
+    if (!seen.has(id)) {
+      errors.push(`classify node "${node.id}" is missing an outgoing edge labeled "${id}"`)
     }
   }
 }
@@ -351,6 +481,18 @@ function checkExclusivity(
     const nodeContexts = contexts.get(id) ?? []
     /* v8 ignore next -- outEdges is seeded for every node id by the caller */
     const out = outEdges.get(id) ?? []
+    if (node.type === 'join') {
+      // A join is a sync barrier: one continuation, one collapsed context.
+      // Passing every incoming context through would make the successor a
+      // non-exclusive merge even though the arms already waited here.
+      const next = out[0]
+      if (next !== undefined && nodeContexts.length > 0) {
+        if (!propagate(contexts, incoming, extend(new Map(), id, 'joined'), next.to)) {
+          overflow = contextOverflow(node.id)
+        }
+      }
+      continue
+    }
     for (const context of nodeContexts) {
       if (overflow !== undefined) break
       switch (node.type) {
@@ -364,7 +506,13 @@ function checkExclusivity(
           break
         case 'end':
           break
-        case 'agent': {
+        case 'agent':
+        case 'http':
+        case 'template':
+        case 'code':
+        case 'aggregate':
+        case 'list':
+        case 'extract': {
           let branch = 0
           for (const edge of out) {
             const next = out.length === 1 ? context : extend(context, id, `p${branch}`)
@@ -378,6 +526,7 @@ function checkExclusivity(
         }
         case 'condition':
         case 'loop':
+        case 'classify':
           for (const edge of out) {
             if (!propagate(contexts, incoming, extend(context, id, edge.label as string), edge.to)) {
               overflow = contextOverflow(node.id)
@@ -394,9 +543,10 @@ function checkExclusivity(
     /* v8 ignore next -- every node id is seeded in incoming above */
     const ins = incoming.get(node.id) ?? []
     if (ins.length < 2 || !hasNonExclusivePair(ins, nodes, topo)) continue
+    if (node.type === 'join') continue
     errors.push(
       `node "${node.id}" is reached by branches that can both run — merge only after a condition's`
-      + ' true/false split, never after a parallel fan-out or a loop body/after split',
+      + ' true/false split or a classify class split, never after a parallel fan-out or a loop body/after split',
     )
   }
 
@@ -489,11 +639,11 @@ function contextsExclusive(
   for (const splitId of topo) {
     /* v8 ignore next -- splitId iterates topo, a set of graph node ids, all present in nodes */
     const type = nodes.get(splitId)?.type
-    if (type !== 'condition' && type !== 'loop' && type !== 'agent') continue
+    if (type !== 'condition' && type !== 'loop' && type !== 'agent' && type !== 'http' && type !== 'template' && type !== 'code' && type !== 'aggregate' && type !== 'list' && type !== 'classify' && type !== 'extract') continue
     const branchA = a.get(splitId)
     const branchB = b.get(splitId)
     if (branchA !== undefined && branchB !== undefined && branchA !== branchB) {
-      return type === 'condition'
+      return type === 'condition' || type === 'classify'
     }
     // One branch selecting a split the other never reaches is a divergence
     // above that split — an earlier topo entry carries it, so skip.

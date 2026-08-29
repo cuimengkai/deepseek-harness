@@ -320,6 +320,7 @@ describe('DetailsPanel Output section (read)', () => {
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
         closeDetails={vi.fn()}
+        openFile={vi.fn(async () => {})}
       />,
     )
   }

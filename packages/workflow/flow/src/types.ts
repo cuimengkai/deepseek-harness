@@ -35,7 +35,7 @@ export function FlowRunId(id: string): FlowRunId {
 }
 
 /** The node kinds a canvas can place. */
-export type FlowNodeType = 'start' | 'end' | 'agent' | 'condition' | 'loop'
+export type FlowNodeType = 'start' | 'end' | 'agent' | 'condition' | 'loop' | 'http' | 'template' | 'code' | 'aggregate' | 'list' | 'classify' | 'extract' | 'join'
 
 /** The fields every flow node carries. */
 export interface FlowNodeBase {
@@ -67,8 +67,10 @@ export interface FlowAgentOptions {
   /**
    * Per-kind model routes. A kind listed here routes that kind's requests to
    * the bound route (the node's own provider/model otherwise); presence is
-   * additive, so an omitted kind keeps the node's default. Declaration only
-   * until request routing consumes kinds (a Phase B/C follow-on).
+   * additive, so an omitted kind keeps the node's default. The child's single
+   * request channel is always kind `text`, so only a `text` entry affects a
+   * live request today; other kinds carry into the child's durable options
+   * for a future request channel that issues them.
    */
   readonly modelKinds?: Partial<Record<ModelKind, FlowModelKindBinding>>
 }
@@ -111,8 +113,15 @@ export interface FlowAgentNode extends FlowNodeBase {
    * composition graph carries `''`: its node projects a composition row, never
    * a compiled subagent. An embedding node (one with a `subgraph`) runs its
    * sub-graph instead of a subagent, so its prompt is unused and may be empty.
+   * When {@link systemPrompt} is set, compile concatenates system then this
+   * user template with a blank line between them.
    */
   readonly prompt: string
+  /**
+   * Optional system instruction prepended to {@link prompt} at compile time
+   * (Dify-style SYSTEM / USER split). Omitted on legacy graphs.
+   */
+  readonly systemPrompt?: string
   /** Per-node provider/model override, mapped to `agent(prompt, { provider, model })`. */
   readonly agentOptions?: FlowAgentOptions
   /**
@@ -121,6 +130,13 @@ export interface FlowAgentNode extends FlowNodeBase {
    * validate/compile ignore it.
    */
   readonly composition?: FlowAgentComposition
+  /**
+   * Optional child agent-preset id. When set, compile emits it into `agent()`
+   * options; the workflow worker forwards it on the child start, and
+   * in-process child composition mounts that preset instead of joining the
+   * parent composition, stamping the child session header's `agentPreset`.
+   */
+  readonly childPresetId?: string
   /**
    * A self-contained sub-graph this node embeds: the node runs the sub-graph
    * instead of a subagent, so the sub-graph's own agent nodes ARE the
@@ -151,8 +167,184 @@ export interface FlowLoopNode extends FlowNodeBase {
   readonly variable: string
 }
 
+/**
+ * One GET retrieval through the host's `ctx.web` capability — Dify's HTTP
+ * Request node, scoped to GET-only with no custom headers for this engine:
+ * `ctx.web`'s SSRF/redirect/size/time policy is the node's only allow-list,
+ * so it never grows a parallel, flow-specific one. Method and header support
+ * are a documented gap (see the package README), not silently dropped.
+ */
+export interface FlowHttpNode extends FlowNodeBase {
+  readonly type: 'http'
+  /**
+   * The request URL. Compiled as a JS template literal, so it may
+   * interpolate the enclosing loop's `${variable}` and prior outputs
+   * `${OUT['<nodeId>']}`, exactly like {@link FlowAgentNode.prompt}.
+   */
+  readonly url: string
+}
+
+/**
+ * A pure string interpolation over upstream outputs — Dify's Template node.
+ * No hook call and no host round trip: the compiled body evaluates the
+ * template literal synchronously in the workflow script realm, records
+ * `OUT[id]`, and continues. `phase(id)` still opens and closes a run-surface
+ * gate around it, exactly like a `condition`/`loop` node, so the canvas sees
+ * it move through `running` before the next node event settles it.
+ */
+export interface FlowTemplateNode extends FlowNodeBase {
+  readonly type: 'template'
+  /**
+   * The template source. Compiled as a JS template literal, so it may
+   * interpolate the enclosing loop's `${variable}` and prior outputs
+   * `${OUT['<nodeId>']}`, exactly like {@link FlowAgentNode.prompt}.
+   */
+  readonly template: string
+}
+
+/**
+ * One program run against a real sandbox — Dify's Code node. Unlike
+ * {@link FlowTemplateNode}, the source is never textually interpolated: it
+ * is forwarded byte for byte to the host's `ctx.codeRuntime` (never a bare
+ * `eval` in the workflow's own script realm), which runs it as the body of
+ * an async function alongside a `const OUT = {...}` prelude carrying the
+ * flow's current outputs, so the program accesses prior nodes as real object
+ * member access (`OUT['<nodeId>']`), not string interpolation.
+ */
+export interface FlowCodeNode extends FlowNodeBase {
+  readonly type: 'code'
+  /**
+   * The program source, exactly as authored. It runs as the body of an
+   * async function with `OUT` (the flow's outputs so far, snapshotted at
+   * call time) in scope; top-level `await` and `return` are available. No
+   * host bindings are exposed in v1 — only `OUT` data access.
+   */
+  readonly source: string
+}
+
+/** How an aggregate node combines its items. */
+export type FlowAggregateMode = 'object' | 'first' | 'concat'
+
+/** One named expression an aggregate node evaluates. */
+export interface FlowAggregateItem {
+  /** Key written into the object result when {@link FlowAggregateMode} is `object`. */
+  readonly name: string
+  /**
+   * A JS expression evaluated in the run's script realm, where `OUT` and
+   * `args` are in scope — the same trust model as a condition expression.
+   */
+  readonly expression: string
+}
+
+/**
+ * A pure script-realm combine over named upstream expressions — Dify's
+ * Variable Aggregator. No hook and no host round trip: the compiled body
+ * evaluates each item, combines them per {@link mode}, records `OUT[id]`,
+ * and continues. `phase(id)` opens and closes a run-surface gate around it,
+ * like a template node. Join-after-parallel is still refused, so this node
+ * combines serial or exclusively-branched outputs, not live parallel arms.
+ */
+export interface FlowAggregateNode extends FlowNodeBase {
+  readonly type: 'aggregate'
+  readonly items: readonly FlowAggregateItem[]
+  readonly mode: FlowAggregateMode
+}
+
+/** The closed set of list operators a list node may apply. */
+export type FlowListOp = 'first' | 'last' | 'length' | 'reverse' | 'flatten'
+
+/**
+ * A pure script-realm list operator — Dify's List Operator. The compiled
+ * body evaluates {@link source} in the script realm, coerces a non-array
+ * to a one-element list (null/undefined to `[]`), applies {@link op},
+ * records `OUT[id]`, and continues. `phase(id)` gates the run surface
+ * like a template node. Filter-by-predicate is deferred: v1 is the
+ * closed {@link FlowListOp} set, not an open expression language.
+ */
+export interface FlowListNode extends FlowNodeBase {
+  readonly type: 'list'
+  /** A JS expression over `OUT`/`args` that should yield an array. */
+  readonly source: string
+  readonly op: FlowListOp
+}
+
+/** One exclusive class a classify node may emit. */
+export interface FlowClassifyClass {
+  /** Stable class id; also the outgoing-edge label that class visits. */
+  readonly id: string
+  /** Optional display name for the canvas inspector. */
+  readonly name?: string
+}
+
+/**
+ * An LLM-backed exclusive classifier — Dify's Question Classifier. Compiles
+ * to `agent(query, { schema })` whose structured output is `{ class }` over
+ * the closed {@link classes} set, then visits the outgoing edge labeled with
+ * that class id (or `default` when the child returns null / an unknown
+ * class). Class edges are mutually exclusive, like a condition.
+ */
+export interface FlowClassifyNode extends FlowNodeBase {
+  readonly type: 'classify'
+  /**
+   * The text to classify. Compiled as a JS template literal, so it may
+   * interpolate `${variable}` and `${OUT['<nodeId>']}` like an agent prompt.
+   */
+  readonly query: string
+  readonly classes: readonly FlowClassifyClass[]
+}
+
+/** Scalar JSON Schema types a parameter-extractor field may declare. */
+export type FlowExtractParamType = 'string' | 'number' | 'integer' | 'boolean'
+
+/** One named field a parameter-extractor node asks the model to fill. */
+export interface FlowExtractParam {
+  readonly name: string
+  readonly type: FlowExtractParamType
+  readonly description?: string
+  /** When true, the compiled schema lists this name in `required`. */
+  readonly required?: boolean
+}
+
+/**
+ * An LLM-backed structured extractor — Dify's Parameter Extractor. Compiles
+ * to `agent(query, { schema })` whose schema is the object of
+ * {@link parameters}. Continuation is unlabeled, like an agent node.
+ */
+export interface FlowExtractNode extends FlowNodeBase {
+  readonly type: 'extract'
+  /**
+   * The text to extract from. Compiled as a JS template literal, so it may
+   * interpolate `${variable}` and `${OUT['<nodeId>']}` like an agent prompt.
+   */
+  readonly query: string
+  readonly parameters: readonly FlowExtractParam[]
+}
+
+/**
+ * An explicit reconverge after a parallel fan-out — Dify's join. Incoming
+ * branches may all run; the compiler waits for every arm (`parallel()`)
+ * then visits this node once. Arms whose only successor is this join
+ * return `OUT` instead of visiting it. `phase(id)` gates the run surface.
+ */
+export interface FlowJoinNode extends FlowNodeBase {
+  readonly type: 'join'
+}
+
 /** Any flow node, discriminated on `type`. */
-export type FlowNode = FlowStartNode | FlowEndNode | FlowAgentNode | FlowConditionNode | FlowLoopNode
+export type FlowNode =
+  | FlowStartNode
+  | FlowEndNode
+  | FlowAgentNode
+  | FlowConditionNode
+  | FlowLoopNode
+  | FlowHttpNode
+  | FlowTemplateNode
+  | FlowCodeNode
+  | FlowAggregateNode
+  | FlowListNode
+  | FlowClassifyNode
+  | FlowExtractNode
+  | FlowJoinNode
 
 /** One directed connection between two nodes. */
 export interface FlowEdge {
@@ -161,7 +353,8 @@ export interface FlowEdge {
   readonly to: string
   /**
    * Branch label. A condition node's outgoing edges carry `true`/`false`; a
-   * loop node's carry `body`/`after`; all other edges carry none.
+   * loop node's carry `body`/`after`; a classify node's carry a class id or
+   * `default`; all other edges carry none.
    */
   readonly label?: string
 }
@@ -226,4 +419,24 @@ export interface FlowRunSnapshot {
   readonly agentsStarted: number
   /** Node status by node id. */
   readonly nodeStatuses: Readonly<Record<string, FlowNodeStatus>>
+  /**
+   * Per-node outputs from the script's returned `OUT` map, present after a
+   * completed run when the workflow result value is a plain object. Values
+   * are the emitting hook's return — `agent()`'s text/structured JSON,
+   * `http()`'s `WebFetchResult` JSON, or `code()`'s `CodeRunResult` JSON;
+   * absent keys never ran or returned nothing JSON-safe.
+   */
+  readonly nodeOutputs?: Readonly<Record<string, JsonValue>>
+  /**
+   * Per-node input snapshot: `OUT` as it stood when `visit(id)` began.
+   * Present after a completed run when the script returned the `{ OUT, IN }`
+   * envelope. Used by the Variable Inspector to show what a node saw and to
+   * seed a downstream re-run.
+   */
+  readonly nodeInputs?: Readonly<Record<string, JsonValue>>
+  /**
+   * Wall-clock ms from `workflow/agent-start` to `workflow/agent-end` for
+   * agent nodes that produced both events (live once the call ends).
+   */
+  readonly nodeDurationsMs?: Readonly<Record<string, number>>
 }

@@ -529,6 +529,7 @@ describe('DetailsPanel Output section', () => {
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
         closeDetails={vi.fn()}
+        openFile={vi.fn(async () => {})}
         t={chatT}
       />,
     )
@@ -675,13 +676,13 @@ describe('DetailsPanel Output section', () => {
     expect(view.getByText('该调用不在当前窗口内')).toBeTruthy()
   })
 
-  it('no selection at all renders the guidance line and the default title', () => {
+  it('no selection at all renders the Results shell on Artifacts', () => {
     const view = mount(snapshot(), null)
-    expect(view.getByText('详情')).toBeTruthy()
-    expect(view.getByText('点击消息流中的工具行查看详情')).toBeTruthy()
+    expect(view.getByText('结果')).toBeTruthy()
+    expect(view.getByText('本会话尚无产物')).toBeTruthy()
   })
 
-  it('a step selection without a callId renders the guidance line too', () => {
+  it('a step selection without a callId renders the Inspect guidance line', () => {
     const view = mount(snapshot(), { turnSeq: 3, stepSeq: 1 })
     expect(view.getByText('点击消息流中的工具行查看详情')).toBeTruthy()
   })
@@ -717,10 +718,11 @@ describe('DetailsPanel Output section', () => {
         useStore={bindSnapshotSelector(chat)}
         actions={chat.actions}
         closeDetails={closeDetails}
+        openFile={vi.fn(async () => {})}
         t={chatT}
       />,
     )
-    fireEvent.click(view.getByRole('button', { name: '关闭详情' }))
+    fireEvent.click(view.getByRole('button', { name: '关闭结果' }))
     expect(closeDetails).toHaveBeenCalledTimes(1)
   })
 

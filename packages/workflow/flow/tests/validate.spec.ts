@@ -5,13 +5,36 @@
 
 import { describe, expect, it } from 'vitest'
 import { validateFlow } from '../src/validate.ts'
-import type { FlowAgentNode, FlowConditionNode, FlowEdge, FlowGraph, FlowLoopNode, FlowNode } from '../src/types.ts'
+import type {
+  FlowAgentNode,
+  FlowAggregateNode,
+  FlowClassifyNode,
+  FlowCodeNode,
+  FlowConditionNode,
+  FlowEdge,
+  FlowExtractNode,
+  FlowGraph,
+  FlowHttpNode,
+  FlowJoinNode,
+  FlowListNode,
+  FlowLoopNode,
+  FlowNode,
+  FlowTemplateNode,
+} from '../src/types.ts'
 
 /** Fields the per-type node helpers add; `Omit<FlowNode>` alone keeps only common keys. */
 type NodeExtra =
   | Partial<Omit<FlowAgentNode, 'id' | 'type' | 'position'>>
   | Partial<Omit<FlowConditionNode, 'id' | 'type' | 'position'>>
   | Partial<Omit<FlowLoopNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowHttpNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowTemplateNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowCodeNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowAggregateNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowListNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowClassifyNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowExtractNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowJoinNode, 'id' | 'type' | 'position'>>
 
 /** A node factory with a stable id and origin position. */
 function node(type: FlowNode['type'], id: string, extra: NodeExtra): FlowNode {
@@ -23,6 +46,26 @@ const end = (id = 'end') => node('end', id, {})
 const agent = (id: string, prompt = 'work on it') => node('agent', id, { prompt })
 const condition = (id: string, expression = 'OUT.a.kind === "go"') => node('condition', id, { expression })
 const loop = (id: string, iterable = 'args.items', variable = 'item') => node('loop', id, { iterable, variable })
+const http = (id: string, url = 'https://example.com') => node('http', id, { url })
+const template = (id: string, source = 'hello') => node('template', id, { template: source })
+const code = (id: string, source = 'return 1') => node('code', id, { source })
+const aggregate = (id: string, items = [{ name: 'a', expression: 'OUT.x' }], mode: 'object' | 'first' | 'concat' = 'object') =>
+  node('aggregate', id, { items, mode })
+const list = (id: string, source = 'OUT.x', op: 'first' | 'last' | 'length' | 'reverse' | 'flatten' = 'first') =>
+  node('list', id, { source, op })
+const classify = (
+  id: string,
+  query = 'which',
+  classes: { id: string; name?: string }[] = [{ id: 'a' }, { id: 'b' }],
+) => node('classify', id, { query, classes })
+const join = (id: string) => node('join', id, {})
+const extract = (
+  id: string,
+  query = 'extract it',
+  parameters: { name: string; type: 'string' | 'number' | 'integer' | 'boolean'; description?: string; required?: boolean }[] = [
+    { name: 'value', type: 'string' },
+  ],
+) => node('extract', id, { query, parameters })
 
 let edgeSeq = 0
 /** An edge with a stable unique id; `label` is a branch label when given. */
@@ -85,7 +128,156 @@ describe('validateFlow: structural rules', () => {
 
   it('rejects an empty agent prompt and an empty condition expression', () => {
     expectErrors(graph([start(), agent('a', '  '), end()], [edge('start', 'a'), edge('a', 'end')]), 'empty prompt')
+    expectOk(graph(
+      [start(), {
+        id: 'a',
+        type: 'agent',
+        position: { x: 0, y: 0 },
+        prompt: '',
+        systemPrompt: 'system only',
+      }, end()],
+      [edge('start', 'a'), edge('a', 'end')],
+    ))
+    expectErrors(graph(
+      [start(), {
+        id: 'a',
+        type: 'agent',
+        position: { x: 0, y: 0 },
+        prompt: '  ',
+        systemPrompt: '  ',
+      }, end()],
+      [edge('start', 'a'), edge('a', 'end')],
+    ), 'empty prompt')
     expectErrors(graph([start(), condition('c', ' ')], [edge('start', 'c')]), 'empty expression')
+  })
+
+  it('rejects an empty http url', () => {
+    expectErrors(graph([start(), http('h', '  '), end()], [edge('start', 'h'), edge('h', 'end')]), 'empty url')
+    expectOk(graph([start(), http('h'), end()], [edge('start', 'h'), edge('h', 'end')]))
+  })
+
+  it('rejects an empty template', () => {
+    expectErrors(graph([start(), template('tpl', '  '), end()], [edge('start', 'tpl'), edge('tpl', 'end')]), 'empty template')
+    expectOk(graph([start(), template('tpl'), end()], [edge('start', 'tpl'), edge('tpl', 'end')]))
+  })
+
+  it('rejects an empty code source', () => {
+    expectErrors(graph([start(), code('c', '  '), end()], [edge('start', 'c'), edge('c', 'end')]), 'empty source')
+    expectOk(graph([start(), code('c'), end()], [edge('start', 'c'), edge('c', 'end')]))
+  })
+
+  it('rejects an aggregate node with no items, empty names, duplicate names, or empty expressions', () => {
+    expectErrors(graph([start(), aggregate('agg', []), end()], [edge('start', 'agg'), edge('agg', 'end')]), 'at least one item')
+    expectErrors(
+      graph([start(), aggregate('agg', [{ name: '  ', expression: '1' }]), end()], [edge('start', 'agg'), edge('agg', 'end')]),
+      'empty name',
+    )
+    expectErrors(
+      graph(
+        [start(), aggregate('agg', [{ name: 'a', expression: '1' }, { name: 'a', expression: '2' }]), end()],
+        [edge('start', 'agg'), edge('agg', 'end')],
+      ),
+      'repeats item name',
+    )
+    expectErrors(
+      graph([start(), aggregate('agg', [{ name: 'a', expression: '  ' }]), end()], [edge('start', 'agg'), edge('agg', 'end')]),
+      'empty expression',
+    )
+    expectOk(graph([start(), aggregate('agg'), end()], [edge('start', 'agg'), edge('agg', 'end')]))
+  })
+
+  it('rejects an aggregate or list node with an unknown mode or op', () => {
+    const badAgg = { ...aggregate('agg'), mode: 'nope' } as unknown as FlowNode
+    expectErrors(graph([start(), badAgg, end()], [edge('start', 'agg'), edge('agg', 'end')]), 'unknown mode')
+    const badList = { ...list('lst'), op: 'nope' } as unknown as FlowNode
+    expectErrors(graph([start(), badList, end()], [edge('start', 'lst'), edge('lst', 'end')]), 'unknown op')
+  })
+
+  it('rejects an empty list source', () => {
+    expectErrors(graph([start(), list('lst', '  '), end()], [edge('start', 'lst'), edge('lst', 'end')]), 'empty source')
+    expectOk(graph([start(), list('lst'), end()], [edge('start', 'lst'), edge('lst', 'end')]))
+  })
+
+  it('rejects a classify node with an empty query, too few classes, a reserved default id, or a missing class edge', () => {
+    expectErrors(
+      graph(
+        [start(), classify('cls', '  '), end()],
+        [edge('start', 'cls'), edge('cls', 'end', 'a'), edge('cls', 'end', 'b')],
+      ),
+      'empty query',
+    )
+    expectErrors(
+      graph(
+        [start(), classify('cls', 'which', [{ id: 'a' }]), end()],
+        [edge('start', 'cls'), edge('cls', 'end', 'a')],
+      ),
+      'at least two classes',
+    )
+    expectErrors(
+      graph(
+        [start(), classify('cls', 'which', [{ id: 'a' }, { id: 'default' }]), end()],
+        [edge('start', 'cls'), edge('cls', 'end', 'a'), edge('cls', 'end', 'default')],
+      ),
+      'reserves "default"',
+    )
+    expectErrors(
+      graph(
+        [start(), classify('cls', 'which', [{ id: 'a' }, { id: 'a' }]), end()],
+        [edge('start', 'cls'), edge('cls', 'end', 'a')],
+      ),
+      'repeats class id',
+    )
+    expectErrors(
+      graph(
+        [start(), classify('cls', 'which', [{ id: '' }, { id: 'b' }]), end()],
+        [edge('start', 'cls'), edge('cls', 'end', 'b')],
+      ),
+      'empty id',
+    )
+    expectErrors(
+      graph([start(), classify('cls'), end()], [edge('start', 'cls'), edge('cls', 'end', 'a')]),
+      'missing an outgoing edge labeled "b"',
+    )
+    expectErrors(
+      graph(
+        [start(), classify('cls'), end()],
+        [edge('start', 'cls'), edge('cls', 'end', 'a'), edge('cls', 'end', 'b'), edge('cls', 'end', 'maybe')],
+      ),
+      'must be labeled with a class id or default',
+    )
+    expectErrors(
+      graph(
+        [start(), classify('cls'), end()],
+        [edge('start', 'cls'), edge('cls', 'end', 'a'), edge('cls', 'end', 'b'), edge('cls', 'end', 'a')],
+      ),
+      'repeats outgoing label',
+    )
+    expectOk(graph(
+      [start(), classify('cls'), end()],
+      [edge('start', 'cls'), edge('cls', 'end', 'a'), edge('cls', 'end', 'b')],
+    ))
+  })
+
+  it('rejects an extract node with an empty query, no parameters, a duplicate name, or an unknown type', () => {
+    expectErrors(graph([start(), extract('ex', '  '), end()], [edge('start', 'ex'), edge('ex', 'end')]), 'empty query')
+    expectErrors(graph([start(), extract('ex', 'q', []), end()], [edge('start', 'ex'), edge('ex', 'end')]), 'at least one parameter')
+    expectErrors(
+      graph(
+        [start(), extract('ex', 'q', [{ name: '  ', type: 'string' }]), end()],
+        [edge('start', 'ex'), edge('ex', 'end')],
+      ),
+      'empty name',
+    )
+    expectErrors(
+      graph(
+        [start(), extract('ex', 'q', [{ name: 'a', type: 'string' }, { name: 'a', type: 'number' }]), end()],
+        [edge('start', 'ex'), edge('ex', 'end')],
+      ),
+      'repeats parameter name',
+    )
+    const bad = { ...extract('ex'), parameters: [{ name: 'n', type: 'nope' }] } as unknown as FlowNode
+    expectErrors(graph([start(), bad, end()], [edge('start', 'ex'), edge('ex', 'end')]), 'unknown type')
+    expectOk(graph([start(), extract('ex'), end()], [edge('start', 'ex'), edge('ex', 'end')]))
   })
 
   it('rejects an empty loop iterable and a non-identifier variable', () => {
@@ -126,6 +318,13 @@ describe('validateFlow: structural rules', () => {
 
   it('rejects a branch label on a non-branch node', () => {
     expectErrors(graph([start(), agent('a'), end()], [edge('start', 'a'), edge('a', 'end', 'true')]), 'carries a branch label on a agent node')
+    expectErrors(graph([start(), http('h'), end()], [edge('start', 'h'), edge('h', 'end', 'true')]), 'carries a branch label on a http node')
+    expectErrors(graph([start(), template('tpl'), end()], [edge('start', 'tpl'), edge('tpl', 'end', 'true')]), 'carries a branch label on a template node')
+    expectErrors(graph([start(), code('c'), end()], [edge('start', 'c'), edge('c', 'end', 'true')]), 'carries a branch label on a code node')
+    expectErrors(graph([start(), aggregate('agg'), end()], [edge('start', 'agg'), edge('agg', 'end', 'true')]), 'carries a branch label on a aggregate node')
+    expectErrors(graph([start(), list('lst'), end()], [edge('start', 'lst'), edge('lst', 'end', 'true')]), 'carries a branch label on a list node')
+    expectErrors(graph([start(), extract('ex'), end()], [edge('start', 'ex'), edge('ex', 'end', 'true')]), 'carries a branch label on a extract node')
+    expectErrors(graph([start(), join('j'), end()], [edge('start', 'j'), edge('j', 'end', 'true')]), 'carries a branch label on a join node')
   })
 
   it('rejects a cycle and the nodes on it', () => {
@@ -145,6 +344,40 @@ describe('validateFlow: branch-context exclusivity', () => {
     expectOk(graph(
       [start(), condition('c'), agent('t'), agent('f'), end()],
       [edge('start', 'c'), edge('c', 't', 'true'), edge('c', 'f', 'false'), edge('t', 'end'), edge('f', 'end')],
+    ))
+  })
+
+  it('accepts a merge at an explicit join after a parallel fan-out', () => {
+    expectOk(graph(
+      [start(), agent('split'), agent('x'), agent('y'), join('j'), end()],
+      [edge('start', 'split'), edge('split', 'x'), edge('split', 'y'), edge('x', 'j'), edge('y', 'j'), edge('j', 'end')],
+    ))
+  })
+
+  it('rejects a merge of two independent joins at a non-join node', () => {
+    expectErrors(
+      graph(
+        [start(), agent('split'), join('j1'), join('j2'), end()],
+        [edge('start', 'split'), edge('split', 'j1'), edge('split', 'j2'), edge('j1', 'end'), edge('j2', 'end')],
+      ),
+      'is reached by branches that can both run',
+    )
+  })
+
+  it('rejects a join with more than one outgoing edge', () => {
+    expectErrors(
+      graph(
+        [start(), join('j'), agent('a'), agent('b'), end()],
+        [edge('start', 'j'), edge('j', 'a'), edge('j', 'b'), edge('a', 'end'), edge('b', 'end')],
+      ),
+      'at most one outgoing edge',
+    )
+  })
+
+  it('accepts a merge after a classify class split', () => {
+    expectOk(graph(
+      [start(), classify('cls'), agent('t'), agent('f'), end()],
+      [edge('start', 'cls'), edge('cls', 't', 'a'), edge('cls', 'f', 'b'), edge('t', 'end'), edge('f', 'end')],
     ))
   })
 
@@ -168,6 +401,66 @@ describe('validateFlow: branch-context exclusivity', () => {
     expectErrors(
       graph(
         [start(), agent('split'), agent('x'), agent('y'), end()],
+        [edge('start', 'split'), edge('split', 'x'), edge('split', 'y'), edge('x', 'end'), edge('y', 'end')],
+      ),
+      'branches that can both run',
+    )
+  })
+
+  it('rejects a merge after an http fan-out', () => {
+    expectErrors(
+      graph(
+        [start(), http('split'), agent('x'), agent('y'), end()],
+        [edge('start', 'split'), edge('split', 'x'), edge('split', 'y'), edge('x', 'end'), edge('y', 'end')],
+      ),
+      'branches that can both run',
+    )
+  })
+
+  it('rejects a merge after a template fan-out', () => {
+    expectErrors(
+      graph(
+        [start(), template('split'), agent('x'), agent('y'), end()],
+        [edge('start', 'split'), edge('split', 'x'), edge('split', 'y'), edge('x', 'end'), edge('y', 'end')],
+      ),
+      'branches that can both run',
+    )
+  })
+
+  it('rejects a merge after a code fan-out', () => {
+    expectErrors(
+      graph(
+        [start(), code('split'), agent('x'), agent('y'), end()],
+        [edge('start', 'split'), edge('split', 'x'), edge('split', 'y'), edge('x', 'end'), edge('y', 'end')],
+      ),
+      'branches that can both run',
+    )
+  })
+
+  it('rejects a merge after an aggregate fan-out', () => {
+    expectErrors(
+      graph(
+        [start(), aggregate('split'), agent('x'), agent('y'), end()],
+        [edge('start', 'split'), edge('split', 'x'), edge('split', 'y'), edge('x', 'end'), edge('y', 'end')],
+      ),
+      'branches that can both run',
+    )
+  })
+
+  it('rejects a merge after an extract fan-out', () => {
+    expectErrors(
+      graph(
+        [start(), extract('split'), agent('x'), agent('y'), end()],
+        [edge('start', 'split'), edge('split', 'x'), edge('split', 'y'), edge('x', 'end'), edge('y', 'end')],
+      ),
+      'branches that can both run',
+    )
+  })
+
+  it('rejects a merge after a list fan-out', () => {
+    expectErrors(
+      graph(
+        [start(), list('split'), agent('x'), agent('y'), end()],
         [edge('start', 'split'), edge('split', 'x'), edge('split', 'y'), edge('x', 'end'), edge('y', 'end')],
       ),
       'branches that can both run',

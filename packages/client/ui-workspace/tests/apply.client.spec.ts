@@ -4,7 +4,9 @@ import { SlotRegistry } from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { TestRemote } from '@deepseek-ai/dsh-client-test-runtime'
 import { LocaleRuntime } from '@deepseek-ai/dsh-client-locale/client'
 import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
-import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from '@deepseek-ai/dsh-client-ui-workspace/client'
+import type {
+  ProjectsPageInjected, WorkspaceBrowserInjected, WorkspacePickerInjected,
+} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
 
@@ -65,6 +67,12 @@ async function bench() {
   const directoryPicker = { pick: pickDirectory }
   Object.assign(new TestRemote(ctx), { directoryPicker })
   ctx.provide('remote.directoryPicker', directoryPicker as never)
+  const router = {
+    navigate: vi.fn(),
+    subscribe: vi.fn(() => () => {}),
+    getSnapshot: () => ({ pathname: '/', search: '', hash: '' }),
+  }
+  ctx.provide('router', router as never)
   const locale = new LocaleRuntime(ctx)
   // These specs assert the shipped Chinese copy. There is no jsdom `window`
   // in this lane, so browser-language detection never runs and the locale
@@ -73,7 +81,7 @@ async function bench() {
   ctx.provide('locale', locale)
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, rename,
-    insertSessionBefore, open, clear, search, renameSession, binding, fork, pickDirectory,
+    insertSessionBefore, open, clear, search, renameSession, binding, fork, pickDirectory, router,
   }
 }
 
@@ -88,7 +96,7 @@ function declare(slots: SlotRegistry, ...names: HoleName[]): () => void {
 describe('ui-workspace apply', () => {
   it('declares the services it drives', () => {
     expect(inject).toEqual([
-      'slots', 'sessions', 'workspaces', 'locale', 'connection', 'remote', 'remote.directoryPicker',
+      'slots', 'sessions', 'workspaces', 'locale', 'connection', 'remote', 'remote.directoryPicker', 'router',
     ])
   })
 
@@ -100,7 +108,7 @@ describe('ui-workspace apply', () => {
     // Copy rides the standard locale seat: the entry declares the namespace
     // and apply registered both dictionaries.
     expect(before.slots.entries('sidebar.workspaces')[0]!.locale).toBe('workspace')
-    expect(before.locale.bind('workspace')('session.new')).toBe('新会话')
+    expect(before.locale.bind('workspace')('session.new')).toBe('草稿')
 
     const after = await bench()
     await after.ctx.plugin({ inject: [...inject], apply }).await()
@@ -188,6 +196,75 @@ describe('ui-workspace apply', () => {
     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
     await expect(browser.searchSessions('needle', new AbortController().signal))
       .rejects.toThrow('index unavailable')
+  })
+
+  it('starts a project bundle through prepareStart and session create', async () => {
+    const b = await bench()
+    const prepareStart = vi.fn(async () => ({
+      sharedRoot: '/tmp/bundle',
+      expertPresetIds: ['expert-a'],
+    }))
+    Object.assign(b.ctx.remote, {
+      projectBundles: {
+        list: vi.fn(async () => []),
+        create: vi.fn(),
+        prepareStart,
+        remove: vi.fn(),
+      },
+    })
+    b.slots.register({
+      name: 'root',
+      children: { page: { kind: 'list', scope: 'root' } },
+    } as never, () => null)
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    const page = b.slots.entries('page').find(entry => entry.options.id === 'projects')
+    expect(page?.options.path).toBe('/projects')
+    const injected = (page!.inject as unknown as () => ProjectsPageInjected)()
+    injected.goAssistant()
+    injected.goAgentSettings()
+    expect(b.router.navigate).toHaveBeenCalledWith('/')
+    expect(b.router.navigate).toHaveBeenCalledWith('/settings/agent')
+    injected.startSession('ws' as never)
+    expect(b.router.navigate).toHaveBeenCalledWith('/')
+    injected.openSession('session' as never)
+    expect(b.open).toHaveBeenCalledWith('session')
+    await injected.listBundles()
+    await injected.startBundle('p1')
+    expect(prepareStart).toHaveBeenCalledWith('p1')
+    expect(b.router.navigate).toHaveBeenCalledWith('/')
+  })
+
+  it('starts a bundle without an expert preset and fails when remotes are absent', async () => {
+    const withRemote = await bench()
+    const prepareStart = vi.fn(async () => ({
+      sharedRoot: '/tmp/plain',
+      expertPresetIds: [],
+    }))
+    Object.assign(withRemote.ctx.remote, {
+      projectBundles: { list: vi.fn(), create: vi.fn(), prepareStart, remove: vi.fn() },
+    })
+    withRemote.slots.register({
+      name: 'root',
+      children: { page: { kind: 'list', scope: 'root' } },
+    } as never, () => null)
+    await withRemote.ctx.plugin({ inject: [...inject], apply }).await()
+    const ready = (withRemote.slots.entries('page')[0]!.inject as unknown as () => ProjectsPageInjected)()
+    await ready.startBundle('p2')
+    expect(prepareStart).toHaveBeenCalledWith('p2')
+
+    const missing = await bench()
+    missing.slots.register({
+      name: 'root',
+      children: { page: { kind: 'list', scope: 'root' } },
+    } as never, () => null)
+    await missing.ctx.plugin({ inject: [...inject], apply }).await()
+    const injected = (missing.slots.entries('page')[0]!.inject as unknown as () => ProjectsPageInjected)()
+    expect(() => injected.listBundles()).toThrow(/projectBundles remote is not mounted/)
+    expect(() => injected.createBundle({
+      name: 'n', sharedRoot: '/tmp', instructions: '',
+    })).toThrow(/projectBundles remote is not mounted/)
+    await expect(injected.startBundle('p3')).rejects.toThrow(/projectBundles remote is not mounted/)
+    expect(() => injected.removeBundle('p3')).toThrow(/projectBundles remote is not mounted/)
   })
 
   it('unregisters every entry on teardown', async () => {

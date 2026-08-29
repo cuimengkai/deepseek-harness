@@ -154,6 +154,13 @@ export interface SubagentStartRequest {
    * persona (strict `{{…}}` interpolation against the registered variables).
    */
   readonly persona?: string
+  /**
+   * Optional child agent-preset id. When set, in-process drivers mount that
+   * preset on the child instead of joining the parent's composition, and stamp
+   * the child's session header `agentPreset`. Requires `agentPresets` in the
+   * composition; no separate subagent capability flag (in-process override).
+   */
+  readonly childPresetId?: string
 }
 
 /**

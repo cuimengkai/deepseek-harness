@@ -12,9 +12,9 @@
  * `composeGraph` derives the rows here and validates them three ways exactly as
  * `compose` does.
  *
- * A preset graph admits only start/end/agent nodes — a condition or loop node
- * is refused, because branching the composition itself is Phase B3 — and must
- * be acyclic. `graphToRows` returns rows in Kahn topological order, stable on
+ * A preset graph admits only start/end/agent nodes — a condition, loop, http,
+ * template, code, aggregate, list, classify, extract, or join node is refused, because a preset row is an agent
+ * composition entry — and must be acyclic. `graphToRows` returns rows in Kahn topological order, stable on
  * node id: exactly mount order for the chain projection, and a deterministic
  * order for any other DAG. A cycle or a disallowed node is an error, not a
  * silent reorder.
@@ -128,6 +128,14 @@ export function graphToRows(graph: FlowGraph): ComposeRow[] {
         break
       case 'condition':
       case 'loop':
+      case 'http':
+      case 'template':
+      case 'code':
+      case 'aggregate':
+      case 'list':
+      case 'classify':
+      case 'extract':
+      case 'join':
         throw new Error(
           `agent-presets: preset graph node "${node.id}" is a ${node.type} node; `
           + 'a preset composition admits only start, end, and agent nodes (branching is a later phase)',

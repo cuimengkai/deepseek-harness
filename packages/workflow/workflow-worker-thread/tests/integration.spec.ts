@@ -7,8 +7,10 @@ import InvariantRegistry from '@deepseek-ai/dsh-invariants'
 import * as SessionInvariant from '@deepseek-ai/dsh-session/invariant'
 import * as AgentInvariant from '@deepseek-ai/dsh-agent/invariant'
 import * as AgentLoopInvariant from '@deepseek-ai/dsh-agent-loop/invariant'
+import WorkerThreadCodeRuntime from '@deepseek-ai/dsh-code-runtime-worker-thread'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import * as spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import WebRuntime from '@deepseek-ai/dsh-web'
 import { STRUCTURED_OUTPUT_TOOL } from '@deepseek-ai/dsh-subagent-in-process-driver'
 import { MockAdapter, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import WorkerThreadWorkflowEngine from '../src/index.ts'
@@ -37,6 +39,8 @@ async function setup(script: Script) {
   await mountInvariants(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SubagentRuntime)
+  await ctx.plugin(WebRuntime)
+  await ctx.plugin(WorkerThreadCodeRuntime, {})
   await ctx.plugin(spawn, { providerName: 'spawn' })
   await ctx.plugin(WorkerThreadWorkflowEngine, {})
   ctx.llm.registerAdapter(['mock'], adapter)

@@ -12,16 +12,27 @@ import type { WorkerOptions } from 'node:worker_threads'
 import { fileURLToPath } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
+import type { CodeRuntime } from '@deepseek-ai/dsh-code-runtime'
 import { assertNever } from '@deepseek-ai/dsh-llm'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-session'
 import type SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import type { SubagentRun } from '@deepseek-ai/dsh-subagent'
-import type { WorkflowAgentEndInfo, WorkflowAgentInfo, WorkflowMeta, WorkflowResult, WorkflowRun, WorkflowRunId } from '@deepseek-ai/dsh-workflow'
+import type { WebRuntime } from '@deepseek-ai/dsh-web'
+import type {
+  WorkflowAgentEndInfo,
+  WorkflowAgentInfo,
+  WorkflowMeta,
+  WorkflowNodeEndInfo,
+  WorkflowNodeInfo,
+  WorkflowResult,
+  WorkflowRun,
+  WorkflowRunId,
+} from '@deepseek-ai/dsh-workflow'
 import { renderThrown } from './realm.ts'
 import type { ExecutionObserver } from './runtime.ts'
 import { HostToWorkerType, WorkerToHostType } from './protocol.ts'
 import type { HostToWorkerPayloads, WorkerToHostMessage } from './protocol.ts'
-import type { ChildResult, ChildStartRequest, WorkerInit } from './types.ts'
+import type { ChildResult, ChildStartRequest, CodeExecuteRequest, HttpFetchRequest, WorkerInit } from './types.ts'
 
 /** One published child and its shared quiescent-disposal transaction. */
 interface ChildRecord {
@@ -121,6 +132,8 @@ export class WorkerRun implements WorkflowRun {
   private readonly pendingStarts = new Set<Promise<void>>()
   /** Started-but-not-ended agents by seq — the pairing ledger the HOST guarantees (see {@link endAgent}). */
   private readonly liveAgents = new Map<number, WorkflowAgentInfo>()
+  /** Started-but-not-ended processing-node calls by seq, mirroring {@link liveAgents} (see {@link endNode}). */
+  private readonly liveNodes = new Map<number, WorkflowNodeInfo>()
   private readonly quiescenceWaiters: (() => void)[] = []
   /** The per-run abort fanout every child start request carries. */
   private readonly controller = new AbortController()
@@ -135,6 +148,8 @@ export class WorkerRun implements WorkflowRun {
     readonly id: WorkflowRunId,
     readonly meta: WorkflowMeta,
     private readonly parent: Agent,
+    private readonly web: WebRuntime,
+    private readonly codeRuntime: CodeRuntime,
     init: WorkerInit,
     private readonly provider: string,
     private readonly disposeGraceMs: number,
@@ -196,6 +211,7 @@ export class WorkerRun implements WorkflowRun {
       // every stranded start before the run settles, so ends precede
       // workflow/end.
       this.endStrandedAgents()
+      this.endStrandedNodes()
       this.settleResult(this.cancelledResult(this.hostStarted))
       void this.worker.terminate()
     }, this.disposeGraceMs)
@@ -297,11 +313,25 @@ export class WorkerRun implements WorkflowRun {
         // contract hold on every stop path.
         this.endAgent(message.info)
         break
+      case WorkerToHostType.NodeStart:
+        this.liveNodes.set(message.node.seq, message.node)
+        this.observer.nodeStart(message.node)
+        break
+      case WorkerToHostType.NodeEnd:
+        // NOT suppressed on cancel, mirroring AgentEnd: see that arm.
+        this.endNode(message.node)
+        break
       case WorkerToHostType.ChildStart:
         this.onChildStart(message.callId, message.request)
         break
       case WorkerToHostType.ChildDispose:
         this.onChildDispose(message.callId)
+        break
+      case WorkerToHostType.HttpFetch:
+        this.onHttpFetch(message.callId, message.request)
+        break
+      case WorkerToHostType.CodeExecute:
+        this.onCodeExecute(message.callId, message.request)
         break
       case WorkerToHostType.Result:
         this.onResult(message.result)
@@ -354,6 +384,7 @@ export class WorkerRun implements WorkflowRun {
         parent: this.parent,
         signal: this.controller.signal,
         ...request.schema !== undefined ? { outputSchema: request.schema } : {},
+        ...request.childPresetId !== undefined ? { childPresetId: request.childPresetId } : {},
         ...request.provider !== undefined || request.model !== undefined || request.modelKinds !== undefined
           ? {
             agentOptions: {
@@ -410,6 +441,74 @@ export class WorkerRun implements WorkflowRun {
     )
     this.post(HostToWorkerType.ChildStarted, { callId, childId: run.id })
     void forwardResult.then((forward) => { forward() })
+  }
+
+  /**
+   * Handle one worker `http-fetch` RPC: refuse immediately on the same
+   * admission gate as a child start, otherwise run the fetch and reply.
+   * Unlike a published child, there is no separate quiescence to track — the
+   * script `await`s the reply directly, so the RPC settles before the run
+   * can produce its Result.
+   */
+  private onHttpFetch(callId: number, request: HttpFetchRequest): void {
+    const initialFailure = this.childAdmissionFailure()
+    if (initialFailure !== undefined) {
+      this.post(HostToWorkerType.HttpFetchError, { callId, rendered: initialFailure.rendered })
+      return
+    }
+    void this.runHttpFetch(callId, request)
+  }
+
+  /** Run one `ctx.web.fetch` on the run's shared abort signal and reply with the outcome or a rendered failure. */
+  private async runHttpFetch(callId: number, request: HttpFetchRequest): Promise<void> {
+    try {
+      const outcome = await this.web.fetch({ url: request.url }, this.controller.signal)
+      const failure = this.childAdmissionFailure()
+      if (failure !== undefined) {
+        this.post(HostToWorkerType.HttpFetchError, { callId, rendered: failure.rendered })
+        return
+      }
+      this.post(HostToWorkerType.HttpFetched, { callId, outcome })
+    } catch (error: unknown) {
+      const failure = this.childAdmissionFailure()
+      this.post(HostToWorkerType.HttpFetchError, { callId, rendered: failure?.rendered ?? renderThrown(error) })
+    }
+  }
+
+  /**
+   * Handle one worker `code-execute` RPC: refuse immediately on the same
+   * admission gate as a child start, otherwise run the program and reply.
+   * Mirrors {@link onHttpFetch}: the script `await`s the reply directly, so
+   * there is no separate quiescence to track.
+   */
+  private onCodeExecute(callId: number, request: CodeExecuteRequest): void {
+    const initialFailure = this.childAdmissionFailure()
+    if (initialFailure !== undefined) {
+      this.post(HostToWorkerType.CodeExecuteError, { callId, rendered: initialFailure.rendered })
+      return
+    }
+    void this.runCodeExecute(callId, request)
+  }
+
+  /**
+   * Run one `ctx.codeRuntime.run()` on the run's shared abort signal and
+   * reply with the outcome or a rendered failure. No host bindings are
+   * exposed to the program in v1 (`bindings: []`) — its only data is the
+   * `OUT` prelude the worker-side hook already spliced into `program`.
+   */
+  private async runCodeExecute(callId: number, request: CodeExecuteRequest): Promise<void> {
+    try {
+      const outcome = await this.codeRuntime.run({ program: request.program, bindings: [], signal: this.controller.signal })
+      const failure = this.childAdmissionFailure()
+      if (failure !== undefined) {
+        this.post(HostToWorkerType.CodeExecuteError, { callId, rendered: failure.rendered })
+        return
+      }
+      this.post(HostToWorkerType.CodeExecuted, { callId, outcome })
+    } catch (error: unknown) {
+      const failure = this.childAdmissionFailure()
+      this.post(HostToWorkerType.CodeExecuteError, { callId, rendered: failure?.rendered ?? renderThrown(error) })
+    }
   }
 
   private onChildDispose(callId: number): void {
@@ -534,6 +633,7 @@ export class WorkerRun implements WorkflowRun {
       if (!outcomeWasClaimed) this.terminalClaimed = true
       if (this.children.size > 0 || this.pendingStarts.size > 0) this.reapChildren('workflow worker gone')
       this.endStrandedAgents()
+      this.endStrandedNodes()
       if (!outcomeWasClaimed) {
         if (cancellationWasRequested) {
           this.settleResult(this.cancelledResult(this.hostStarted))
@@ -549,6 +649,7 @@ export class WorkerRun implements WorkflowRun {
     // repeat explicit provider cancellation.
     for (const [callId, record] of [...this.children]) void this.disposeChild(callId, record)
     this.endStrandedAgents()
+    this.endStrandedNodes()
   }
 
   /**
@@ -562,6 +663,13 @@ export class WorkerRun implements WorkflowRun {
     /* v8 ignore next -- a real end still in flight across the grace force-settle: not orderable in-process */
     if (!this.liveAgents.delete(end.seq)) return
     this.observer.agentEnd(end)
+  }
+
+  /** The processing-node analog of {@link endAgent}: exactly one forwarded `workflow/node-end` per started node. */
+  private endNode(end: WorkflowNodeEndInfo): void {
+    /* v8 ignore next -- a real end still in flight across the grace force-settle: not orderable in-process */
+    if (!this.liveNodes.delete(end.seq)) return
+    this.observer.nodeEnd(end)
   }
 
   /**
@@ -579,6 +687,13 @@ export class WorkerRun implements WorkflowRun {
   private endStrandedAgents(): void {
     for (const info of [...this.liveAgents.values()]) {
       this.endAgent({ ...info, outcome: 'cancelled' })
+    }
+  }
+
+  /** The processing-node analog of {@link endStrandedAgents}, called alongside it at every site. */
+  private endStrandedNodes(): void {
+    for (const info of [...this.liveNodes.values()]) {
+      this.endNode({ ...info, outcome: 'cancelled' })
     }
   }
 

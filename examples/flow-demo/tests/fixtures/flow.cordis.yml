@@ -17,6 +17,17 @@
 - id: subagent-spawn-in-process
   name: '@deepseek-ai/dsh-subagent-spawn-in-process'
 
+# Host seams the worker-thread engine injects: fetch for `http()`, sandbox
+# for `code()`. Absent here, the engine fails at load.
+- id: web
+  name: '@deepseek-ai/dsh-web'
+
+- id: web-fetch-http
+  name: '@deepseek-ai/dsh-web-fetch-http'
+
+- id: code-runtime
+  name: '@deepseek-ai/dsh-code-runtime-worker-thread'
+
 # The workflow engine executes each run's compiled script on a fresh worker
 # thread and bridges `agent()` calls back to the in-process children.
 - id: workflow-worker-thread

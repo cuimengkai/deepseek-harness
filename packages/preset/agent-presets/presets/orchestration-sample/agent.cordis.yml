@@ -1,0 +1,78 @@
+# The `orchestration-sample` agent preset: a small composition for the shipped
+# Agent Modes runtime benchmark (`hello-orchestration`). It is intentionally
+# narrow (persistent shell + editor + ask_user) so the mode's FlowGraph stays
+# the teaching focus — tools come from this preset; branching/order come from
+# the mode's entry flow.
+
+- id: persona
+  name: '@deepseek-ai/dsh-persona'
+  config:
+    text: >-
+      You are a helper used by the shipped Agent Mode runtime benchmark
+      (`hello-orchestration`). Keep answers short. When a flow step asks you to
+      clarify or decide, call ask_user if you need a human choice; otherwise reply
+      with a single clear paragraph. Working directory: {{cwd}}. Model: {{model}}.
+
+- id: persistent-shell
+  name: cordis:group
+  group: true
+  isolate:
+    terminals: true
+  config:
+    - id: pty
+      name: '@deepseek-ai/dsh-terminal'
+
+    - id: terminal-bash
+      name: '@deepseek-ai/dsh-terminal-bash'
+      disabled: !!js process.platform === 'win32'
+      config:
+        timeoutMs: 300000
+
+    - id: persistent-bash
+      name: '@deepseek-ai/dsh-tool-bash-persistent'
+      disabled: !!js process.platform === 'win32'
+      config:
+        timeoutMs: 300000
+        description: |-
+          Run commands in a bash shell
+          * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
+          * You don't have access to the internet via this tool.
+          * State is persistent across command calls and discussions with the user.
+
+    - id: terminal-pwsh
+      name: '@deepseek-ai/dsh-terminal-bash'
+      disabled: !!js process.platform !== 'win32'
+      config:
+        shellDialect: pwsh
+        timeoutMs: 300000
+
+    - id: persistent-pwsh
+      name: '@deepseek-ai/dsh-tool-pwsh-persistent'
+      disabled: !!js process.platform !== 'win32'
+      config:
+        timeoutMs: 300000
+        description: |-
+          Run commands in a PowerShell shell
+          * When invoking this tool, the contents of the "command" parameter does NOT need to be XML-escaped.
+          * State is persistent across command calls and discussions with the user.
+
+- id: filesystem
+  name: cordis:group
+  group: true
+  isolate:
+    fs: true
+  config:
+    - id: fs-local
+      name: '@deepseek-ai/dsh-fs-local'
+      config:
+        cwd: !!js process.env.DSH_CWD ?? process.cwd()
+
+    - id: str-replace-editor
+      name: '@deepseek-ai/dsh-tool-str-replace-editor'
+      config:
+        maxOutputChars: 16000
+
+# ask_user lets flow agent steps collect a human decision before a condition
+# node branches — the sample mode's intake → branch path relies on this.
+- id: tool-ask-user
+  name: '@deepseek-ai/dsh-tool-ask-user'

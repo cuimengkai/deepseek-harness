@@ -66,9 +66,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation': { kind: 'single'; scope: 'session-maybe'; owner: ConvOwnerProps }
     /**
      * The right details column, shown when the layout opens it. OCCUPIED by
-     * ui-conversation's DetailsPanel, which declares the tool-details seat
-     * inside it — registering here replaces the column and takes that seat
-     * with it. Absent an occupant the column renders nothing.
+     * ui-chat's Results panel (DetailsPanel), which declares the tool-details
+     * seat inside the Inspect tab — registering here replaces the column and
+     * takes that seat with it. Absent an occupant the column renders nothing.
      *
      * No owner props: the framework injects the session id and hooks for the
      * `session` scope, and `ctx.layout` owns whether the column is open.
@@ -150,7 +150,10 @@ export function apply(ctx: ClientContext): void {
       // the same URL↔route truth as every page consumer.
       inject: (actions: PanelActions) => {
         layout.attachPanels(actions)
-        return { hooks: { pages } }
+        return {
+          hooks: { pages },
+          syncPanels: (state: { readonly details: number }) => { layout.syncPanels(state) },
+        }
       },
     }, AppFrame)
     return () => {

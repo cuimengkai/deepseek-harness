@@ -8,6 +8,8 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
 import { STRUCTURED_OUTPUT_TOOL } from '@deepseek-ai/dsh-subagent-in-process-driver'
 import * as spawn from '@deepseek-ai/dsh-subagent-spawn-in-process'
+import WorkerThreadCodeRuntime from '@deepseek-ai/dsh-code-runtime-worker-thread'
+import WebRuntime from '@deepseek-ai/dsh-web'
 import WorkerThreadWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
 import { MockAdapter, maxTokensResponse, textResponse, toolCallResponse } from '../../../core/agent-loop/tests/mock-adapter.ts'
 import * as toolRalph from '../src/index.ts'
@@ -22,6 +24,8 @@ async function mountRalph(script: MockScript, config: toolRalph.Config) {
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SubagentRuntime)
+  await ctx.plugin(WebRuntime)
+  await ctx.plugin(WorkerThreadCodeRuntime, {})
   await ctx.plugin(spawn, { providerName: 'spawn' })
   await ctx.plugin(WorkerThreadWorkflowEngine, {})
   await ctx.plugin(toolRalph, config)
@@ -59,6 +63,8 @@ describe('dsh-tool-ralph over the real spawn and worker-thread stack', () => {
     await mountAgentLoopTestDependencies(ctx)
     await ctx.plugin(AgentLoop, { agents: [] })
     await ctx.plugin(SubagentRuntime)
+    await ctx.plugin(WebRuntime)
+    await ctx.plugin(WorkerThreadCodeRuntime, {})
     await ctx.plugin(spawn, { providerName: 'spawn' })
     await ctx.plugin(WorkerThreadWorkflowEngine, {})
     await ctx.plugin(toolRalph, { maxRounds: 2 })

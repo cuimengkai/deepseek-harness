@@ -4,7 +4,7 @@
 import { useId } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import {
-  FishLogo, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16,
+  IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { ConversationSlotProps } from '../contract/slots.ts'
@@ -22,6 +22,15 @@ type HeroTranslate = ConversationSlotProps['t']
 export function workspaceLabel(cwd: string): string {
   const base = workspaceTitleOf(cwd)
   return base !== '' ? base : cwd
+}
+
+/**
+ * Product brand for the Assistant greeting (build title, else DeepSeek).
+ * @returns brand string.
+ */
+export function heroBrandName(): string {
+  const title = process.env.DSH_CLIENT_TITLE?.trim()
+  return title !== undefined && title !== '' ? title : 'DeepSeek'
 }
 
 /**
@@ -95,19 +104,19 @@ export function HeroGlow({ className }: { className?: string | undefined }) {
   )
 }
 
-/** Hero chrome props. The workspace row rides the InputBar accessory hole, not here. */
+/** Hero chrome props. Categories render under the greeting via agentPreset. */
 export interface HeroShellProps {
   /** The owner's locale seat, passed down as a plain prop. */
   t: HeroTranslate
-  /** Authorized renderer for the hero brand-mark slot. */
+  /** Authorized renderer for category chips (and legacy brand mark). */
   renderSlot: ConversationSlotProps['renderSlot']
   /** Overlay content after the stack (modals). */
   children?: ReactNode
 }
 
 /**
- * Render the hero chrome (headline only; no glow, no composer, no workspace
- * row — the glow is the owner's {@link HeroGlow}).
+ * Render the WorkBuddy-style greeting (title + category seat); no fish mark,
+ * no preview badge, no composer — those live on ConversationRoot / InputBar.
  * @param props - see {@link HeroShellProps}.
  * @returns the centered hero element tree.
  */
@@ -115,17 +124,11 @@ export function HeroShell({ t, renderSlot, children }: HeroShellProps) {
   return (
     <div className={css.root}>
       <div className={css.stack}>
-        <div className={css.headline}>
-          <span className={css.fishHitbox}>
-            {renderSlot('conversation.hero.brand.mark', { size: 34, className: css.fish }, {
-              fallback: <FishLogo size={34} className={css.fish} />,
-            })}
-          </span>
-          <span className={css.headlineText}>{t('hero.headline')}</span>
-          <span className={css.previewBadge}>{t('hero.preview')}</span>
+        <div className={css.headline} data-hero-greeting="">
+          <span className={css.headlineText}>{t('hero.headline', { brand: heroBrandName() })}</span>
         </div>
         <div className={css.body}>
-          {/* The composer remains mounted outside this component. */}
+          {renderSlot('conversation.hero.agentPreset', {})}
         </div>
       </div>
       {children}

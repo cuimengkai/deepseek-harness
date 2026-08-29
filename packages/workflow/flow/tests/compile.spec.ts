@@ -5,13 +5,37 @@
 
 import { describe, expect, it } from 'vitest'
 import { compileFlow } from '../src/compile.ts'
-import type { FlowAgentNode, FlowAgentOptions, FlowConditionNode, FlowEdge, FlowGraph, FlowLoopNode, FlowNode } from '../src/types.ts'
+import type {
+  FlowAgentNode,
+  FlowAgentOptions,
+  FlowAggregateNode,
+  FlowClassifyNode,
+  FlowCodeNode,
+  FlowConditionNode,
+  FlowEdge,
+  FlowExtractNode,
+  FlowGraph,
+  FlowHttpNode,
+  FlowJoinNode,
+  FlowListNode,
+  FlowLoopNode,
+  FlowNode,
+  FlowTemplateNode,
+} from '../src/types.ts'
 
 /** Fields the per-type node helpers add; `Omit<FlowNode>` alone keeps only common keys. */
 type NodeExtra =
   | Partial<Omit<FlowAgentNode, 'id' | 'type' | 'position'>>
   | Partial<Omit<FlowConditionNode, 'id' | 'type' | 'position'>>
   | Partial<Omit<FlowLoopNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowHttpNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowTemplateNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowCodeNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowAggregateNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowListNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowClassifyNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowExtractNode, 'id' | 'type' | 'position'>>
+  | Partial<Omit<FlowJoinNode, 'id' | 'type' | 'position'>>
 
 /** A node factory with a stable id and origin position. */
 function node(type: FlowNode['type'], id: string, extra: NodeExtra): FlowNode {
@@ -45,6 +69,26 @@ const agent = (
   })
 const condition = (id: string, expression = 'OUT.a.kind === "go"') => node('condition', id, { expression })
 const loop = (id: string, iterable = 'args.items', variable = 'item') => node('loop', id, { iterable, variable })
+const http = (id: string, url = 'https://example.com') => node('http', id, { url })
+const template = (id: string, source = 'hello') => node('template', id, { template: source })
+const code = (id: string, source = 'return 1') => node('code', id, { source })
+const aggregate = (id: string, items = [{ name: 'a', expression: 'OUT.x' }], mode: 'object' | 'first' | 'concat' = 'object') =>
+  node('aggregate', id, { items, mode })
+const list = (id: string, source = 'OUT.x', op: 'first' | 'last' | 'length' | 'reverse' | 'flatten' = 'first') =>
+  node('list', id, { source, op })
+const classify = (
+  id: string,
+  query = '${OUT.x}',
+  classes: { id: string; name?: string }[] = [{ id: 'a' }, { id: 'b' }],
+) => node('classify', id, { query, classes })
+const join = (id: string) => node('join', id, {})
+const extract = (
+  id: string,
+  query = '${OUT.x}',
+  parameters: { name: string; type: 'string' | 'number' | 'integer' | 'boolean'; description?: string; required?: boolean }[] = [
+    { name: 'value', type: 'string', required: true },
+  ],
+) => node('extract', id, { query, parameters })
 
 let edgeSeq = 0
 /** An edge with a stable unique id; `label` is a branch label when given. */
@@ -59,12 +103,35 @@ function graph(nodes: readonly FlowNode[], edges: readonly FlowEdge[], extra?: P
 }
 
 describe('compileFlow', () => {
+  it('compiles a parallel fan-out that reconverges at a join', () => {
+    const { script } = compileFlow(graph(
+      [start(), agent('split'), agent('x'), agent('y'), join('j'), end()],
+      [edge('start', 'split'), edge('split', 'x'), edge('split', 'y'), edge('x', 'j'), edge('y', 'j'), edge('j', 'end')],
+    ))
+    expect(script).toContain('await parallel([() => visit("x"), () => visit("y")])')
+    expect(script).toContain('return await visit("j")')
+    expect(script).toContain('phase("j")')
+    expect(script).toContain('["x", async () => {\n  OUT["x"] = await agent(`work on it`, { phase: "x" })\n  return OUT\n}]')
+  })
+
+  it('embeds a seed map and skip continuations for seedable nodes', () => {
+    const { script } = compileFlow(
+      graph([start(), agent('a'), template('tpl'), end()], [edge('start', 'a'), edge('a', 'tpl'), edge('tpl', 'end')]),
+      { seed: { a: 'cached', tpl: 'hello' } },
+    )
+    expect(script).toContain('const SEED = {"a":"cached","tpl":"hello"}')
+    expect(script).toContain('"a": async () => { return await visit("tpl") }')
+    expect(script).toContain('"tpl": async () => { return await visit("end") }')
+    expect(script).toContain('OUT[id] = SEED[id]')
+  })
+
   it('compiles a linear flow to a visit chain with one NODES entry per node', () => {
     const { script, meta } = compileFlow(graph(
       [start(), agent('a'), end()],
       [edge('start', 'a'), edge('a', 'end')],
     ))
-    expect(script).toContain('return await visit("start")')
+    expect(script).toContain('const _done = await visit("start")')
+    expect(script).toContain('return { OUT: _done, IN }')
     expect(script).toContain('["start", async () => { return await visit("a") }]')
     expect(script).toContain('OUT["a"] = await agent(`work on it`, { phase: "a" })')
     expect(script).toContain('["end", async () => { return OUT }]')
@@ -116,6 +183,163 @@ describe('compileFlow', () => {
     expect(script).toContain('await agent(`summarize ${OUT.a} and \\`ticks\\` with \\\\paths`, { phase: "b" })')
   })
 
+  it('compiles an http node to a call recording its output under the node id', () => {
+    const { script } = compileFlow(graph(
+      [start(), http('h', 'https://example.com/${OUT.a}'), end()],
+      [edge('start', 'h'), edge('h', 'end')],
+    ))
+    expect(script).toContain('OUT["h"] = await http(`https://example.com/${OUT.a}`, { phase: "h" })')
+    expect(script).toContain('return await visit("end")')
+  })
+
+  it('compiles an http node that is a terminal (no outgoing edge)', () => {
+    const { script } = compileFlow(graph([start(), http('h')], [edge('start', 'h')]))
+    expect(script).toContain('OUT["h"] = await http(`https://example.com`, { phase: "h" })')
+    expect(script).toContain('return OUT')
+  })
+
+  it('compiles a multi-edge http node to a parallel fan-out', () => {
+    const { script } = compileFlow(graph(
+      [start(), http('split'), agent('x'), agent('y')],
+      [edge('start', 'split'), edge('split', 'x'), edge('split', 'y')],
+    ))
+    expect(script).toContain('return await parallel([() => visit("x"), () => visit("y")])')
+  })
+
+  it('compiles a template node to a phase call and a literal assignment, recording its output under the node id', () => {
+    const { script } = compileFlow(graph(
+      [start(), template('tpl', 'hello ${OUT.a}'), end()],
+      [edge('start', 'tpl'), edge('tpl', 'end')],
+    ))
+    expect(script).toContain('phase("tpl")\n  OUT["tpl"] = `hello ${OUT.a}`')
+    expect(script).toContain('return await visit("end")')
+  })
+
+  it('compiles a template node that is a terminal (no outgoing edge)', () => {
+    const { script } = compileFlow(graph([start(), template('tpl')], [edge('start', 'tpl')]))
+    expect(script).toContain('phase("tpl")\n  OUT["tpl"] = `hello`')
+    expect(script).toContain('return OUT')
+  })
+
+  it('compiles a multi-edge template node to a parallel fan-out', () => {
+    const { script } = compileFlow(graph(
+      [start(), template('split'), agent('x'), agent('y')],
+      [edge('start', 'split'), edge('split', 'x'), edge('split', 'y')],
+    ))
+    expect(script).toContain('return await parallel([() => visit("x"), () => visit("y")])')
+  })
+
+  it('compiles a code node to a call recording its output under the node id', () => {
+    const { script } = compileFlow(graph(
+      [start(), code('c', 'return OUT.a'), end()],
+      [edge('start', 'c'), edge('c', 'end')],
+    ))
+    expect(script).toContain('OUT["c"] = await code("return OUT.a", { phase: "c", out: OUT })')
+    expect(script).toContain('return await visit("end")')
+  })
+
+  it('compiles a code node that is a terminal (no outgoing edge)', () => {
+    const { script } = compileFlow(graph([start(), code('c')], [edge('start', 'c')]))
+    expect(script).toContain('OUT["c"] = await code("return 1", { phase: "c", out: OUT })')
+    expect(script).toContain('return OUT')
+  })
+
+  it('compiles a multi-edge code node to a parallel fan-out', () => {
+    const { script } = compileFlow(graph(
+      [start(), code('split'), agent('x'), agent('y')],
+      [edge('start', 'split'), edge('split', 'x'), edge('split', 'y')],
+    ))
+    expect(script).toContain('return await parallel([() => visit("x"), () => visit("y")])')
+  })
+
+  it('compiles an aggregate node to a phase call and a script-realm combine', () => {
+    const { script } = compileFlow(graph(
+      [start(), aggregate('agg', [{ name: 'a', expression: 'OUT.x' }], 'first'), end()],
+      [edge('start', 'agg'), edge('agg', 'end')],
+    ))
+    expect(script).toContain('phase("agg")')
+    expect(script).toContain('OUT["agg"] = (() => { const items = [{ name: "a", value: (OUT.x) }]')
+    expect(script).toContain('const mode = "first"')
+    expect(script).toContain('return await visit("end")')
+  })
+
+  it('compiles an aggregate node that is a terminal, and a multi-edge fan-out', () => {
+    const terminal = compileFlow(graph([start(), aggregate('agg')], [edge('start', 'agg')]))
+    expect(terminal.script).toContain('return OUT')
+    const split = compileFlow(graph(
+      [start(), aggregate('split'), agent('x'), agent('y')],
+      [edge('start', 'split'), edge('split', 'x'), edge('split', 'y')],
+    ))
+    expect(split.script).toContain('return await parallel([() => visit("x"), () => visit("y")])')
+  })
+
+  it('compiles a list node to a phase call and a script-realm operator', () => {
+    const { script } = compileFlow(graph(
+      [start(), list('lst', 'OUT.x', 'length'), end()],
+      [edge('start', 'lst'), edge('lst', 'end')],
+    ))
+    expect(script).toContain('phase("lst")')
+    expect(script).toContain('const src = (OUT.x)')
+    expect(script).toContain('const op = "length"')
+    expect(script).toContain('return await visit("end")')
+  })
+
+  it('compiles a classify node to an agent() schema call then exclusive class visits', () => {
+    const { script } = compileFlow(graph(
+      [start(), classify('cls'), agent('yes'), agent('no'), end()],
+      [edge('start', 'cls'), edge('cls', 'yes', 'a'), edge('cls', 'no', 'b'), edge('yes', 'end'), edge('no', 'end')],
+    ))
+    expect(script).toContain('OUT["cls"] = await agent(`Classify the input into exactly one class id from this closed set: a, b. Use the structured output.')
+    expect(script).toContain('schema: {"type":"object","properties":{"class":{"type":"string","enum":["a","b"]}},"required":["class"]}')
+    expect(script).toContain('if (_cls === "a") return await visit("yes")')
+    expect(script).toContain('if (_cls === "b") return await visit("no")')
+    expect(script).toContain('return OUT')
+  })
+
+  it('compiles a classify node\'s default edge as the unmatched fallback', () => {
+    const { script } = compileFlow(graph(
+      [start(), classify('cls'), agent('yes'), end()],
+      [edge('start', 'cls'), edge('cls', 'yes', 'a'), edge('cls', 'end', 'b'), edge('cls', 'end', 'default'), edge('yes', 'end')],
+    ))
+    expect(script).toContain('return await visit("end")')
+  })
+
+  it('compiles an extract node to an agent() schema call, including terminal and fan-out', () => {
+    const linear = compileFlow(graph(
+      [start(), extract('ex', '${OUT.x}', [{ name: 'n', type: 'integer', description: 'how many', required: true }]), end()],
+      [edge('start', 'ex'), edge('ex', 'end')],
+    ))
+    expect(linear.script).toContain('OUT["ex"] = await agent(`Extract the listed parameters from the input. Use the structured output schema.')
+    expect(linear.script).toContain('schema: {"type":"object","properties":{"n":{"type":"integer","description":"how many"}},"required":["n"]}')
+    expect(linear.script).toContain('return await visit("end")')
+    const terminal = compileFlow(graph([start(), extract('ex')], [edge('start', 'ex')]))
+    expect(terminal.script).toContain('return OUT')
+    const split = compileFlow(graph(
+      [start(), extract('split'), agent('x'), agent('y')],
+      [edge('start', 'split'), edge('split', 'x'), edge('split', 'y')],
+    ))
+    expect(split.script).toContain('return await parallel([() => visit("x"), () => visit("y")])')
+  })
+
+  it('compiles a list node that is a terminal, and a multi-edge fan-out', () => {
+    const terminal = compileFlow(graph([start(), list('lst')], [edge('start', 'lst')]))
+    expect(terminal.script).toContain('return OUT')
+    const split = compileFlow(graph(
+      [start(), list('split'), agent('x'), agent('y')],
+      [edge('start', 'split'), edge('split', 'x'), edge('split', 'y')],
+    ))
+    expect(split.script).toContain('return await parallel([() => visit("x"), () => visit("y")])')
+  })
+
+  it('quotes a code source as an opaque string, not a template literal', () => {
+    const { script } = compileFlow(graph(
+      [start(), code('c', 'return `tick ${OUT.a}`')],
+      [edge('start', 'c')],
+    ))
+    expect(script).toContain('await code("return `tick ${OUT.a}`", { phase: "c", out: OUT })')
+    expect(script).not.toContain('await code(`')
+  })
+
   it('maps per-node agent options to the agent call', () => {
     const { script } = compileFlow(graph(
       [start(), agent('a', 'do it', { label: 'Research', provider: 'deepseek', model: 'deepseek-v3' })],
@@ -130,6 +354,42 @@ describe('compileFlow', () => {
       [edge('start', 'a')],
     ))
     expect(script).toContain('modelKinds: {"image":{"provider":"dify","model":"gpt-v"}}')
+  })
+
+  it('emits childPresetId into the agent call when set', () => {
+    const node: FlowAgentNode = {
+      id: 'a',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      prompt: 'do it',
+      childPresetId: 'reviewing',
+    }
+    const { script } = compileFlow(graph([start(), node], [edge('start', 'a')]))
+    expect(script).toContain('childPresetId: "reviewing"')
+  })
+
+  it('concatenates systemPrompt and prompt with a blank line', () => {
+    const node: FlowAgentNode = {
+      id: 'a',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      systemPrompt: 'You are careful.',
+      prompt: 'summarize ${OUT.x}',
+    }
+    const { script } = compileFlow(graph([start(), node], [edge('start', 'a')]))
+    expect(script).toContain('await agent(`You are careful.\n\nsummarize ${OUT.x}`, { phase: "a" })')
+  })
+
+  it('compiles systemPrompt alone when the user prompt is empty', () => {
+    const node: FlowAgentNode = {
+      id: 'a',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      systemPrompt: 'system only',
+      prompt: '  ',
+    }
+    const { script } = compileFlow(graph([start(), node], [edge('start', 'a')]))
+    expect(script).toContain('await agent(`system only`, { phase: "a" })')
   })
 
   it('compiles deterministically for an unchanged graph', () => {
@@ -220,6 +480,126 @@ describe('compileFlow: embedded sub-graphs', () => {
     expect(script).toContain(
       'await agent(`ref ${OUT["e-sub-x"]} and ${OUT["e-sub-x"]}, keep ${OUT.outer} and ${OUT[\'outer\']} and OUTLOOK.x and MYOUT.x and foo.OUT.x`, { phase: "e-sub-x" })',
     )
+  })
+
+  it('embeds a sub-graph with an http node, rewriting its url to the namespaced id', () => {
+    const sub = graph(
+      [start(), agent('x', 'seed'), http('h', 'https://example.com/${OUT.x}'), end()],
+      [edge('start', 'x'), edge('x', 'h'), edge('h', 'end')],
+      { id: 'sub-flow', name: 'Sub' },
+    )
+    const embed: FlowAgentNode = {
+      id: 'e',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      prompt: '',
+      subgraph: sub,
+    }
+    const { script } = compileFlow(graph([start(), embed, end()], [edge('start', 'e'), edge('e', 'end')]))
+    expect(script).toContain('OUT["e-sub-h"] = await http(`https://example.com/${OUT["e-sub-x"]}`, { phase: "e-sub-h" })')
+  })
+
+  it('embeds a sub-graph with a template node, rewriting its template to the namespaced id', () => {
+    const sub = graph(
+      [start(), agent('x', 'seed'), template('tpl', 'seen: ${OUT.x}'), end()],
+      [edge('start', 'x'), edge('x', 'tpl'), edge('tpl', 'end')],
+      { id: 'sub-flow', name: 'Sub' },
+    )
+    const embed: FlowAgentNode = {
+      id: 'e',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      prompt: '',
+      subgraph: sub,
+    }
+    const { script } = compileFlow(graph([start(), embed, end()], [edge('start', 'e'), edge('e', 'end')]))
+    expect(script).toContain('phase("e-sub-tpl")\n  OUT["e-sub-tpl"] = `seen: ${OUT["e-sub-x"]}`')
+  })
+
+  it('embeds a sub-graph with a code node, rewriting its source to the namespaced id', () => {
+    const sub = graph(
+      [start(), agent('x', 'seed'), code('c', 'return OUT.x'), end()],
+      [edge('start', 'x'), edge('x', 'c'), edge('c', 'end')],
+      { id: 'sub-flow', name: 'Sub' },
+    )
+    const embed: FlowAgentNode = {
+      id: 'e',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      prompt: '',
+      subgraph: sub,
+    }
+    const { script } = compileFlow(graph([start(), embed, end()], [edge('start', 'e'), edge('e', 'end')]))
+    expect(script).toContain(
+      `OUT["e-sub-c"] = await code(${JSON.stringify('return OUT["e-sub-x"]')}, { phase: "e-sub-c", out: OUT })`,
+    )
+  })
+
+  it('embeds a sub-graph with an aggregate node, rewriting its item expressions', () => {
+    const sub = graph(
+      [start(), agent('x', 'seed'), aggregate('agg', [{ name: 'v', expression: 'OUT.x' }]), end()],
+      [edge('start', 'x'), edge('x', 'agg'), edge('agg', 'end')],
+      { id: 'sub-flow', name: 'Sub' },
+    )
+    const embed: FlowAgentNode = {
+      id: 'e',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      prompt: '',
+      subgraph: sub,
+    }
+    const { script } = compileFlow(graph([start(), embed, end()], [edge('start', 'e'), edge('e', 'end')]))
+    expect(script).toContain('value: (OUT["e-sub-x"])')
+    expect(script).toContain('phase("e-sub-agg")')
+  })
+
+  it('embeds a sub-graph with a list node, rewriting its source', () => {
+    const sub = graph(
+      [start(), agent('x', 'seed'), list('lst', 'OUT.x', 'first'), end()],
+      [edge('start', 'x'), edge('x', 'lst'), edge('lst', 'end')],
+      { id: 'sub-flow', name: 'Sub' },
+    )
+    const embed: FlowAgentNode = {
+      id: 'e',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      prompt: '',
+      subgraph: sub,
+    }
+    const { script } = compileFlow(graph([start(), embed, end()], [edge('start', 'e'), edge('e', 'end')]))
+    expect(script).toContain('const src = (OUT["e-sub-x"])')
+    expect(script).toContain('phase("e-sub-lst")')
+  })
+
+  it('embeds a sub-graph with classify and extract nodes, rewriting their queries', () => {
+    const sub = graph(
+      [
+        start(),
+        agent('x', 'seed'),
+        classify('cls', '${OUT.x}'),
+        extract('ex', '${OUT.x}'),
+        end(),
+      ],
+      [
+        edge('start', 'x'),
+        edge('x', 'cls'),
+        edge('cls', 'ex', 'a'),
+        edge('cls', 'end', 'b'),
+        edge('ex', 'end'),
+      ],
+      { id: 'sub-flow', name: 'Sub' },
+    )
+    const embed: FlowAgentNode = {
+      id: 'e',
+      type: 'agent',
+      position: { x: 0, y: 0 },
+      prompt: '',
+      subgraph: sub,
+    }
+    const { script } = compileFlow(graph([start(), embed, end()], [edge('start', 'e'), edge('e', 'end')]))
+    expect(script).toContain('Input:\n${OUT["e-sub-x"]}')
+    expect(script).toContain('phase: "e-sub-cls"')
+    expect(script).toContain('phase: "e-sub-ex"')
   })
 
   it('embeds a sub-graph with a loop node, rewriting the iterable to its namespaced id', () => {

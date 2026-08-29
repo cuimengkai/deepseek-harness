@@ -34,6 +34,7 @@
     { "path": "../../jobs/jobs" },
     { "path": "../../llm/llm" },
     { "path": "../../util/native-command" },
+    { "path": "../../preset/agent-modes" },
     { "path": "../../preset/agent-presets" },
     { "path": "../../runtime-diagnostics/invariants" },
     { "path": "../../session/context-composition" },

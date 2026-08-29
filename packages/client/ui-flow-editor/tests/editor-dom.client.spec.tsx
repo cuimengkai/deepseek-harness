@@ -470,10 +470,13 @@ describe('FlowCanvas', () => {
     expect(containerQuery('#app')).toBeNull()
   })
 
-  it('hides the handles and buttons and disables drag in read-only', () => {
+  it('keeps edge-anchor handles in read-only but disables connect and drag', () => {
     const spies = makeSpies()
     const { container } = render(<Harness graph={graph} readOnly spies={spies} />)
-    expect(container.querySelector('.react-flow__handle')).toBeNull()
+    // Handles must stay mounted so edges still render for shipped samples.
+    expect(container.querySelectorAll('.react-flow__handle').length).toBeGreaterThan(0)
+    expect(container.querySelectorAll('.react-flow__edge')).toHaveLength(2)
+    expect(container.querySelector('.react-flow__edge-path')).not.toBeNull()
     expect(container.textContent).not.toContain('Add a node after')
     expect(container.textContent).not.toContain('Insert a node between')
     const agentA = container.querySelector('[data-node-id="agent-a"]') as HTMLElement
@@ -533,6 +536,20 @@ describe('FlowCanvas', () => {
     expect(spies.selectEdge).not.toHaveBeenCalled()
   })
 
+  it('keeps edge paths and branch labels in read-only (shipped sample path)', () => {
+    const spies = makeSpies()
+    // Shipped modes: readOnly, no onInsertBetween — still must paint edges.
+    const { container } = render(<Harness graph={graph} readOnly spies={spies} />)
+    expect(container.querySelectorAll('.react-flow__edge')).toHaveLength(2)
+    const paths = container.querySelectorAll('.react-flow__edge-path')
+    expect(paths.length).toBeGreaterThan(0)
+    for (const path of paths) {
+      const d = path.getAttribute('d')
+      expect(d === null || d.length === 0).toBe(false)
+    }
+    expect(container.textContent).toContain('true')
+  })
+
   it('labels the branch on an insertable edge', () => {
     const spies = makeSpies()
     const { container } = render(<Harness graph={graph} spies={spies} flowProps={{ onInsertBetween: vi.fn() }} />)
@@ -574,7 +591,9 @@ describe('FlowCanvas', () => {
         </svg>
       </ReactFlowProvider>,
     )
-    expect(container.querySelector('svg path')).not.toBeNull()
+    const path = container.querySelector('svg path')
+    expect(path).not.toBeNull()
+    expect((path?.getAttribute('d') ?? '').length).toBeGreaterThan(0)
     expect(container.querySelector('[class*="edgeInsert"]')).toBeNull()
     expect(container.querySelector('[class*="edgeBranch"]')).toBeNull()
   })

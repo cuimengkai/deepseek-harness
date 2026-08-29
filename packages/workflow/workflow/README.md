@@ -83,7 +83,7 @@ The package separates the script, run, result, and event contracts from executio
 
 A run is holder-owned: engine-plugin unload prevents new starts but does not revoke accepted runs, and the caller must dispose every run it starts. `dispose()` cancels if needed and awaits script and child quiescence within the engine's documented bound, so a consumer awaiting `result` is never wedged past a cancellation.
 
-`workflow/start` and `workflow/end` pair the run; `workflow/phase` and `workflow/log` carry script narration; `workflow/agent-start` and `workflow/agent-end` pair each child call by `seq`. Every listener is independently contained: a throwing listener is logged without starving peers or changing execution, and each receives its own payload clone.
+`workflow/start` and `workflow/end` pair the run; `workflow/phase` and `workflow/log` carry script narration; `workflow/agent-start` and `workflow/agent-end` pair each child call by `seq`; `workflow/node-start` and `workflow/node-end` pair a non-agent processing-node call (e.g. an engine's `http()` hook) by the same `seq` vocabulary, for engines that expose canvas-visible node lifecycles beyond `agent()`. Every listener is independently contained: a throwing listener is logged without starving peers or changing execution, and each receives its own payload clone.
 
 ### Failure discipline
 

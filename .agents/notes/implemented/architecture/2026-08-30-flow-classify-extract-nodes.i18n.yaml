@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-30-flow-classify-extract-nodes.md
+2026-08-30-flow-classify-extract-nodes.md: dfefc1da9ffb224e7852aaed8d16d0935fcda61a
+2026-08-30-flow-classify-extract-nodes.zh.md: d139747fd1b7ad609ee183722310cc9ebf9acb64

@@ -11,7 +11,9 @@ import type {
   WorkflowRunId as WorkflowRunIdType, WorkflowStartRequest,
 } from '@deepseek-ai/dsh-workflow'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import WorkerThreadCodeRuntime from '@deepseek-ai/dsh-code-runtime-worker-thread'
 import SubagentRuntime from '@deepseek-ai/dsh-subagent'
+import WebRuntime from '@deepseek-ai/dsh-web'
 import WorkerThreadWorkflowEngine from '@deepseek-ai/dsh-workflow-worker-thread'
 import * as toolWorkflow from '../src/index.ts'
 import { Session, SessionId } from '@deepseek-ai/dsh-session'
@@ -431,6 +433,8 @@ describe('dsh-tool-workflow', () => {
         inheritsParentContext: false,
         start: () => Promise.reject(new Error('the parked-script fixture must not start a child')),
       })
+      await ctx.plugin(WebRuntime)
+      await ctx.plugin(WorkerThreadCodeRuntime, {})
       await ctx.plugin(WorkerThreadWorkflowEngine, { disposeGraceMs: 30 })
       await ctx.plugin(toolWorkflow, {})
       const session = Session.create(SessionId('caller'))

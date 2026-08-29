@@ -1,0 +1,6 @@
+# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
+# side as of the last confirmed-consistent state. Both languages carry equal authority;
+# after editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-08-30-flow-code-node.md
+2026-08-30-flow-code-node.md: bdf8de80a40c03fef1303c4480088224a37e4628
+2026-08-30-flow-code-node.zh.md: 303e2ac7e22bf16bc317a41c826ef0d81f533d1f

@@ -141,6 +141,7 @@ export type MessageImagesProps = PropsRuntime<'conversation.message.images'> & P
 /** Details-panel callbacks. */
 export interface DetailsInjected {
   closeDetails: () => void
+  openFile: (path: string) => Promise<void>
 }
 
 /** Full details-panel props. */

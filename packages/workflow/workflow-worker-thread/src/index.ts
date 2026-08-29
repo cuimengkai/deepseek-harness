@@ -110,7 +110,7 @@ function resolveMaxTotalAgents(requested: number | undefined, ceiling: number): 
  * the seam contract.
  */
 class WorkerThreadWorkflowEngine extends WorkflowEngine {
-  static inject = ['subagents']
+  static inject = ['subagents', 'web', 'codeRuntime']
 
   static Config: z<Config> = z.object({
     provider: z.string().default('spawn'),
@@ -169,12 +169,16 @@ class WorkerThreadWorkflowEngine extends WorkflowEngine {
     // the now-inactive engine fiber and break the seam's holder-owned lifetime.
     const runCtx = this.ctx
     const subagents = runCtx.subagents
+    const web = runCtx.web
+    const codeRuntime = runCtx.codeRuntime
     const workerRun = new WorkerRun(
       runCtx,
       subagents,
       id,
       meta,
       request.parent,
+      web,
+      codeRuntime,
       init,
       subagentProvider,
       this.config.disposeGraceMs,
@@ -183,6 +187,8 @@ class WorkerThreadWorkflowEngine extends WorkflowEngine {
         log: (message) => { this.emitWorkflowEvent('workflow/log', info, message) },
         agentStart: (agent) => { this.emitWorkflowEvent('workflow/agent-start', info, agent) },
         agentEnd: (agent) => { this.emitWorkflowEvent('workflow/agent-end', info, agent) },
+        nodeStart: (node) => { this.emitWorkflowEvent('workflow/node-start', info, node) },
+        nodeEnd: (node) => { this.emitWorkflowEvent('workflow/node-end', info, node) },
       },
       request.signal,
     )

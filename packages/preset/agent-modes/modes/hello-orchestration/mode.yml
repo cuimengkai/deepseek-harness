@@ -1,0 +1,3 @@
+name: Sample · orchestration benchmark
+description: Runtime benchmark mode. Shows every engine-backed FlowGraph feature — agent prompts with OUT/loop interpolation, per-node provider/model, condition true/false, loop body/after, exclusive YES path to End, and parallel fan-out on the NO path. Open read-only; Copy to experiment.
+order: 10

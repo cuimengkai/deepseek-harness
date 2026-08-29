@@ -64,10 +64,7 @@ export interface ProjectInsightScanResult {
 /**
  * Per-session workspace scanner. Auto-scan is debounced per root and
  * single-flight per root; a session arriving while its root is being scanned
- * joins the waiting set and is notified at the commit point. A read that
- * observes an absent or stale document schedules the same debounced scan, so a
- * session restored from the log after a host restart converges on a fresh
- * document even though it fires no session events.
+ * joins the waiting set and is notified at the commit point.
  */
 export class ProjectInsight extends TypertRemoteService {
   /** Runtime schema for the auto-scan trigger and debounce. */
@@ -114,19 +111,15 @@ export class ProjectInsight extends TypertRemoteService {
   }
 
   /**
-   * Read the stored document for a working directory, without scanning inline.
+   * Read the stored document for a working directory, without scanning.
    *
    * Resolves the project root upward from `cwd`, reads the committed `.dsh/insight/`
    * document, and reports fresh/stale by recomputing the stat-only structural
    * signature. An over-cap, unparsable, or missing-section document is a `'error'`
-   * result, not an absent one. A document under an older `formatVersion` is one
-   * recoverable case: it reads `'stale'` and schedules a debounced background
+   * result, not an absent one. A document under an older `formatVersion` is the
+   * one recoverable case: it reads `'stale'` and schedules a debounced background
    * rebuild, so a format bump self-heals an existing project's committed doc
-   * instead of stranding it in an error state. An absent or stale document also
-   * schedules the debounced rebuild: a session restored from the log after a
-   * host restart fires neither `session/created` nor a fresh
-   * `agent-preset/selected`, so the read itself is the trigger that keeps the
-   * polling reader converging on a fresh document.
+   * instead of stranding it in an error state.
    * @param cwd - absolute working directory to resolve the project root from.
    * @param signal - aborts the stat walk.
    * @returns the document state and, when present, the parsed document.
@@ -135,7 +128,6 @@ export class ProjectInsight extends TypertRemoteService {
     const root = await findProjectRoot(cwd)
     try {
       const existing = await readDocument(root, MAX_FINGERPRINT_FILES, signal)
-      if (existing === undefined || existing.status === 'stale') this.scheduleScan(root)
       if (existing === undefined) return { status: 'none', root: basename(root) }
       return { status: existing.status, root: basename(root), doc: existing.doc }
     } catch (error) {

@@ -206,9 +206,9 @@ describe('the preset list', () => {
     renderSection()
 
     // The composer entry is the button on the list; the intro is what tells a
-    // first-time reader that duplicating an existing preset — or letting the
-    // agent draft one in Creator mode — is the other way to make one.
-    expect(screen.getByText(new RegExp('Creator mode'))).toBeTruthy()
+    // first-time reader that duplicating an existing pack — or letting Creator
+    // draft one — is the other way to make one.
+    expect(screen.getByText(new RegExp('Creator draft'))).toBeTruthy()
   })
 
   it('picks a preset by clicking its card, and the one in use is inert', () => {

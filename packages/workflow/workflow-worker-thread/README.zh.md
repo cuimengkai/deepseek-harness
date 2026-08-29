@@ -29,21 +29,28 @@ kind: "package-reference"
 
 ### 最小配置
 
-加载本引擎即注册 `ctx.workflowEngine`；在其上添加 `dsh-tool-workflow` 会把 `workflow` 工具交给模型。每个配置字段都是可选的：
+加载本引擎即注册 `ctx.workflowEngine`；在其上添加 `dsh-tool-workflow` 会把 `workflow` 工具交给模型。本引擎的 `http()` 钩子还需要一个 `web` 服务（例如 `dsh-web` + `dsh-web-fetch-http`），`code()` 钩子还需要一个 `codeRuntime` 服务（例如 `dsh-code-runtime-worker-thread`），任一缺失时在加载期直接失败。每个配置字段都是可选的：
 
 ```yaml
+- name: '@deepseek-ai/dsh-web'
+- name: '@deepseek-ai/dsh-web-fetch-http'
+- name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 - name: '@deepseek-ai/dsh-workflow-worker-thread'
 - name: '@deepseek-ai/dsh-tool-workflow'
 ```
 
 在 worker 内，脚本会收到 `args` 以及以下钩子：
 
-- `agent(prompt, { label, phase, schema, model, modelKinds })` 启动一个宿主侧 subagent。提供 schema 时返回结构化值，否则返回最终文本。普通子 agent 失败会产生 `null`。`modelKinds` 把模型类型绑定到按类型的 provider/model 路由；路由会转发进子 `AgentOptions`，但请求路由尚未消费它们。
+- `agent(prompt, { label, phase, schema, model, modelKinds, childPresetId })` 启动一个宿主侧 subagent。提供 schema 时返回结构化值，否则返回最终文本。普通子 agent 失败会产生 `null`。`modelKinds` 把模型类型绑定到按类型的 provider/model 路由，转发进子 `AgentOptions`；子 agent 唯一的请求通道会消费 `text` 绑定来覆盖其基础 provider/model，而 `image`/`audio`/`embedding` 绑定仍会被携带并保持不生效，直到这些类型出现自己的请求通道。`childPresetId` 会转发到宿主侧启动请求，以便同进程子组合把该预设挂到子 agent 上。
+- `http(url, { phase })` 通过 `ctx.web.fetch()` 发起一次宿主侧 `GET` 请求，返回 `{ status, headers, body }`（普通 fetch 失败时为 `null`）。本引擎要求同一组合内存在 `web` 服务，缺失时在加载期直接失败；没有独立的、按流程定制的允许列表——唯一的把关就是 `dsh-web` 自身的 SSRF、重定向与大小/时间策略。v1 的 `http()` 不携带 method、header 或 body 选项。
+- `code(source, { phase, out? })` 通过 `ctx.codeRuntime.run()` 在宿主侧运行 `source`——绝不在脚本自己的 vm 上下文里裸 `eval`——并返回该次运行的 `{ value?, logs, error? }`（程序失败仍是一次兑现的调用；只有不可用的 code runtime 才是致命的）。当提供 `out` 时，会在 `source` 前拼接一行 `const OUT = <json>;` 前奏，让沙箱程序能用与其他节点种类相同的 `OUT['<nodeId>']` 访问模式。本引擎要求同一组合内存在 `codeRuntime` 服务，缺失时在加载期直接失败。
 - `parallel(thunks)` 在已配置的并发限制下运行 thunk；
 - `pipeline(items, ...stages)` 在没有跨阶段屏障的情况下传递 `(previous, item, index)`；
 - `phase(title)` 和 `log(message)` 发出观察器叙述。
 
-未知选项、格式错误的参数、不支持的 schema、超出上限、提供方启动失败和基础设施结果失败都属于致命工作流错误。有意不注入 timer、文件系统 API 或 Node 全局变量，但上述信任注意事项仍然适用。
+每次 `agent()`、`http()` 与 `code()` 调用都会在其前后配对 `workflow/agent-start`/`workflow/agent-end` 或 `workflow/node-start`/`workflow/node-end` 叙述，因此画布侧调用方（例如 `dsh-flow`）可以据此投影每个节点的运行/完成状态，而不必轮询脚本。
+
+未知选项、格式错误的参数、不支持的 schema、超出上限、提供方启动失败、被拒绝的 `http()` fetch 或 `code()` 运行、以及基础设施结果失败都属于致命工作流错误。有意不注入 timer 或文件系统 API；脚本能触达的唯一网络就是 `http()` 经 `ctx.web` 的受限路径，唯一的代码执行就是 `code()` 经 `ctx.codeRuntime` 的受限路径，但上述信任注意事项仍然适用。
 
 ## 运行顺序
 
@@ -215,7 +222,7 @@ worker 错误、消息失败或提前退出会在清理前关闭消息接纳，�
 
 - **worker 与 vm 不是安全边界**——模型编写的代码可以逃逸 `node:vm` 并取得 worker 的进程权限；不可信代码部署需要独立进程或容器引擎。
 - **每次运行都要支付一个 worker thread**——没有池、预热运行时或跨运行脚本缓存。
-- **不注入默认可用的定时器、文件系统或网络，但逃逸代码仍可触达 Node**——缺失的全局变量属于可移植性 API，而非隔离措施。
+- **不注入默认可用的定时器或文件系统，唯一的网络是 `http()` 的受限路径，但逃逸代码仍可触达 Node**——缺失的全局变量属于可移植性 API，而非隔离措施。
 - **终止只能报告宿主观察到的启动**——`agentsStarted` 不包括因并发限制仍在 worker 侧排队、且在强制终止后无法得知的调用。
 - **跨 realm 错误在脚本内无法通过 `instanceof Error`**——工作流作者必须根据 `name` 与 `code` 等稳定字段分支。
 

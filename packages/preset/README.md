@@ -25,6 +25,8 @@ The preset group provides per-session agent composition: an agent preset is a di
 | Package | Role | ctx key |
 |---|---|---|
 | [`agent-presets`](agent-presets/README.md) | Preset roster, discovery over trusted and user roots, per-agent composition, copy-only authoring | `ctx.agentPresets` |
+| [`agent-modes`](agent-modes/README.md) | Product modes that bind a preset to an executable entry flow | `ctx.agentModes` |
+| [`project-bundle`](project-bundle/README.md) | Persisted project cards: instructions, connectors, experts, skills, and a `sharedRoot` workspace | `ctx.projectBundles` |
 | [`persona`](persona/README.md) | The composable persona row a preset mounts to shadow or replace the deployment persona | — |
 
 -----

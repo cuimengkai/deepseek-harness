@@ -121,7 +121,15 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.hero.workspace': { kind: 'single'; scope: 'root'; owner: EmptyWorkspaceOwnerProps }
     /** Brand mark shown before the blank-session headline. */
     'conversation.hero.brand.mark': { kind: 'single'; scope: 'root'; owner: HeroBrandMarkOwnerProps }
-    /** Agent-preset control staged for a New Session. */
+    /**
+     * Unused hero seat kept for declaration stability; session capability
+     * lives on `conversation.input.left`.
+     */
+    'conversation.hero.agentMode': { kind: 'single'; scope: 'root'; owner: HeroAgentModeOwnerProps }
+    /**
+     * WorkBuddy category chips on the blank Assistant hero; stages a preset.
+     * Session capability still lives on `conversation.input.left`.
+     */
     'conversation.hero.agentPreset': { kind: 'single'; scope: 'root'; owner: HeroAgentPresetOwnerProps }
     /** Full-width entries above the composer card. */
     'conversation.input.dock': { kind: 'list'; scope: 'session'; owner: InputZone }
@@ -169,6 +177,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /** Input actions are absent without a current Session. */
     inputActions: InputActions | undefined
   }
+}
+
+/** Owner share of the Hero scenario-agent control. */
+export interface HeroAgentModeOwnerProps {
+  /** Marker field: the occupant owns its roster and staged selection. */
+  children?: never
 }
 
 /** Owner share of the Hero agent-preset control. */
@@ -257,8 +271,13 @@ export interface ComposerBarOwnerProps {
   leftItems?: ReactNode
   /** Right-side input controls. */
   rightItems?: ReactNode
-  /** Ambient content below the card. */
+  /** Ambient content below the card (active sessions). */
   footer?: ReactNode
+  /**
+   * Hero-only workspace chip (+ picker portal) rendered in the card context
+   * strip beside permission.
+   */
+  workspaceAccessory?: ReactNode
 }
 
 /** Package-private operations injected into the resident composer bar. */
@@ -275,6 +294,8 @@ export interface ComposerBarInjected {
   toggleCommandMenu: ((selection: EditSelection) => void) | undefined
   stop: (() => void) | undefined
   command: ((line: string) => Promise<boolean>) | undefined
+  /** Open Agent settings (hero + menu Experts item). */
+  openAgentSettings: () => void
   hooks: {
     notices: ObservableSnapshot<InputNotice | null>
     lexicon: ObservableSnapshot<ReadonlyMap<'/' | '@', readonly string[]>>
@@ -326,6 +347,7 @@ export type ConversationSlotProps =
     | 'conversation.input.left' | 'conversation.input.right'
     | 'conversation.hero.brand.mark'
     | 'conversation.hero.workspace'
+    | 'conversation.hero.agentMode'
     | 'conversation.hero.agentPreset'
   >
   & InjectFace<ConversationInjected>

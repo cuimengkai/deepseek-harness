@@ -106,7 +106,10 @@
     "tests/composer-tab-geometry.e2e.ts",
     "tests/complex-history.perf.ts",
     "tests/pwsh-terminal.e2e.ts",
-    "tests/workflow-run.e2e.ts"
+    "tests/workflow-run.e2e.ts",
+    "tests/orchestration-studio.e2e.ts",
+    "tests/results-panel.e2e.ts",
+    "tests/workbuddy-final-ia.e2e.ts"
   ],
   "references": [
     {

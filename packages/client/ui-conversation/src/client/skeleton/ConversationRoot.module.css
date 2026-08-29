@@ -56,11 +56,7 @@
   pointer-events: none;
 }
 
-/* Blank hero/settling: keep the strict Session header mounted without taking
-   column space; the root-owned scrollport and composer remain below it. */
-.headerHidden {
-  display: none;
-}
+/* Blank hero keeps the header visible (Results toggle + title density). */
 
 .titleRow {
   display: flex;
@@ -433,24 +429,13 @@
   pointer-events: none;
 }
 
-.heroWorkspaceRow {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-width: 0;
-  margin-top: 4px;
-  /* figma drew px 8; nudged +12 so the chip's folder glyph lines up closer to
-     the card's inner controls below. */
-  padding-left: 20px;
-}
-
-/* A failed workspace connect, below the hero row; same tone as the chat
+/* A failed workspace connect, below the hero stack; same tone as the chat
    open-error band. */
 .workspaceError {
   color: var(--dsw-alias-state-error-primary);
   font-size: 12px;
   line-height: 18px;
-  padding-left: 20px;
+  padding-left: 8px;
 }
 
 /* Hero: the composer sits inside the session scroll body; center there so

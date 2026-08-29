@@ -29,21 +29,28 @@ Mount this engine when a composition needs the workflow capability: each orchest
 
 ### Minimal configuration
 
-Loading the engine registers `ctx.workflowEngine`; adding `dsh-tool-workflow` on top gives the model the `workflow` tool. Every config field is optional:
+Loading the engine registers `ctx.workflowEngine`; adding `dsh-tool-workflow` on top gives the model the `workflow` tool. The engine also requires a `web` service (e.g. `dsh-web` + `dsh-web-fetch-http`) for its `http()` hook and a `codeRuntime` service (e.g. `dsh-code-runtime-worker-thread`) for its `code()` hook, and fails loud at load when either is absent. Every config field is optional:
 
 ```yaml
+- name: '@deepseek-ai/dsh-web'
+- name: '@deepseek-ai/dsh-web-fetch-http'
+- name: '@deepseek-ai/dsh-code-runtime-worker-thread'
 - name: '@deepseek-ai/dsh-workflow-worker-thread'
 - name: '@deepseek-ai/dsh-tool-workflow'
 ```
 
 Inside the worker, the script receives `args` and these hooks:
 
-- `agent(prompt, { label, phase, schema, model, modelKinds })` starts one host-side subagent. With a schema it returns the structured value; otherwise it returns final text. An ordinary failed child yields `null`. `modelKinds` binds model kinds to per-kind provider/model routes; the routes are forwarded into the child's `AgentOptions` but request routing does not consume them yet.
+- `agent(prompt, { label, phase, schema, model, modelKinds, childPresetId })` starts one host-side subagent. With a schema it returns the structured value; otherwise it returns final text. An ordinary failed child yields `null`. `modelKinds` binds model kinds to per-kind provider/model routes, forwarded into the child's `AgentOptions`; the child's single request channel consumes the `text` binding to override its base provider/model, while `image`/`audio`/`embedding` bindings stay carried and inert until a request channel for those kinds exists. `childPresetId` is forwarded on the host start request so in-process composition can mount that preset on the child.
+- `http(url, { phase })` issues one host-side `GET` through `ctx.web.fetch()` and returns `{ status, headers, body }` (or `null` on an ordinary fetch failure). This engine requires the `web` service in the same composition and fails loud at load when it is absent; there is no separate flow-specific allow-list — `dsh-web`'s own SSRF, redirect, and size/time policy is the only gate. `http()` carries no method, header, or body options in v1.
+- `code(source, { phase, out? })` runs `source` host-side through `ctx.codeRuntime.run()` — never a bare `eval` inside the script's own vm context — and returns the run's `{ value?, logs, error? }` (a failed program is still a fulfilled call; only an unusable code runtime is fatal). When `out` is present it is spliced ahead of `source` as a `const OUT = <json>;` prelude, giving the sandboxed program the same `OUT['<nodeId>']` access pattern the flow compiler gives other node kinds. This engine requires the `codeRuntime` service in the same composition and fails loud at load when it is absent.
 - `parallel(thunks)` runs thunks under the configured concurrency limit.
 - `pipeline(items, ...stages)` passes `(previous, item, index)` without a cross-stage barrier.
 - `phase(title)` and `log(message)` emit observer narration.
 
-Unknown options, malformed arguments, unsupported schemas, tripped caps, provider-start failures, and infrastructure result failures are fatal workflow errors. No timers, filesystem API, or Node globals are intentionally injected, though the trust caveat above still applies.
+Every `agent()`, `http()`, and `code()` call pairs `workflow/agent-start`/`workflow/agent-end` or `workflow/node-start`/`workflow/node-end` narration around it, so a canvas-driven caller (e.g. `dsh-flow`) can project per-node running/done status without polling the script.
+
+Unknown options, malformed arguments, unsupported schemas, tripped caps, provider-start failures, a refused `http()` fetch or `code()` run, and infrastructure result failures are fatal workflow errors. No timers or filesystem API are intentionally injected; the only network reachable from the script is `http()`'s bounded path through `ctx.web`, and the only code execution is `code()`'s bounded path through `ctx.codeRuntime`, though the trust caveat above still applies.
 
 ## Run sequence
 
@@ -215,7 +222,7 @@ These limits define when the engine is a poor fit or needs special operational c
 
 - **The worker and vm are not a security boundary** — model-written code can escape `node:vm` and reach the worker's process authority; a hostile-code deployment needs a separate-process or container engine.
 - **One worker thread is paid per run** — there is no pool, warm runtime, or cross-run script cache.
-- **No ambient timers, filesystem, or network are injected, but escaped code can still reach Node** — the missing globals are a portability API, not containment.
+- **No ambient timers or filesystem are injected, and the only network is `http()`'s bounded path, but escaped code can still reach Node** — the missing globals are a portability API, not containment.
 - **Termination can only report host-observed starts** — `agentsStarted` excludes worker-side calls still queued behind concurrency when a forced termination makes them unknowable.
 - **Cross-realm errors fail `instanceof Error` inside scripts** — workflow authors must branch on stable fields such as `name` and `code`.
 

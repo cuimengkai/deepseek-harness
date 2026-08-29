@@ -5,9 +5,10 @@
  *
  * The run surface is event-derived, not engine-inspected: agent nodes move
  * `pending → running → done/failed/cancelled` from `workflow/agent-start` and
- * `workflow/agent-end`; condition/loop gates (which have no child event) are
- * marked `running` by their `phase()` call and settled by the next node event
- * or by `workflow/end`. The service emits no events of its own — the canvas
+ * `workflow/agent-end`; condition/loop/template/aggregate/list/join gates (which have
+ * no child event) are marked `running` by their `phase()` call and settled by
+ * the next node event or by `workflow/end`. The service emits no events of its
+ * own — the canvas
  * polls `getRun` for live status, so no `API_REMOTE_FORWARDED_EVENTS` row is
  * required for v1.
  * @module @deepseek-ai/dsh-flow/service
@@ -17,7 +18,15 @@ import { randomUUID } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { Agent } from '@deepseek-ai/dsh-agent'
-import type { WorkflowAgentEndInfo, WorkflowAgentInfo, WorkflowResultInfo, WorkflowRunInfo } from '@deepseek-ai/dsh-workflow'
+import type { JsonValue } from '@deepseek-ai/dsh-session/types'
+import type {
+  WorkflowAgentEndInfo,
+  WorkflowAgentInfo,
+  WorkflowNodeEndInfo,
+  WorkflowNodeInfo,
+  WorkflowResultInfo,
+  WorkflowRunInfo,
+} from '@deepseek-ai/dsh-workflow'
 import type { WorkflowEngine, WorkflowRun } from '@deepseek-ai/dsh-workflow'
 import { compileFlow } from './compile.ts'
 import { FlowError } from './error.ts'
@@ -40,6 +49,11 @@ export interface FlowRunRequest {
   graph: FlowGraph
   /** Optional input exposed to the script as the `args` global. */
   input?: unknown
+  /**
+   * Per-node output seed compiled into the script. Seeded nodes write the
+   * value to `OUT[id]` and take their continuation without re-running.
+   */
+  seed?: Readonly<Record<string, JsonValue>>
   /** The agent on whose behalf the run executes (parent of every child). */
   parent: Agent
   /** Cancels the run when aborted. */
@@ -73,12 +87,62 @@ interface RunEntry {
   readonly startedAt: number
   readonly nodeTypes: Map<string, FlowNodeType>
   readonly nodeStatuses: Map<string, FlowNodeStatus>
+  readonly nodeOutputs: Map<string, JsonValue>
+  readonly nodeInputs: Map<string, JsonValue>
+  readonly nodeDurationsMs: Map<string, number>
+  readonly nodeStartedAt: Map<string, number>
   status: FlowRunStatus
   stopReason?: 'completed' | 'cancelled' | 'error'
   error: string | undefined
   agentsStarted: number
   /** The condition/loop whose `phase()` fired but whose branch has not yet produced a node event. */
   activeGate: { readonly nodeId: string } | undefined
+}
+
+/**
+ * Project a completed workflow script return value into per-node I/O.
+ * A compiled script returns `{ OUT, IN }`; a stub or older script may return
+ * the bare `OUT` map. Keys that are not node ids are ignored.
+ */
+function applyNodeOutputs(entry: RunEntry, value: unknown): void {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return
+  const rec = value as Record<string, unknown>
+  const enveloped = isPlainObject(rec.OUT) && isPlainObject(rec.IN)
+  const out = enveloped ? rec.OUT as Record<string, unknown> : rec
+  const inn = enveloped ? rec.IN as Record<string, unknown> : undefined
+  for (const [id, raw] of Object.entries(out)) {
+    if (!entry.nodeTypes.has(id)) continue
+    if (!isJsonValue(raw)) continue
+    entry.nodeOutputs.set(id, raw)
+  }
+  if (inn === undefined) return
+  for (const [id, raw] of Object.entries(inn)) {
+    if (!entry.nodeTypes.has(id)) continue
+    if (!isJsonValue(raw)) continue
+    entry.nodeInputs.set(id, raw)
+  }
+}
+
+/** Whether `value` is a non-array object (the `{ OUT, IN }` envelope test). */
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** Whether `value` is plain JSON data the Client can render as an output snapshot. */
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) return true
+  switch (typeof value) {
+    case 'string':
+    case 'boolean':
+      return true
+    case 'number':
+      return Number.isFinite(value)
+    case 'object':
+      if (Array.isArray(value)) return value.every(isJsonValue)
+      return Object.values(value as Record<string, unknown>).every(isJsonValue)
+    default:
+      return false
+  }
 }
 
 /**
@@ -117,6 +181,8 @@ export class FlowEngine extends Service {
     ctx.on('workflow/phase', (info, title) =>{  this.onPhase(info, title) }, { global: true })
     ctx.on('workflow/agent-start', (info, agent) =>{  this.onAgentStart(info, agent) }, { global: true })
     ctx.on('workflow/agent-end', (info, agent) =>{  this.onAgentEnd(info, agent) }, { global: true })
+    ctx.on('workflow/node-start', (info, node) =>{  this.onNodeStart(info, node) }, { global: true })
+    ctx.on('workflow/node-end', (info, node) =>{  this.onNodeEnd(info, node) }, { global: true })
     ctx.on('workflow/end', (info, result) =>{  this.onWorkflowEnd(info, result) }, { global: true })
     // The engine's `WorkflowRun` handles are holder-owned: the seam requires
     // the holder to dispose each run, or the underlying worker thread outlives
@@ -139,7 +205,7 @@ export class FlowEngine extends Service {
    *   `FLOW_CAP` when the live-run bound is reached.
    */
   run(request: FlowRunRequest): FlowRunHandle {
-    const { graph, input, parent, signal } = request
+    const { graph, input, parent, signal, seed } = request
     const validation = validateFlow(graph)
     if (!validation.ok) {
       throw new FlowError(`flow is invalid: ${validation.errors.join('; ')}`, 'FLOW_INVALID')
@@ -148,7 +214,7 @@ export class FlowEngine extends Service {
     if (live >= this.config.maxLiveRuns) {
       throw new FlowError(`refusing to start a flow run: already ${live} live runs (max ${this.config.maxLiveRuns})`, 'FLOW_CAP')
     }
-    const { script, meta } = compileFlow(graph)
+    const { script, meta } = compileFlow(graph, seed === undefined ? undefined : { seed })
     const workflowRun = this.workflow.start({
       script,
       meta,
@@ -177,6 +243,10 @@ export class FlowEngine extends Service {
       startedAt: Date.now(),
       nodeTypes,
       nodeStatuses,
+      nodeOutputs: new Map(),
+      nodeInputs: new Map(),
+      nodeDurationsMs: new Map(),
+      nodeStartedAt: new Map(),
       status: 'running',
       error: undefined,
       agentsStarted: 0,
@@ -186,7 +256,8 @@ export class FlowEngine extends Service {
     this.runIdByWorkflow.set(workflowRun.id, runId)
     const result = new Promise<FlowRunOutcome>((resolve) => {
       // The executor runs synchronously, so the resolver is registered before
-      // `run()` returns and any `workflow/end` can arrive.
+      // `run()` returns and any `workflow/end` can arrive. Settlement awaits
+      // `workflowRun.result` first so `nodeOutputs` are present when this resolves.
       this.outcomeResolvers.set(runId, resolve)
     })
     return {
@@ -243,6 +314,11 @@ export class FlowEngine extends Service {
       ...(entry.error === undefined ? {} : { error: entry.error }),
       agentsStarted: entry.agentsStarted,
       nodeStatuses: Object.fromEntries(entry.nodeStatuses),
+      ...(entry.nodeOutputs.size > 0 ? { nodeOutputs: Object.fromEntries(entry.nodeOutputs) } : {}),
+      ...(entry.nodeInputs.size > 0 ? { nodeInputs: Object.fromEntries(entry.nodeInputs) } : {}),
+      ...(entry.nodeDurationsMs.size > 0
+        ? { nodeDurationsMs: Object.fromEntries(entry.nodeDurationsMs) }
+        : {}),
     }
   }
 
@@ -293,7 +369,7 @@ export class FlowEngine extends Service {
     return deleteFlowFile(root, flowId)
   }
 
-  /** Settle the gate a phase opened and open the next one, for a condition/loop. */
+  /** Settle the gate a phase opened and open the next one, for a script-realm node. */
   private onPhase(info: WorkflowRunInfo, title: string): void {
     const runId = this.runIdFor(info.id)
     if (runId === undefined) return
@@ -301,7 +377,8 @@ export class FlowEngine extends Service {
     /* v8 ignore next -- runs and runIdByWorkflow are written and pruned together, so a mapped id always has an entry */
     if (entry === undefined) return
     this.clearGate(entry)
-    if (entry.nodeTypes.get(title) === 'condition' || entry.nodeTypes.get(title) === 'loop') {
+    const type = entry.nodeTypes.get(title)
+    if (type === 'condition' || type === 'loop' || type === 'template' || type === 'aggregate' || type === 'list' || type === 'join') {
       entry.nodeStatuses.set(title, 'running')
       entry.activeGate = { nodeId: title }
     }
@@ -317,6 +394,7 @@ export class FlowEngine extends Service {
     this.clearGate(entry)
     if (agent.phase !== undefined && entry.nodeTypes.has(agent.phase)) {
       entry.nodeStatuses.set(agent.phase, 'running')
+      entry.nodeStartedAt.set(agent.phase, Date.now())
     }
   }
 
@@ -328,11 +406,51 @@ export class FlowEngine extends Service {
     /* v8 ignore next -- runs and runIdByWorkflow are written and pruned together, so a mapped id always has an entry */
     if (entry === undefined) return
     if (agent.phase === undefined || !entry.nodeTypes.has(agent.phase)) return
+    const started = entry.nodeStartedAt.get(agent.phase)
+    if (started !== undefined) {
+      entry.nodeDurationsMs.set(agent.phase, Math.max(0, Date.now() - started))
+      entry.nodeStartedAt.delete(agent.phase)
+    }
     const status: FlowNodeStatus = agent.outcome === 'completed' ? 'done' : agent.outcome === 'failed' ? 'failed' : 'cancelled'
     entry.nodeStatuses.set(agent.phase, status)
   }
 
-  /** Settle the run, resolve the handle's outcome, and prune the history bound. */
+  /** Mark a processing node (e.g. http) `running`, settling the preceding gate — the non-agent analog of {@link onAgentStart}. */
+  private onNodeStart(info: WorkflowRunInfo, node: WorkflowNodeInfo): void {
+    const runId = this.runIdFor(info.id)
+    if (runId === undefined) return
+    const entry = this.runs.get(runId)
+    /* v8 ignore next -- runs and runIdByWorkflow are written and pruned together, so a mapped id always has an entry */
+    if (entry === undefined) return
+    this.clearGate(entry)
+    if (entry.nodeTypes.has(node.phase)) {
+      entry.nodeStatuses.set(node.phase, 'running')
+      entry.nodeStartedAt.set(node.phase, Date.now())
+    }
+  }
+
+  /** Settle one processing node by its call outcome — the non-agent analog of {@link onAgentEnd}. */
+  private onNodeEnd(info: WorkflowRunInfo, node: WorkflowNodeEndInfo): void {
+    const runId = this.runIdFor(info.id)
+    if (runId === undefined) return
+    const entry = this.runs.get(runId)
+    /* v8 ignore next -- runs and runIdByWorkflow are written and pruned together, so a mapped id always has an entry */
+    if (entry === undefined) return
+    if (!entry.nodeTypes.has(node.phase)) return
+    const started = entry.nodeStartedAt.get(node.phase)
+    if (started !== undefined) {
+      entry.nodeDurationsMs.set(node.phase, Math.max(0, Date.now() - started))
+      entry.nodeStartedAt.delete(node.phase)
+    }
+    const status: FlowNodeStatus = node.outcome === 'completed' ? 'done' : node.outcome === 'failed' ? 'failed' : 'cancelled'
+    entry.nodeStatuses.set(node.phase, status)
+  }
+
+  /**
+   * Settle the run after the engine's `result` is available. Real engines emit
+   * `workflow/end` only after `WorkflowRun.result` settles, so the await is
+   * already resolved; stubs must settle `result` before emitting end.
+   */
   private onWorkflowEnd(info: WorkflowRunInfo, result: WorkflowResultInfo): void {
     const runId = this.runIdFor(info.id)
     if (runId === undefined) return
@@ -340,6 +458,23 @@ export class FlowEngine extends Service {
     /* v8 ignore next -- runs and runIdByWorkflow are written and pruned together, so a mapped id always has an entry */
     if (entry === undefined) return
     if (entry.status !== 'running') return // already settled (idempotent guard)
+    // Hold status at `running` until outputs are copied so `getRun` never
+    // reports a completed run missing the script's `OUT` map.
+    void this.finishSettlement(entry, runId, result)
+  }
+
+  /** Await engine result, copy node I/O, then publish outcome and dispose. */
+  private async finishSettlement(
+    entry: RunEntry,
+    runId: FlowRunIdType,
+    result: WorkflowResultInfo,
+  ): Promise<void> {
+    try {
+      const full = await entry.workflowRun.result
+      if (full.stopReason === 'completed') applyNodeOutputs(entry, full.value)
+    } catch {
+      // Settlement errors are owned by `workflow/end`; ignore result rejects.
+    }
     entry.status = result.stopReason
     entry.stopReason = result.stopReason
     entry.error = result.error

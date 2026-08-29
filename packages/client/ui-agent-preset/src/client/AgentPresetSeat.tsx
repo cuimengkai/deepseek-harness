@@ -73,7 +73,7 @@ function introStaggerMs(count: number): number {
 
 /** Full component props. */
 export type AgentPresetSeatProps =
-  PropsRuntime<'conversation.hero.agentPreset'>
+  PropsRuntime<'conversation.input.left'>
   & PropsLocale<'settings.agentPreset'>
   & InjectFace<AgentPresetSeatInjected>
 
@@ -82,7 +82,9 @@ export type AgentPresetSeatProps =
  * @param props - composed slot props.
  * @returns the chip, or null when the deployment composes no presets.
  */
-export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, t }: AgentPresetSeatProps) {
+export function AgentPresetSeat({
+  session, load, select, introduced, useAgentPresetSeat, t,
+}: AgentPresetSeatProps) {
   const state = useAgentPresetSeat(snapshot => snapshot)
   const [open, setOpen] = useState(false)
   // The seq keys the banner, so picking the same broken preset twice replays
@@ -118,6 +120,10 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
     }, INTRO_TEXT_DELAY_MS + (characters.length - 1) * introStaggerMs(characters.length) + INTRO_CHAR_FADE_MS)
     return () => { window.clearTimeout(done) }
   }, [state.introduce, ready, label, introduced])
+
+  // Hero categories own blank-session preset staging; keep the tool-row chip
+  // for active sessions only.
+  if (session.blank) return null
 
   // Nothing to choose between: the deployment composes no presets and every
   // session shares the host composition.
@@ -192,7 +198,8 @@ export function AgentPresetSeat({ load, select, introduced, useAgentPresetSeat, 
             onClick={() => { setOpen(value => !value) }}
           >
             <IconAgentPresetOutline16 className={introducing ? `${css.seatIcon} ${css.introIcon}` : css.seatIcon} />
-            {shownLabel}
+            <span className={css.seatKind}>{t('seatKind')}</span>
+            <span className={css.seatLabel}>{shownLabel}</span>
             <IconChevronDownOutline14 className={css.chevron} />
           </button>
         )}

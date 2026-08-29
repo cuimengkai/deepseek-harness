@@ -116,6 +116,29 @@ export interface WorkflowAgentEndInfo extends WorkflowAgentInfo {
 }
 
 /**
+ * One non-agent processing-node call's identity within a run (e.g. an
+ * `http()` call), keyed to its owning flow node by `phase` — unlike
+ * {@link WorkflowAgentInfo.phase}, always present: a processing node's own id
+ * IS the call's identity, not an optional label. The `workflow/node-start`
+ * payload.
+ */
+export interface WorkflowNodeInfo {
+  /** 1-based sequence number of this call within the run, in its own counter (distinct from `agent()` calls' `seq`). */
+  seq: number
+  /** The flow node id this call belongs to. */
+  phase: string
+}
+
+/** How one processing-node call settled. */
+export type WorkflowNodeOutcome = 'completed' | 'failed' | 'cancelled'
+
+/** One processing-node call's settlement (the `workflow/node-end` payload). */
+export interface WorkflowNodeEndInfo extends WorkflowNodeInfo {
+  /** How the call settled. */
+  outcome: WorkflowNodeOutcome
+}
+
+/**
  * A settled run's outcome as event data (the `workflow/end` payload): the
  * {@link WorkflowResult} minus `value` (a listener observing outcomes must not
  * receive a mutable alias of the caller's result value; a consumer that needs
