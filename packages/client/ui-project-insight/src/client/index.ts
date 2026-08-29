@@ -36,7 +36,7 @@ const TABS: readonly {
 ]
 
 /** Required services: the conversation slot, session rows, the Remote face, and the locale service. */
-export const inject = ['slots', 'locale', 'remote', 'sessions']
+export const inject = ['slots', 'locale', 'remote', 'remote.projectInsight', 'sessions']
 
 /**
  * Client plugin body: register the five insight tabs. Each registration rides

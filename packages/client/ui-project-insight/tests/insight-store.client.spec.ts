@@ -8,6 +8,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { ClientRemote } from '@deepseek-ai/dsh-api-remotes/client'
 import type { ProjectInsightDoc } from '@deepseek-ai/dsh-project-insight/src/schema.ts'
+import { inject } from '../src/client/index.ts'
 import { POLL_INTERVAL_MS, ProjectInsightController } from '../src/client/insight-store.ts'
 
 /** A minimal committed document; sections are empty to keep the fixture light. */
@@ -238,5 +239,14 @@ describe('the project-insight read controller', () => {
     // Dispose reset the snapshot and bumped the generation; the late result is
     // discarded, and the store holds the clean initial state a remount reads.
     expect(controller.store.getSnapshot()).toEqual({ status: 'idle', error: null, doc: null })
+  })
+})
+
+describe('the plugin inject array', () => {
+  it('declares the Remote namespace the store reads through', () => {
+    // The wire face is reached as ctx.remote.projectInsight, and the Cordis
+    // fiber refuses an undeclared property with "cannot get property …
+    // without inject" — the whole tab ring dies on one missing name.
+    expect(inject).toEqual(['slots', 'locale', 'remote', 'remote.projectInsight', 'sessions'])
   })
 })
